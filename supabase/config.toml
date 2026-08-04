@@ -18,3 +18,9 @@ verify_jwt = false
 
 [functions.fiscal-document-pdf]
 verify_jwt = false
+
+[functions.create-payment]
+verify_jwt = false
+
+[functions.confirm-cod-payment]
+verify_jwt = true
