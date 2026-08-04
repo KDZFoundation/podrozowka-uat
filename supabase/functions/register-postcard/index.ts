@@ -83,6 +83,17 @@ Deno.serve(async (req) => {
         } | null;
       }
 
+      const { data: countriesData } = await supabase
+        .from("countries")
+        .select("iso2, name_pl")
+        .eq("active", true)
+        .order("name_pl", { ascending: true });
+
+      const availableCountries = (countriesData || []).map((c) => ({
+        iso2: c.iso2,
+        name_pl: c.name_pl,
+      }));
+
       const design = (unit as unknown as InventoryUnitWithDesign).card_designs;
       return new Response(JSON.stringify({
         business_status: unit.business_status,
@@ -90,6 +101,7 @@ Deno.serve(async (req) => {
         registered_at: unit.registered_at,
         traveler_name: travelerName,
         recipient_name: recipientName,
+        available_countries: availableCountries,
         design: {
           title: design?.title,
           image_front_url: design?.image_front_url,
@@ -101,7 +113,7 @@ Deno.serve(async (req) => {
 
     if (req.method === "POST") {
       const body = await req.json();
-      const { token, recipient_name, recipient_message, recipient_email, contact_opt_in, latitude, longitude } = body;
+      const { token, recipient_name, recipient_message, recipient_email, contact_opt_in, latitude, longitude, registered_country_iso2 } = body;
 
       // Coordinate validation
       let lat: number | null = null;
@@ -157,6 +169,7 @@ Deno.serve(async (req) => {
         _contact_opt_in: contact_opt_in === true,
         _latitude: lat,
         _longitude: lon,
+        _registered_country_iso2: registered_country_iso2 ? String(registered_country_iso2).trim() : null,
       });
 
       if (rpcError) {

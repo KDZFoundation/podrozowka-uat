@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { CheckCircle, Loader2, User, MessageSquare, Mail, MapPin } from "lucide-react";
+import { CheckCircle, Loader2, User, MessageSquare, Mail, MapPin, Globe } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import type { PostcardInfo } from "@/pages/RegisterPostcard";
 
@@ -16,6 +17,7 @@ const formSchema = z.object({
   recipientName: z.string().min(1, "Podaj swoje imię").max(100, "Maksymalnie 100 znaków"),
   recipientMessage: z.string().max(500, "Maksymalnie 500 znaków").default(""),
   recipientEmail: z.union([z.literal(""), z.string().email("Podaj prawidłowy adres email")]).default(""),
+  registeredCountryIso2: z.string().optional(),
   contactOptIn: z.boolean().default(false),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
@@ -59,6 +61,7 @@ const RegisterPostcardForm = ({ postcard, onSubmit }: Props) => {
       recipientName: "",
       recipientMessage: "",
       recipientEmail: "",
+      registeredCountryIso2: postcard.design.country_iso2 || "",
       contactOptIn: false,
     },
   });
@@ -121,7 +124,7 @@ const RegisterPostcardForm = ({ postcard, onSubmit }: Props) => {
                 name="recipientMessage"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Krótka wiadomość (opcjonalne)</FormLabel>
+                    <FormLabel>Krótka wiadomość (opcjonalnie)</FormLabel>
                     <FormControl>
                       <div className="relative">
                         <MessageSquare className="absolute left-3 top-3 w-5 h-5 text-muted-foreground" />
@@ -133,6 +136,36 @@ const RegisterPostcardForm = ({ postcard, onSubmit }: Props) => {
                   </FormItem>
                 )}
               />
+
+              {postcard.available_countries && postcard.available_countries.length > 0 && (
+                <FormField
+                  control={form.control}
+                  name="registeredCountryIso2"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Kraj otrzymania kartki</FormLabel>
+                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <FormControl>
+                          <SelectTrigger className="w-full">
+                            <div className="flex items-center gap-2">
+                              <Globe className="w-4 h-4 text-muted-foreground" />
+                              <SelectValue placeholder="Wybierz kraj..." />
+                            </div>
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {postcard.available_countries?.map((c) => (
+                            <SelectItem key={c.iso2} value={c.iso2}>
+                              {c.name_pl}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={form.control}

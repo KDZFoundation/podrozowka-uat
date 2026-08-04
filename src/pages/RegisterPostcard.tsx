@@ -16,6 +16,7 @@ export interface PostcardInfo {
   registered_at: string | null;
   traveler_name: string | null;
   recipient_name: string | null;
+  available_countries?: Array<{ iso2: string; name_pl: string }>;
   design: {
     title: string;
     image_front_url: string | null;
@@ -67,6 +68,7 @@ const RegisterPostcard = () => {
     recipientMessage: string;
     recipientEmail: string;
     contactOptIn: boolean;
+    registeredCountryIso2?: string;
     latitude?: number;
     longitude?: number;
   }) => {
@@ -78,6 +80,7 @@ const RegisterPostcard = () => {
         recipient_message: data.recipientMessage.trim() || undefined,
         recipient_email: data.recipientEmail.trim() || undefined,
         contact_opt_in: data.contactOptIn,
+        registered_country_iso2: data.registeredCountryIso2 || undefined,
         latitude: data.latitude ?? undefined,
         longitude: data.longitude ?? undefined,
       },
