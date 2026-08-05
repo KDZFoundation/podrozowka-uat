@@ -48,8 +48,7 @@ const RegisterPostcard = () => {
           { method: "GET" }
         );
         if (error) {
-          const ctxMsg = (error as { context?: { error?: string } })?.context?.error;
-          setError(typeof ctxMsg === "string" ? ctxMsg : "Nie znaleziono kartki");
+          setError(error.message || "Nie znaleziono kartki");
           setIsLoading(false);
           return;
         }
@@ -87,8 +86,7 @@ const RegisterPostcard = () => {
     });
 
     if (error) {
-      const ctxMsg = (error as { context?: { error?: string } })?.context?.error;
-      throw new Error(typeof ctxMsg === "string" ? ctxMsg : "Wystąpił błąd");
+      throw new Error(error.message || "Wystąpił błąd");
     }
 
 

@@ -30,12 +30,26 @@ const Cart = () => {
   };
 
   const empty = items.length === 0 && !isLoading;
+  const totalCount = items.reduce((s, i) => s + (i.unavailable ? 0 : i.quantity), 0);
+  const isBelowMin = totalCount < 10;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
       <main className="flex-1 container mx-auto px-4 py-8">
         <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-8">Koszyk</h1>
+
+        {!empty && isBelowMin && (
+          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-900 dark:text-amber-200 flex items-start gap-3 mb-6">
+            <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-sm">Minimalne zamówienie to 10 podróżówek</p>
+              <p className="text-xs mt-0.5">
+                Masz w koszyku <strong>{totalCount} szt.</strong> Dodaj jeszcze <strong>{10 - totalCount} szt.</strong>, aby złożyć zamówienie.
+              </p>
+            </div>
+          </div>
+        )}
 
         {isLoading && items.length === 0 ? (
           <div className="grid md:grid-cols-3 gap-6 animate-pulse">
@@ -152,15 +166,26 @@ const Cart = () => {
               <div className="bg-card rounded-xl shadow-soft p-5 sticky top-24 space-y-4">
                 <h2 className="font-display text-lg font-bold">Podsumowanie</h2>
                 <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Liczba sztuk</span>
+                  <span className={`font-semibold ${isBelowMin ? "text-amber-600 dark:text-amber-400 font-bold" : ""}`}>
+                    {totalCount} / 10 szt. (min)
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Suma częściowa</span>
                   <span className="font-semibold">{formatPln(subtotalGrosze)}</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Koszt dostawy zostanie doliczony przy zamówieniu.
                 </p>
-                <Button size="lg" className="w-full" onClick={handleCheckout} disabled={subtotalGrosze === 0}>
+                <Button size="lg" className="w-full" onClick={handleCheckout} disabled={subtotalGrosze === 0 || isBelowMin}>
                   Przejdź do zamówienia
                 </Button>
+                {isBelowMin && (
+                  <p className="text-xs text-center text-amber-600 dark:text-amber-400 font-medium">
+                    Dodaj jeszcze {10 - totalCount} szt., aby odblokować zamówienie.
+                  </p>
+                )}
               </div>
             </div>
           </div>

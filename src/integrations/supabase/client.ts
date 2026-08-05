@@ -10,18 +10,18 @@ const CONFIGS = {
   },
   uat: {
     url: "https://nqqephusxnxzzkfulfae.supabase.co",
-    anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY_UAT || "",
+    anonKey: import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY_UAT || "",
   },
   prod: {
     url: "https://iyxbgyfuudwcrirlbmhb.supabase.co",
-    anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY_PROD || "",
+    anonKey: import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY_PROD || "",
   }
 };
 
 // Start by reading the Vite build-time environment variables
-let envUrl = import.meta.env.VITE_SUPABASE_URL;
-let envKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-let currentEnv = import.meta.env.VITE_APP_ENV || "development";
+let envUrl = import.meta.env?.VITE_SUPABASE_URL;
+let envKey = import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY;
+let currentEnv = import.meta.env?.VITE_APP_ENV || "development";
 
 // Automatically ignore the old, inactive Lovable database if it's still present in the environment
 if (envUrl && envUrl.includes("uacuxblipehehknafwep")) {
@@ -291,6 +291,11 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
     const body = options?.body || {};
     const { items, pickup_point, shipping_address, shipping_cost_grosze, payment_method, invoice } = body;
 
+    const totalQty = Array.isArray(items) ? items.reduce((sum: number, it: { quantity?: number }) => sum + (Number(it?.quantity) || 0), 0) : 0;
+    if (totalQty < 10) {
+      return { data: null, error: { message: "Minimalne zamówienie to 10 podróżówek" } };
+    }
+
     const { data: orderJson, error: rpcError } = await supabase.rpc("create_order", {
       _items: items,
       _pickup_point_name: pickup_point?.name || "Paczkomat Fallback",
@@ -499,21 +504,35 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
 
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pageWidth = 210;
-    const margin = 15;
-    const colWidth = (pageWidth - 2 * margin) / 2;
-    const rowHeight = 55;
-    const qrSize = 35;
+    const pageHeight = 297;
+    const stickerSize = 35; // 35mm x 35mm square sticker
+    const colGap = 3.5;
+    const rowGap = 3.5;
+    const colsPerPage = 5;
+    const rowsPerPage = 7;
+    const itemsPerPage = colsPerPage * rowsPerPage;
 
-    let col = 0;
-    let row = 0;
+    const leftMargin = 10.5;
+    const topMargin = 15.5;
 
     for (let i = 0; i < items.length; i++) {
-      if (i > 0 && col === 0 && row === 0) {
+      const posOnPage = i % itemsPerPage;
+      const col = posOnPage % colsPerPage;
+      const row = Math.floor(posOnPage / colsPerPage);
+
+      if (i > 0 && posOnPage === 0) {
         doc.addPage();
       }
 
-      const x = margin + col * colWidth;
-      const y = margin + row * rowHeight;
+      if (posOnPage === 0) {
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(120, 120, 120);
+        doc.text(`Naklejki QR Podróżówka (35x35mm) — Data: ${new Date().toLocaleDateString("pl-PL")}`, leftMargin, 8);
+      }
+
+      const x = leftMargin + col * (stickerSize + colGap);
+      const y = topMargin + row * (stickerSize + rowGap);
 
       const item = items[i];
       const claimCode = item.public_claim_code;
@@ -529,44 +548,62 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
         } | null;
       } | null;
       const cardDesign = inventoryUnit?.card_designs;
-      const country = cardDesign?.countries;
+      const country = cardDesign?.countries?.name_pl || "PL";
+      const viewNo = cardDesign?.view_no || 1;
+      const invCode = inventoryUnit?.internal_inventory_code || "";
 
+      // Outer dashed border
       doc.setDrawColor(200, 200, 200);
-      doc.setLineDashPattern([2, 2], 0);
-      doc.rect(x, y, colWidth, rowHeight);
+      doc.setLineDashPattern([1, 1], 0);
+      doc.rect(x, y, stickerSize, stickerSize);
+
+      // Top bar
+      doc.setLineDashPattern([], 0);
+      doc.setDrawColor(230, 230, 230);
+      doc.line(x, y + 4.5, x + stickerSize, y + 4.5);
+
+      doc.setFontSize(5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 41, 59);
+      doc.text("PODRÓŻÓWKA", x + 1.5, y + 3.2);
+
+      doc.setFontSize(4.5);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 116, 139);
+      doc.text(`${country} V${viewNo}`, x + stickerSize - 1.5, y + 3.2, { align: "right" });
+
+      // QR Code
+      const qrSize = 22;
+      const qrX = x + (stickerSize - qrSize) / 2;
+      const qrY = y + 5.2;
 
       try {
-        const qrDataUrl = await QRCode.toDataURL(qrUrl, { margin: 1, width: 150 });
-        doc.addImage(qrDataUrl, "PNG", x + 5, y + 5, qrSize, qrSize);
+        const qrDataUrl = await QRCode.toDataURL(qrUrl, { margin: 1, width: 180 });
+        doc.addImage(qrDataUrl, "PNG", qrX, qrY, qrSize, qrSize);
       } catch (qrErr) {
         console.error("Failed to generate QR data URL:", qrErr);
       }
 
+      // Bottom codes
+      doc.setFontSize(5.5);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.text("PODRÓŻÓWKA", x + 43, y + 12);
+      doc.setTextColor(15, 23, 42);
+      doc.text(claimCode, x + stickerSize / 2, y + 29.5, { align: "center" });
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      doc.text(`Wzór: ${cardDesign?.title || "N/A"}`, x + 43, y + 18, { maxWidth: colWidth - 45 });
-      doc.text(`Wersja: ${cardDesign?.view_no || 1}`, x + 43, y + 23);
-      doc.text(`Kraj: ${country?.name_pl || "Polska"}`, x + 43, y + 27);
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8);
-      doc.text(`Kod: ${claimCode}`, x + 43, y + 35);
-      doc.setFontSize(6);
-      doc.setFont("helvetica", "italic");
-      doc.text("Zeskanuj i zarejestruj kartkę!", x + 43, y + 40);
-
-      col++;
-      if (col >= 2) {
-        col = 0;
-        row++;
-        if (row >= 5) {
-          row = 0;
-        }
+      if (invCode) {
+        doc.setFontSize(4);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(100, 116, 139);
+        doc.text(invCode, x + stickerSize / 2, y + 33, { align: "center" });
       }
+    }
+
+    const totalPages = doc.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      doc.setFontSize(6);
+      doc.setTextColor(160, 160, 160);
+      doc.text(`Strona ${p} / ${totalPages}`, pageWidth - leftMargin, pageHeight - 5, { align: "right" });
     }
 
     const pdfDataUri = doc.output("datauristring");
@@ -658,9 +695,11 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
 // If the real function is not deployed or fails, it will gracefully fall back to emulation.
 const FORCE_CLIENT_EMULATION = false;
 
-// Wrap original invoke function with fallback handling
-const originalInvoke = supabase.functions.invoke.bind(supabase.functions);
-supabase.functions.invoke = async function (functionName: string, options?: InvokeOptions) {
+// Wrap FunctionsClient.prototype.invoke with fallback handling & clear error unwrapping
+const FunctionsClientProto = (supabase.functions as unknown as { constructor: { prototype: { invoke: Function } } }).constructor.prototype;
+const originalInvoke = FunctionsClientProto.invoke;
+
+FunctionsClientProto.invoke = async function (functionName: string, options?: InvokeOptions) {
   let name = functionName;
   if (functionName.includes("?")) {
     name = functionName.split("?")[0];
@@ -687,17 +726,71 @@ supabase.functions.invoke = async function (functionName: string, options?: Invo
         error: {
           message: errMsg,
           status: 500,
-        } as unknown as { message: string; status: number }
-      } as unknown as ReturnType<typeof originalInvoke>;
+        }
+      };
     }
   }
 
   try {
-    const res = await originalInvoke(functionName, options);
+    const res = await originalInvoke.call(this, functionName, options);
     if (!res.error) {
       return res;
     }
-    console.warn(`[Supabase Proxy] Edge Function '${functionName}' failed/not found. Error:`, res.error, `Falling back to client-side emulation.`);
+
+    const context = (res.error as { context?: Response })?.context;
+    const isNotDeployed = context?.headers?.get?.("sb-error-code") === "NOT_FOUND";
+
+    if (!isNotDeployed) {
+      let finalMsg: string | undefined;
+
+      if (context) {
+        try {
+          let body: { error?: string; message?: string; msg?: string } | null = null;
+          if (typeof context.json === "function") {
+            body = await context.json().catch(() => null);
+          }
+          if (!body && typeof context.text === "function") {
+            const rawText = await context.text().catch(() => "");
+            if (rawText) {
+              try {
+                body = JSON.parse(rawText);
+              } catch {
+                if (rawText.length < 200 && !rawText.includes("<html")) {
+                  finalMsg = rawText;
+                }
+              }
+            }
+          }
+          if (body) {
+            finalMsg = body.error || body.message || body.msg;
+          }
+        } catch {
+          // Ignore body reading errors
+        }
+
+        if (!finalMsg || finalMsg === "Edge Function returned a non-2xx status code") {
+          const status = context.status;
+          if (status === 404) finalMsg = "Nie znaleziono żądanego zasobu";
+          else if (status === 401 || status === 403) finalMsg = "Brak autoryzacji do wykonania tej operacji";
+          else if (status === 400) finalMsg = "Nieprawidłowe parametry żądania";
+          else if (status >= 500) finalMsg = "Błąd serwera. Spróbuj ponownie później.";
+        }
+      }
+
+      if (finalMsg) {
+        return {
+          data: res.data,
+          error: {
+            ...res.error,
+            message: finalMsg,
+          },
+        };
+      }
+
+      return res;
+    }
+
+    console.warn(`[Supabase Proxy] Edge Function '${functionName}' not found on server. Falling back to client-side emulation.`);
   } catch (err) {
     console.warn(`[Supabase Proxy] Edge Function '${functionName}' failed with exception:`, err);
   }
@@ -712,8 +805,8 @@ supabase.functions.invoke = async function (functionName: string, options?: Invo
       error: {
         message: errMsg,
         status: 500,
-      } as unknown as { message: string; status: number }
-    } as unknown as ReturnType<typeof originalInvoke>;
+      }
+    };
   }
 };
 

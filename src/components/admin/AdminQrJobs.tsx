@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, QrCode, Printer, ArrowLeft, Eye, Plus, Download, CheckCheck } from "lucide-react";
+import { Loader2, QrCode, Printer, ArrowLeft, Eye, Plus, Download, CheckCheck, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface PrintJob {
@@ -82,9 +82,10 @@ const AdminQrJobs = () => {
   // New job form
   const [showNewJob, setShowNewJob] = useState(false);
   const [jobName, setJobName] = useState("");
-  const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [selectedOrderId, setSelectedOrderId] = useState("all");
+  const [ordersList, setOrdersList] = useState<{ id: string; order_number: string; shipping_name: string | null; created_at: string }[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [reservedUnits, setReservedUnits] = useState<{ id: string; code: string; design: string }[]>([]);
+  const [reservedUnits, setReservedUnits] = useState<{ id: string; code: string; design: string; order_id: string | null }[]>([]);
 
   const fetchJobs = useCallback(async () => {
     setIsLoading(true);
@@ -134,32 +135,82 @@ const AdminQrJobs = () => {
     fetchJobItems(job.id);
   };
 
-  const loadReservedUnits = async () => {
-    // Get reserved units that don't have QR generated yet
-    const { data } = await supabase
+  const loadUnitsForOrder = async (orderId: string) => {
+    let query = supabase
       .from("inventory_units")
-      .select("id, internal_inventory_code, card_designs!inner(title, view_no)")
-      .eq("fulfillment_status", "reserved")
+      .select("id, internal_inventory_code, order_id, card_designs!inner(title, view_no, countries!inner(name_pl))")
       .order("created_at", { ascending: true })
       .limit(500);
 
+    if (orderId && orderId !== "all") {
+      query = query.eq("order_id", orderId);
+    } else {
+      query = query.in("fulfillment_status", ["reserved", "in_stock", "shipped", "purchased"]);
+    }
+
+    const { data } = await query;
+
     if (data) {
-      const typedData = data as unknown as ReservedUnitJoin[];
+      const typedData = data as unknown as (ReservedUnitJoin & { order_id: string | null; card_designs: { title: string | null; view_no: number; countries: { name_pl: string } | null } | null })[];
       setReservedUnits(
-        typedData.map((u: ReservedUnitJoin) => ({
+        typedData.map((u) => ({
           id: u.id,
           code: u.internal_inventory_code,
-          design: `V${u.card_designs?.view_no} ${u.card_designs?.title || ""}`,
+          design: `${u.card_designs?.countries?.name_pl || ""} — V${u.card_designs?.view_no} ${u.card_designs?.title || ""}`,
+          order_id: u.order_id,
         }))
       );
+    } else {
+      setReservedUnits([]);
     }
   };
 
-  const openNewJob = () => {
+  const fetchOrdersForSelection = async () => {
+    const { data } = await supabase
+      .from("orders")
+      .select("id, order_number, shipping_name, created_at")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (data) {
+      setOrdersList(data);
+    }
+  };
+
+  const openNewJob = async () => {
     setShowNewJob(true);
-    setJobName("");
-    setSelectedOrderId("");
-    loadReservedUnits();
+    setJobName("Druk QR - Wszystkie zarezerwowane");
+    setSelectedOrderId("all");
+    await fetchOrdersForSelection();
+    await loadUnitsForOrder("all");
+  };
+
+  const handleOrderChange = (orderId: string) => {
+    setSelectedOrderId(orderId);
+    if (orderId === "all") {
+      setJobName("Druk QR - Wszystkie zarezerwowane");
+    } else {
+      const selected = ordersList.find((o) => o.id === orderId);
+      if (selected) {
+        setJobName(`Druk QR - Zamówienie ${selected.order_number}`);
+      }
+    }
+    loadUnitsForOrder(orderId);
+  };
+
+  const generateRandomToken = (len = 32): string => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let res = "";
+    for (let i = 0; i < len; i++) res += chars[Math.floor(Math.random() * chars.length)];
+    return res;
+  };
+
+  const hashToken = async (token: string): Promise<string> => {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(token);
+    const hash = await crypto.subtle.digest("SHA-256", data);
+    return Array.from(new Uint8Array(hash))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
   };
 
   const generateQr = async () => {
@@ -168,30 +219,90 @@ const AdminQrJobs = () => {
       return;
     }
     if (reservedUnits.length === 0) {
-      toast({ title: "Brak zarezerwowanych sztuk do wygenerowania QR", variant: "destructive" });
+      toast({ title: "Brak sztuk do wygenerowania QR", variant: "destructive" });
       return;
     }
 
     setIsGenerating(true);
 
-    const { data, error } = await supabase.functions.invoke("generate-qr", {
-      body: {
-        inventory_unit_ids: reservedUnits.map((u) => u.id),
-        print_job_name: jobName,
-        order_id: selectedOrderId || undefined,
-      },
-    });
+    try {
+      // First try Edge Function
+      const { data, error } = await supabase.functions.invoke("generate-qr", {
+        body: {
+          inventory_unit_ids: reservedUnits.map((u) => u.id),
+          print_job_name: jobName,
+          order_id: selectedOrderId !== "all" ? selectedOrderId : undefined,
+        },
+      });
 
-    if (error) {
-      toast({ title: "Błąd generowania QR", description: error.message, variant: "destructive" });
-    } else if (data?.error) {
-      toast({ title: "Błąd", description: data.error, variant: "destructive" });
-    } else {
-      toast({ title: `Wygenerowano QR dla ${data.generated} sztuk` });
+      if (!error && data?.success && data?.generated > 0) {
+        toast({ title: `Wygenerowano QR dla ${data.generated} sztuk!` });
+        setShowNewJob(false);
+        fetchJobs();
+        setIsGenerating(false);
+        return;
+      }
+
+      console.warn("Edge function invoke failed or returned error, executing direct client-side QR generation fallback...", error || data?.error);
+
+      // Fallback: Direct database QR Job creation
+      const { data: { user } } = await supabase.auth.getUser();
+
+      const { data: newJob, error: jobErr } = await supabase
+        .from("qr_print_jobs")
+        .insert({
+          name: jobName,
+          order_id: selectedOrderId !== "all" ? selectedOrderId : null,
+          total_items: reservedUnits.length,
+          generated_items: reservedUnits.length,
+          status: "ready" as Database["public"]["Enums"]["qr_print_job_status"],
+          created_by: user?.id || null,
+        })
+        .select("id")
+        .single();
+
+      if (jobErr) throw jobErr;
+
+      const baseUrl = window.location.origin;
+      const jobItemsToInsert = [];
+
+      for (const unit of reservedUnits) {
+        const publicToken = generateRandomToken(32);
+        const tokenHash = await hashToken(publicToken);
+        const randomHex = Math.random().toString(16).substring(2, 6).toUpperCase();
+        const claimCode = `PDZ-${randomHex}-${Math.random().toString(16).substring(2, 6).toUpperCase()}`;
+        const qrUrl = `${baseUrl}/r/${publicToken}`;
+
+        // Update inventory unit
+        await supabase
+          .from("inventory_units")
+          .update({
+            public_claim_code: claimCode,
+            public_claim_token_hash: tokenHash,
+            fulfillment_status: "qr_generated" as Database["public"]["Enums"]["fulfillment_status"],
+            qr_generated_at: new Date().toISOString(),
+          })
+          .eq("id", unit.id);
+
+        jobItemsToInsert.push({
+          print_job_id: newJob.id,
+          inventory_unit_id: unit.id,
+          public_claim_code: claimCode,
+          qr_url: qrUrl,
+        });
+      }
+
+      await supabase.from("qr_print_job_items").insert(jobItemsToInsert);
+
+      toast({ title: `Wygenerowano QR dla ${reservedUnits.length} sztuk!` });
       setShowNewJob(false);
       fetchJobs();
+    } catch (err) {
+      console.error("Error generating QR:", err);
+      toast({ title: "Błąd generowania QR", description: err instanceof Error ? err.message : "Nieznany błąd", variant: "destructive" });
+    } finally {
+      setIsGenerating(false);
     }
-    setIsGenerating(false);
   };
 
   const markAsPrinted = async (jobId: string) => {
@@ -259,6 +370,57 @@ const AdminQrJobs = () => {
     setPdfLoading(false);
   };
 
+  const deleteJob = async (jobId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm("Czy na pewno chcesz usunąć to zadanie druku QR? Kody dla sztuk zostaną zresetowane.")) {
+      return;
+    }
+
+    try {
+      // 1. Fetch job items
+      const { data: items } = await supabase
+        .from("qr_print_job_items")
+        .select("inventory_unit_id")
+        .eq("print_job_id", jobId);
+
+      if (items && items.length > 0) {
+        const unitIds = items.map((i) => i.inventory_unit_id).filter(Boolean);
+        if (unitIds.length > 0) {
+          // Reset inventory units to reserved
+          await supabase
+            .from("inventory_units")
+            .update({
+              public_claim_code: null,
+              public_claim_token_hash: null,
+              fulfillment_status: "reserved" as Database["public"]["Enums"]["fulfillment_status"],
+              qr_generated_at: null,
+            })
+            .in("id", unitIds);
+        }
+      }
+
+      // 2. Delete job items
+      await supabase.from("qr_print_job_items").delete().eq("print_job_id", jobId);
+
+      // 3. Delete job
+      const { error } = await supabase.from("qr_print_jobs").delete().eq("id", jobId);
+
+      if (error) {
+        throw error;
+      }
+
+      toast({ title: "Usunięto zadanie druku QR" });
+      if (selectedJob?.id === jobId) {
+        setSelectedJob(null);
+        setJobItems([]);
+      }
+      fetchJobs();
+    } catch (err) {
+      console.error("Error deleting QR job:", err);
+      toast({ title: "Błąd podczas usuwania zadania", description: err instanceof Error ? err.message : "Nieznany błąd", variant: "destructive" });
+    }
+  };
+
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString("pl-PL", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
@@ -295,6 +457,9 @@ const AdminQrJobs = () => {
                   <CheckCheck className="w-4 h-4" /> Naklejone (applied)
                 </Button>
               )}
+              <Button size="sm" variant="destructive" onClick={() => deleteJob(selectedJob.id)} className="gap-2">
+                <Trash2 className="w-4 h-4" /> Usuń
+              </Button>
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -360,8 +525,20 @@ const AdminQrJobs = () => {
               <Input value={jobName} onChange={(e) => setJobName(e.target.value)} placeholder="np. Druk QR - Partia PL-01" />
             </div>
             <div>
-              <label className="text-sm text-muted-foreground mb-1 block">ID zamówienia (opcjonalne)</label>
-              <Input value={selectedOrderId} onChange={(e) => setSelectedOrderId(e.target.value)} placeholder="UUID zamówienia" />
+              <label className="text-sm text-muted-foreground mb-1 block">Wybierz zamówienie</label>
+              <Select value={selectedOrderId} onValueChange={handleOrderChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Wybierz zamówienie..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Wszystkie zarezerwowane / wolne sztuki</SelectItem>
+                  {ordersList.map((order) => (
+                    <SelectItem key={order.id} value={order.id}>
+                      {order.order_number} {order.shipping_name ? `— ${order.shipping_name}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -437,7 +614,20 @@ const AdminQrJobs = () => {
                   <td className="p-3">{statusBadge(job.status)}</td>
                   <td className="p-3 text-right">{job.generated_items} / {job.total_items}</td>
                   <td className="p-3 text-xs text-muted-foreground">{formatDate(job.created_at)}</td>
-                  <td className="p-3 text-xs text-primary">Szczegóły →</td>
+                  <td className="p-3 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="text-xs text-primary">Szczegóły →</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                        onClick={(e) => deleteJob(job.id, e)}
+                        title="Usuń zadanie"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

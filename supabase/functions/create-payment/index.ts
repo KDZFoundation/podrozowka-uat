@@ -108,10 +108,15 @@ Deno.serve(async (req) => {
     if (!items || items.length === 0 || items.length > 100) {
       return jsonResp({ error: "invalid_items" }, 400);
     }
+    let totalQty = 0;
     for (const it of items) {
       if (!it || !isUuid(it.card_design_id) || !Number.isInteger(it.quantity) || it.quantity < 1 || it.quantity > 1000) {
         return jsonResp({ error: "invalid_items" }, 400);
       }
+      totalQty += it.quantity;
+    }
+    if (totalQty < 10) {
+      return jsonResp({ error: "Minimalne zamówienie to 10 podróżówek" }, 400);
     }
 
     // Shipping method: 'inpost' (paczkomat) or 'courier' (home address)

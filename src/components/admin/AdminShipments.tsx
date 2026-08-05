@@ -70,22 +70,39 @@ const AdminShipments = () => {
 
     const { data } = await query;
     if (data) {
-      // Fetch order numbers and display names
-      const orderIds = [...new Set(data.map(s => s.order_id))];
-      const userIds = [...new Set(data.map(s => s.user_id))];
+      // Fetch order numbers and display names safely
+      const orderIds = [...new Set(data.map(s => s.order_id))].filter((id): id is string => Boolean(id));
+      const userIds = [...new Set(data.map(s => s.user_id))].filter((id): id is string => Boolean(id));
 
-      const [{ data: orders }, { data: profiles }] = await Promise.all([
-        supabase.from("orders").select("id, order_number").in("id", orderIds),
-        supabase.from("profiles").select("user_id, display_name").in("user_id", userIds),
-      ]);
+      let orders: { id: string; order_number: string }[] | null = null;
+      let profiles: { user_id: string; display_name: string | null }[] | null = null;
+
+      const promises: Promise<void>[] = [];
+
+      if (orderIds.length > 0) {
+        promises.push(
+          supabase.from("orders").select("id, order_number").in("id", orderIds).then(({ data }) => {
+            orders = data;
+          })
+        );
+      }
+      if (userIds.length > 0) {
+        promises.push(
+          supabase.from("profiles").select("user_id, display_name").in("user_id", userIds).then(({ data }) => {
+            profiles = data;
+          })
+        );
+      }
+
+      await Promise.all(promises);
 
       const orderMap = new Map(orders?.map(o => [o.id, o.order_number]) || []);
       const nameMap = new Map(profiles?.map(p => [p.user_id, p.display_name]) || []);
 
       setShipments(data.map(s => ({
         ...s,
-        order_number: orderMap.get(s.order_id) || null,
-        display_name: nameMap.get(s.user_id) || null,
+        order_number: s.order_id ? orderMap.get(s.order_id) || null : null,
+        display_name: s.user_id ? nameMap.get(s.user_id) || null : null,
       })));
     }
     setIsLoading(false);

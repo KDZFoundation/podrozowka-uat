@@ -87,16 +87,22 @@ const Checkout = () => {
   if (cartItems.length === 0) return <Navigate to="/koszyk" replace />;
 
   const hasUnavailable = items.some((i) => i.unavailable);
+  const totalItemCount = items.reduce((s, i) => s + (i.unavailable ? 0 : i.quantity), 0);
+  const isBelowMin = totalItemCount < 10;
+
   const shippingCostGrosze = getShippingCostGrosze(paymentMethod);
   const totalGrosze = subtotalGrosze + shippingCostGrosze;
 
   const invoiceValid = !invoiceRequested || Object.keys(invoiceErrors).length === 0;
   const shippingValid =
     shippingMethod === "inpost" ? !!pickupPoint : isCourierAddressValid(courierAddress);
-  const canProceed = shippingValid && !hasUnavailable && !isLoading && invoiceValid;
+  const canProceed = shippingValid && !hasUnavailable && !isLoading && invoiceValid && !isBelowMin;
 
   const handleProceed = async () => {
-    if (!shippingValid) return;
+    if (!shippingValid || isBelowMin) {
+      if (isBelowMin) toast.error("Minimalne zamówienie to 10 podróżówek.");
+      return;
+    }
     setIsSubmitting(true);
     try {
       const payload: Record<string, unknown> = {
@@ -203,6 +209,18 @@ const Checkout = () => {
         <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-8">
           Zamówienie
         </h1>
+
+        {isBelowMin && (
+          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-900 dark:text-amber-200 flex items-start gap-3 mb-6">
+            <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-sm">Minimalne zamówienie to 10 podróżówek</p>
+              <p className="text-xs mt-0.5">
+                W Twoim koszyku znajduje się obecnie <strong>{totalItemCount} szt.</strong> Wróć do koszyka i dodaj jeszcze <strong>{10 - totalItemCount} szt.</strong>
+              </p>
+            </div>
+          </div>
+        )}
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Left: shipping */}

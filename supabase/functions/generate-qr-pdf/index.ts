@@ -90,15 +90,19 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Generate PDF
+    // Generate PDF - Square 35x35mm stickers layout for postcard back
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = 210;
     const pageHeight = 297;
-    const margin = 15;
-    const colWidth = (pageWidth - 2 * margin) / 2;
-    const rowHeight = 55;
-    const qrSize = 35;
-    const itemsPerPage = Math.floor((pageHeight - 2 * margin) / rowHeight) * 2;
+    const stickerSize = 35; // 35mm x 35mm square sticker
+    const colGap = 3.5;
+    const rowGap = 3.5;
+    const colsPerPage = 5;
+    const rowsPerPage = 7;
+    const itemsPerPage = colsPerPage * rowsPerPage; // 35 stickers per page
+
+    const leftMargin = 10.5;
+    const topMargin = 15.5;
 
 interface PrintJobItem {
   id: string;
@@ -117,87 +121,87 @@ interface PrintJobItem {
   } | null;
 }
 
-    // Title page
-    doc.setFontSize(18);
-    doc.text(`Druk QR — ${job.name}`, margin, 25);
-    doc.setFontSize(10);
-    doc.text(`Data: ${new Date().toLocaleDateString('pl-PL')}`, margin, 33);
-    doc.text(`Liczba sztuk: ${items.length}`, margin, 39);
-    if (job.shipment_id) doc.text(`Wysyłka: ${job.shipment_id}`, margin, 45);
-    doc.text(`ID zadania: ${job.id}`, margin, 51);
-
-    // Generate QR cards - 2 columns layout
-    let currentPage = 1;
-    doc.addPage();
-
     const castItems = items as unknown as PrintJobItem[];
+
     for (let i = 0; i < castItems.length; i++) {
       const item = castItems[i];
       const posOnPage = i % itemsPerPage;
-      const col = posOnPage % 2;
-      const row = Math.floor(posOnPage / 2);
+      const col = posOnPage % colsPerPage;
+      const row = Math.floor(posOnPage / colsPerPage);
 
       if (i > 0 && posOnPage === 0) {
         doc.addPage();
-        currentPage++;
       }
 
-      const x = margin + col * colWidth;
-      const y = margin + row * rowHeight;
+      // Add page header on new page
+      if (posOnPage === 0) {
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(120, 120, 120);
+        doc.text(`Naklejki QR Podróżówka (35x35mm) — Zadanie: ${job.name} | Data: ${new Date().toLocaleDateString('pl-PL')}`, leftMargin, 8);
+      }
+
+      const x = leftMargin + col * (stickerSize + colGap);
+      const y = topMargin + row * (stickerSize + rowGap);
 
       // Generate QR code as data URL
       const qrDataUrl = await QRCode.toDataURL(item.qr_url, {
-        width: 200,
+        width: 180,
         margin: 1,
         errorCorrectionLevel: 'M',
       });
 
-      // Draw card border
+      // Outer dashed border (cutting line for 35x35mm square)
       doc.setDrawColor(200, 200, 200);
-      doc.rect(x, y, colWidth - 5, rowHeight - 3);
+      doc.setLineDashPattern([1, 1], 0);
+      doc.rect(x, y, stickerSize, stickerSize);
 
-      // QR code image
-      doc.addImage(qrDataUrl, 'PNG', x + 2, y + 2, qrSize, qrSize);
+      // Top mini header bar inside sticker
+      doc.setLineDashPattern([], 0);
+      doc.setDrawColor(230, 230, 230);
+      doc.line(x, y + 4.5, x + stickerSize, y + 4.5);
 
-      // Text info next to QR
-      const textX = x + qrSize + 5;
-      const textY = y + 6;
-
-      doc.setFontSize(7);
-      doc.setTextColor(150, 150, 150);
-      doc.text(`#${i + 1}`, textX, textY);
-
-      doc.setFontSize(11);
-      doc.setTextColor(0, 0, 0);
-      doc.text(item.public_claim_code, textX, textY + 6);
-
-      doc.setFontSize(8);
-      doc.setTextColor(80, 80, 80);
-      const country = item.inventory_units?.card_designs?.countries?.name_pl || '—';
-      const viewNo = item.inventory_units?.card_designs?.view_no || '?';
-      const title = item.inventory_units?.card_designs?.title || '';
+      const country = item.inventory_units?.card_designs?.countries?.name_pl || 'PL';
+      const viewNo = item.inventory_units?.card_designs?.view_no || 1;
       const invCode = item.inventory_units?.internal_inventory_code || '';
 
-      doc.text(`${country} — Widok ${viewNo}`, textX, textY + 12);
-      if (title) doc.text(title, textX, textY + 17);
-      
-      doc.setFontSize(6);
-      doc.setTextColor(130, 130, 130);
-      doc.text(invCode, textX, textY + 23);
+      doc.setFontSize(5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 41, 59);
+      doc.text("PODRÓŻÓWKA", x + 1.5, y + 3.2);
 
-      // Footer with claim code under QR
-      doc.setFontSize(6);
-      doc.setTextColor(100, 100, 100);
-      doc.text(item.public_claim_code, x + 2, y + qrSize + 6);
+      doc.setFontSize(4.5);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 116, 139);
+      doc.text(`${country} V${viewNo}`, x + stickerSize - 1.5, y + 3.2, { align: "right" });
+
+      // QR Code Image (centered 22mm x 22mm)
+      const qrSize = 22;
+      const qrX = x + (stickerSize - qrSize) / 2;
+      const qrY = y + 5.2;
+      doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
+
+      // Bottom claim code & inventory code
+      doc.setFontSize(5.5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(15, 23, 42);
+      doc.text(item.public_claim_code, x + stickerSize / 2, y + 29.5, { align: "center" });
+
+      if (invCode) {
+        doc.setFontSize(4);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(100, 116, 139);
+        doc.text(invCode, x + stickerSize / 2, y + 33, { align: "center" });
+      }
     }
 
     // Page numbers
     const totalPages = doc.getNumberOfPages();
     for (let p = 1; p <= totalPages; p++) {
       doc.setPage(p);
-      doc.setFontSize(7);
-      doc.setTextColor(180, 180, 180);
-      doc.text(`Strona ${p} / ${totalPages}`, pageWidth - margin - 25, pageHeight - 5);
+      doc.setFontSize(6);
+      doc.setTextColor(160, 160, 160);
+      doc.text(`Strona ${p} / ${totalPages}`, pageWidth - leftMargin, pageHeight - 5, { align: "right" });
     }
 
     // Output PDF as base64

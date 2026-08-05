@@ -97,6 +97,14 @@ const ShopProduct = () => {
     }
   }, [product]);
 
+  const [quantityToAdd, setQuantityToAdd] = useState<number>(10);
+
+  useEffect(() => {
+    if (stock > 0) {
+      setQuantityToAdd(Math.min(10, stock));
+    }
+  }, [stock]);
+
   const gallery = useMemo(() => {
     const list: string[] = [];
     if (product?.image_front_url) list.push(product.image_front_url);
@@ -115,12 +123,13 @@ const ShopProduct = () => {
       toast.error("Produkt niedostępny");
       return;
     }
-    if (inCart + 1 > stock) {
-      toast.error(`Nie można dodać więcej — dostępne tylko ${stock} szt.`);
+    const toAdd = Math.max(1, quantityToAdd);
+    if (inCart + toAdd > stock) {
+      toast.error(`Nie można dodać ${toAdd} szt. — w magazynie zostało ${stock - inCart} szt.`);
       return;
     }
-    addItem(product.id, 1, stock);
-    toast.success("Dodano do koszyka");
+    addItem(product.id, toAdd, stock);
+    toast.success(`Dodano ${toAdd} szt. do koszyka`);
   };
 
   if (isLoading || !product) {
@@ -204,11 +213,11 @@ const ShopProduct = () => {
             <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">{product.title}</h1>
             <p className="font-display text-3xl font-bold text-primary mb-6">{formatPln(product.price_grosze)}</p>
 
-            <div className="mb-6">
+            <div className="mb-6 space-y-2">
               {stock > 0 ? (
-                <p className="text-sm text-accent">
+                <p className="text-sm text-accent font-medium">
                   <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2" />
-                  Dostępne: {stock} szt.
+                  Dostępne w magazynie: {stock} szt.
                 </p>
               ) : (
                 <p className="text-sm text-muted-foreground">
@@ -216,17 +225,71 @@ const ShopProduct = () => {
                   Niedostępne
                 </p>
               )}
+              <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-800 dark:text-amber-200">
+                📌 <strong>Uwaga:</strong> Minimalne zamówienie to <strong>10 podróżówek</strong> w koszyku.
+              </div>
             </div>
 
             {product.description && (
-              <div className="prose prose-sm max-w-none mb-8">
+              <div className="prose prose-sm max-w-none mb-6">
                 <p className="text-foreground whitespace-pre-line leading-relaxed">{product.description}</p>
               </div>
             )}
 
-            <Button size="lg" onClick={handleAddToCart} disabled={!canAdd} className="w-full md:w-auto">
+            {canAdd && (
+              <div className="mb-6 space-y-2">
+                <label className="text-xs font-medium text-muted-foreground block">Liczba sztuk do dodania:</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center border border-border rounded-lg bg-card">
+                    <button
+                      type="button"
+                      onClick={() => setQuantityToAdd((q) => Math.max(1, q - 1))}
+                      className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-l-lg transition-colors font-bold"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={stock}
+                      value={quantityToAdd}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val)) setQuantityToAdd(Math.min(stock, Math.max(1, val)));
+                      }}
+                      className="w-16 text-center font-bold bg-transparent border-0 focus:outline-none text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setQuantityToAdd((q) => Math.min(stock, q + 1))}
+                      className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-r-lg transition-colors font-bold"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="flex gap-1">
+                    {[10, 20, 50].map((num) => (
+                      <button
+                        key={num}
+                        type="button"
+                        onClick={() => setQuantityToAdd(Math.min(stock, num))}
+                        className={`px-2.5 py-1.5 rounded text-xs font-medium border transition-colors ${
+                          quantityToAdd === num
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-muted/50 border-border hover:bg-muted text-foreground"
+                        }`}
+                      >
+                        {num} szt.
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <Button size="lg" onClick={handleAddToCart} disabled={!canAdd} className="w-full md:w-auto font-medium">
               <ShoppingCart className="w-4 h-4 mr-2" />
-              Dodaj do koszyka
+              Dodaj do koszyka ({quantityToAdd} szt.)
             </Button>
           </div>
         </div>

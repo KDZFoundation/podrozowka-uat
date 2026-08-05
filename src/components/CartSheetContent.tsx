@@ -14,6 +14,9 @@ const CartSheetContent = () => {
 
   const empty = items.length === 0 && !isLoading;
 
+  const totalCount = items.reduce((s, i) => s + (i.unavailable ? 0 : i.quantity), 0);
+  const isBelowMin = totalCount < 10;
+
   return (
     <>
       <SheetHeader>
@@ -22,7 +25,7 @@ const CartSheetContent = () => {
           Twój koszyk
           {items.length > 0 && (
             <span className="text-sm font-normal text-muted-foreground">
-              ({items.reduce((s, i) => s + i.quantity, 0)})
+              ({totalCount} szt.)
             </span>
           )}
         </SheetTitle>
@@ -117,6 +120,11 @@ const CartSheetContent = () => {
       {items.length > 0 && (
         <SheetFooter className="border-t border-border pt-4">
           <div className="w-full space-y-3">
+            {isBelowMin && (
+              <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-800 dark:text-amber-200">
+                ⚠️ Minimalne zamówienie: <strong>10 szt.</strong> (masz {totalCount} szt.)
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Suma częściowa</span>
               <span className="font-display text-lg font-bold">{formatPln(subtotalGrosze)}</span>
