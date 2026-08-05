@@ -14,6 +14,7 @@ import {
   Globe,
   RotateCcw
 } from "lucide-react";
+import { PostcardFront } from "@/components/postcard/PostcardFront";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -369,15 +370,15 @@ export const AdminCardCreator = ({
           {/* Section 2: Photo & Author */}
           <div className="space-y-3 bg-muted/30 p-4 rounded-xl border">
             <h3 className="font-semibold text-sm flex items-center gap-2 text-foreground">
-              <Camera className="w-4 h-4 text-primary" /> Zdjęcie & Autor
+              <Camera className="w-4 h-4 text-primary" /> 1. Okno na zdjęcie & 2. Autor zdjęcia
             </h3>
 
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">
-                Autor zdjęcia (wyświetlany po prawej na dole)
+                2. Nazwa autora zdjęcia (pionowy napis po prawej stronie zdjęcia)
               </label>
               <Input
-                placeholder="np. Jan Kowalski / Unsplash"
+                placeholder="np. @JanKowalski lub Autor zdjęcia"
                 value={photoAuthor}
                 onChange={(e) => setPhotoAuthor(e.target.value)}
               />
@@ -385,7 +386,7 @@ export const AdminCardCreator = ({
 
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">
-                Obrazek na przód (Plik lub URL)
+                1. Obrazek na przód pocztówki (Plik lub URL)
               </label>
               <div className="flex gap-2 mb-2">
                 <Input
@@ -397,7 +398,7 @@ export const AdminCardCreator = ({
                 <label className="cursor-pointer">
                   <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-medium rounded-md hover:bg-secondary/80 border transition-colors h-10">
                     <Upload className="w-3.5 h-3.5" />
-                    {isUploading ? "..." : "Plik"}
+                    {isUploading ? "..." : "Wczytaj"}
                   </span>
                   <input
                     type="file"
@@ -498,18 +499,18 @@ export const AdminCardCreator = ({
           {/* Section 3: Text Content */}
           <div className="space-y-3 bg-muted/30 p-4 rounded-xl border">
             <h3 className="font-semibold text-sm flex items-center gap-2 text-foreground">
-              <Languages className="w-4 h-4 text-primary" /> Treści Językowe
+              <Languages className="w-4 h-4 text-primary" /> 3. Miejsca do wpisania treści
             </h3>
 
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">
-                Napis na dole (Przód pod pocztówką)
+                3. Treść dolna (na dole między ikonicznymi ludzikami)
               </label>
               <Textarea
                 rows={2}
                 value={thankYouText}
                 onChange={(e) => setThankYouText(e.target.value)}
-                placeholder="DZIĘKUJĘ ŻE JESTEŚ Z NAMI!"
+                placeholder="Wpisz tutaj treść..."
               />
             </div>
 
@@ -559,92 +560,19 @@ export const AdminCardCreator = ({
           <div className="w-full flex justify-center py-2">
             {activeTab === "front" ? (
               /* FRONT OF POSTCARD CANVAS */
-              <div
-                className="relative bg-white text-slate-900 rounded-lg shadow-xl border border-slate-200 overflow-hidden select-none flex flex-col transition-all duration-300"
-                style={{
-                  width: "100%",
-                  maxWidth: "520px",
-                  aspectRatio: "1.48 / 1",
-                }}
-              >
-                {/* Top Photo Section */}
-                <div className="relative flex-1 bg-slate-100 overflow-hidden">
-                  {imageUrl ? (
-                    <div
-                      className="w-full h-full overflow-hidden"
-                      style={{
-                        position: "relative",
-                      }}
-                    >
-                      <img
-                        src={imageUrl}
-                        alt={title || "Przód pocztówki"}
-                        className="w-full h-full transition-transform duration-150 ease-out"
-                        style={{
-                          objectFit: cropMode === "auto" ? "cover" : "cover",
-                          objectPosition:
-                            cropMode === "crop"
-                              ? `${posX}% ${posY}%`
-                              : "center center",
-                          transform:
-                            cropMode === "crop" ? `scale(${zoom / 100})` : "none",
-                        }}
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 gap-2 p-6">
-                      <ImageIcon className="w-12 h-12 stroke-[1.5]" />
-                      <span className="text-xs">Brak wybranego zdjęcia</span>
-                    </div>
-                  )}
-
-                  {/* Crop Lines Overlay Indicator */}
-                  {cropMode === "crop" && (
-                    <div className="absolute inset-0 pointer-events-none border border-primary/40 border-dashed opacity-50" />
-                  )}
-                </div>
-
-                {/* Bottom White Footer Margin */}
-                <div className="relative h-14 bg-white border-t border-slate-100 px-4 flex items-center justify-between">
-                  {/* Left Hiker Outline */}
-                  <div className="flex items-center gap-1 text-slate-600">
-                    <svg className="w-7 h-7 stroke-current" viewBox="0 0 24 24" fill="none" strokeWidth="1.5">
-                      <circle cx="12" cy="5" r="2" />
-                      <path d="M10 22l2-7 3 3" />
-                      <path d="M14 22l-2-7" />
-                      <path d="M8 12l4-3 4 2" />
-                      <path d="M6 16l3-4" />
-                    </svg>
-                  </div>
-
-                  {/* Middle Thank You Text */}
-                  <div className="text-center px-2 flex-1">
-                    <p className="font-extrabold text-[11px] sm:text-[13px] tracking-wider uppercase text-slate-800 leading-tight">
-                      {thankYouText || "DZIĘKUJĘ ŻE JESTEŚ Z NAMI!"}
-                    </p>
-                  </div>
-
-                  {/* Right Photo Author & Colored Hiker */}
-                  <div className="flex items-center gap-2">
-                    {photoAuthor && (
-                      <span className="text-[9px] sm:text-[10px] text-slate-500 font-medium whitespace-nowrap">
-                        Fot. {photoAuthor}
-                      </span>
-                    )}
-
-                    {/* Colored Hiker with Backpack */}
-                    <div className="w-7 h-7 relative flex items-center justify-center">
-                      <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="5" r="2" fill="#85532b" />
-                        <rect x="7" y="9" width="3" height="5" rx="1" fill="#166534" />
-                        <path d="M10 22l2-7 3 3" stroke="#1e293b" strokeWidth="1.8" strokeLinecap="round" />
-                        <path d="M14 22l-2-7" stroke="#1e293b" strokeWidth="1.8" strokeLinecap="round" />
-                        <path d="M9 11l3-2 3 2" stroke="#1e293b" strokeWidth="1.8" strokeLinecap="round" />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
+              <div className="w-full max-w-[520px]">
+                <PostcardFront
+                  imageUrl={imageUrl}
+                  photoAuthor={photoAuthor}
+                  contentText={thankYouText}
+                  cropSettings={{
+                    fit: cropMode,
+                    zoom: zoom,
+                    x: posX,
+                    y: posY,
+                  }}
+                  showCropMarks={true}
+                />
               </div>
             ) : (
               /* BACK OF POSTCARD CANVAS */

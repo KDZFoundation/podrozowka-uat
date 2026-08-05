@@ -17,20 +17,20 @@ CREATE TABLE IF NOT EXISTS public.card_language_templates (
 ALTER TABLE public.card_language_templates ENABLE ROW LEVEL SECURITY;
 
 -- RLS policies
+DROP POLICY IF EXISTS "Everyone can view card_language_templates" ON public.card_language_templates;
 CREATE POLICY "Everyone can view card_language_templates"
   ON public.card_language_templates FOR SELECT
   USING (true);
 
+DROP POLICY IF EXISTS "Admins can manage card_language_templates" ON public.card_language_templates;
 CREATE POLICY "Admins can manage card_language_templates"
   ON public.card_language_templates FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.profiles
-      WHERE profiles.id = auth.uid() AND profiles.role = 'admin'
-    )
-  );
+  TO authenticated
+  USING (public.has_role(auth.uid(), 'admin'))
+  WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
 -- Trigger for updated_at
+DROP TRIGGER IF EXISTS trg_card_language_templates_updated_at ON public.card_language_templates;
 CREATE TRIGGER trg_card_language_templates_updated_at
   BEFORE UPDATE ON public.card_language_templates
   FOR EACH ROW

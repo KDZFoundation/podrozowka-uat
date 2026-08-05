@@ -16,7 +16,8 @@ const KNOWN_FLAGS = [
   { key: "travel_stats", name: "Statystyki Kilometrów", description: "Liczenie dystansu kartek od Warszawy", is_enabled: false },
   { key: "wall_of_connections", name: "Ściana Relacji", description: "Galeria zdjęć z rejestracji", is_enabled: false },
   { key: "travelers_journal", name: "Dziennik Ambasadora", description: "Oś czasu relacji", is_enabled: false },
-  { key: "cultural_missions", name: "Misje Kulturowe", description: "Wyzwania dla podróżników", is_enabled: false }
+  { key: "cultural_missions", name: "Misje Kulturowe", description: "Wyzwania dla podróżników", is_enabled: false },
+  { key: "cod_payment_enabled", name: "Płatność Za Pobraniem (COD)", description: "Udostępnia opcję opłacenia zamówienia przy odbiorze", is_enabled: true }
 ];
 
 const AdminLab = () => {
