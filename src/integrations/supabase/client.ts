@@ -696,7 +696,9 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
 const FORCE_CLIENT_EMULATION = false;
 
 // Wrap FunctionsClient.prototype.invoke with fallback handling & clear error unwrapping
-const FunctionsClientProto = (supabase.functions as unknown as { constructor: { prototype: { invoke: Function } } }).constructor.prototype;
+const FunctionsClientProto = (supabase.functions as unknown as {
+  constructor: { prototype: { invoke: (functionName: string, options?: InvokeOptions) => Promise<{ data: unknown; error: unknown }> } }
+}).constructor.prototype;
 const originalInvoke = FunctionsClientProto.invoke;
 
 FunctionsClientProto.invoke = async function (functionName: string, options?: InvokeOptions) {
@@ -714,7 +716,7 @@ FunctionsClientProto.invoke = async function (functionName: string, options?: In
     "admin-payment-status"
   ];
 
-  if (FORCE_CLIENT_EMULATION && emulatedFunctions.includes(name)) {
+  if (FORCE_CLIENT_EMULATION && currentEnv === "development" && emulatedFunctions.includes(name)) {
     console.log(`[Supabase Proxy] Direct emulation bypass for: ${name}`);
     try {
       return await handleFallbackInvoke(functionName, options);
@@ -793,6 +795,19 @@ FunctionsClientProto.invoke = async function (functionName: string, options?: In
     console.warn(`[Supabase Proxy] Edge Function '${functionName}' not found on server. Falling back to client-side emulation.`);
   } catch (err) {
     console.warn(`[Supabase Proxy] Edge Function '${functionName}' failed with exception:`, err);
+  }
+
+  if (currentEnv !== "development") {
+    console.error(
+      `[Supabase Proxy] Edge Function '${functionName}' failed and client-side emulation is disabled outside development (currentEnv=${currentEnv}). Returning error instead of emulating.`
+    );
+    return {
+      data: null,
+      error: {
+        message: "Usługa chwilowo niedostępna. Spróbuj ponownie za chwilę.",
+        status: 503,
+      },
+    };
   }
 
   try {
