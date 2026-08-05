@@ -156,43 +156,17 @@ interface PrintJobItem {
       doc.setLineDashPattern([1, 1], 0);
       doc.rect(x, y, stickerSize, stickerSize);
 
-      // Top mini header bar inside sticker
-      doc.setLineDashPattern([], 0);
-      doc.setDrawColor(230, 230, 230);
-      doc.line(x, y + 4.5, x + stickerSize, y + 4.5);
-
-      const country = item.inventory_units?.card_designs?.countries?.name_pl || 'PL';
-      const viewNo = item.inventory_units?.card_designs?.view_no || 1;
-      const invCode = item.inventory_units?.internal_inventory_code || '';
-
-      doc.setFontSize(5);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(30, 41, 59);
-      doc.text("PODRÓŻÓWKA", x + 1.5, y + 3.2);
-
-      doc.setFontSize(4.5);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(100, 116, 139);
-      doc.text(`${country} V${viewNo}`, x + stickerSize - 1.5, y + 3.2, { align: "right" });
-
-      // QR Code Image (centered 22mm x 22mm)
-      const qrSize = 22;
+      // QR Code Image (centered 25mm x 25mm)
+      const qrSize = 25;
       const qrX = x + (stickerSize - qrSize) / 2;
-      const qrY = y + 5.2;
+      const qrY = y + 2.5;
       doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
 
-      // Bottom claim code & inventory code
-      doc.setFontSize(5.5);
+      // Bottom claim code (e.g. PDZ-XXXX-XXXX)
+      doc.setFontSize(8);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(15, 23, 42);
-      doc.text(item.public_claim_code, x + stickerSize / 2, y + 29.5, { align: "center" });
-
-      if (invCode) {
-        doc.setFontSize(4);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(100, 116, 139);
-        doc.text(invCode, x + stickerSize / 2, y + 33, { align: "center" });
-      }
+      doc.text(item.public_claim_code, x + stickerSize / 2, y + 31.5, { align: "center" });
     }
 
     // Page numbers

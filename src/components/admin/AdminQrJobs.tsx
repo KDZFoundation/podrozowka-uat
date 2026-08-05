@@ -10,6 +10,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Loader2, QrCode, Printer, ArrowLeft, Eye, Plus, Download, CheckCheck, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -78,6 +88,8 @@ const AdminQrJobs = () => {
   const [selectedJob, setSelectedJob] = useState<PrintJob | null>(null);
   const [jobItems, setJobItems] = useState<PrintJobItem[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
+  const [jobToDelete, setJobToDelete] = useState<PrintJob | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // New job form
   const [showNewJob, setShowNewJob] = useState(false);
@@ -370,14 +382,18 @@ const AdminQrJobs = () => {
     setPdfLoading(false);
   };
 
-  const deleteJob = async (jobId: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    if (!window.confirm("Czy na pewno chcesz usunąć to zadanie druku QR? Kody dla sztuk zostaną zresetowane.")) {
-      return;
-    }
+  const confirmDeleteJob = async () => {
+    if (!jobToDelete) return;
+    const jobId = jobToDelete.id;
+    setIsDeleting(true);
 
     try {
-      // 1. Fetch job items
+      const affectedOrderIds = new Set<string>();
+      if (jobToDelete.order_id) {
+        affectedOrderIds.add(jobToDelete.order_id);
+      }
+
+      // 1. Fetch job items to reset inventory units
       const { data: items } = await supabase
         .from("qr_print_job_items")
         .select("inventory_unit_id")
@@ -386,27 +402,74 @@ const AdminQrJobs = () => {
       if (items && items.length > 0) {
         const unitIds = items.map((i) => i.inventory_unit_id).filter(Boolean);
         if (unitIds.length > 0) {
+          // Fetch order_ids from inventory_units
+          const { data: unitOrders } = await supabase
+            .from("inventory_units")
+            .select("order_id")
+            .in("id", unitIds);
+
+          if (unitOrders) {
+            unitOrders.forEach((u) => {
+              if (u.order_id) affectedOrderIds.add(u.order_id);
+            });
+          }
+
           // Reset inventory units to reserved
-          await supabase
+          const { error: resetErr } = await supabase
             .from("inventory_units")
             .update({
               public_claim_code: null,
               public_claim_token_hash: null,
               fulfillment_status: "reserved" as Database["public"]["Enums"]["fulfillment_status"],
               qr_generated_at: null,
+              qr_applied_at: null,
             })
             .in("id", unitIds);
+
+          if (resetErr) {
+            console.warn("Notice: Error resetting inventory units:", resetErr);
+          }
         }
       }
 
       // 2. Delete job items
-      await supabase.from("qr_print_job_items").delete().eq("print_job_id", jobId);
+      const { error: itemsErr } = await supabase
+        .from("qr_print_job_items")
+        .delete()
+        .eq("print_job_id", jobId);
+
+      if (itemsErr) {
+        console.error("Error deleting qr_print_job_items:", itemsErr);
+      }
 
       // 3. Delete job
-      const { error } = await supabase.from("qr_print_jobs").delete().eq("id", jobId);
+      const { error: jobErr } = await supabase
+        .from("qr_print_jobs")
+        .delete()
+        .eq("id", jobId);
 
-      if (error) {
-        throw error;
+      if (jobErr) {
+        throw jobErr;
+      }
+
+      // 4. Update order status for affected orders back to 'paid' (W przygotowaniu)
+      for (const orderId of affectedOrderIds) {
+        const { data: ord } = await supabase
+          .from("orders")
+          .select("payment_status, status")
+          .eq("id", orderId)
+          .single();
+
+        if (ord) {
+          const targetStatus = ord.payment_status === "paid" ? "paid" : "pending";
+          await supabase
+            .from("orders")
+            .update({
+              status: targetStatus as Database["public"]["Enums"]["order_status"],
+              fulfilled_at: null,
+            })
+            .eq("id", orderId);
+        }
       }
 
       toast({ title: "Usunięto zadanie druku QR" });
@@ -414,10 +477,17 @@ const AdminQrJobs = () => {
         setSelectedJob(null);
         setJobItems([]);
       }
+      setJobToDelete(null);
       fetchJobs();
     } catch (err) {
       console.error("Error deleting QR job:", err);
-      toast({ title: "Błąd podczas usuwania zadania", description: err instanceof Error ? err.message : "Nieznany błąd", variant: "destructive" });
+      toast({
+        title: "Błąd podczas usuwania zadania",
+        description: err instanceof Error ? err.message : "Nieznany błąd",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -457,7 +527,7 @@ const AdminQrJobs = () => {
                   <CheckCheck className="w-4 h-4" /> Naklejone (applied)
                 </Button>
               )}
-              <Button size="sm" variant="destructive" onClick={() => deleteJob(selectedJob.id)} className="gap-2">
+              <Button size="sm" variant="destructive" onClick={() => setJobToDelete(selectedJob)} className="gap-2">
                 <Trash2 className="w-4 h-4" /> Usuń
               </Button>
             </div>
@@ -505,6 +575,32 @@ const AdminQrJobs = () => {
             </div>
           )}
         </div>
+
+        <AlertDialog open={!!jobToDelete} onOpenChange={(open) => { if (!open && !isDeleting) setJobToDelete(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Usunąć zadanie druku QR?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Czy na pewno chcesz usunąć zadanie <strong>{jobToDelete?.name}</strong>?
+                Kody QR dla sztuk w tym zadaniu zostaną wyczyszczone, a sztuki przywrócone do stanu zarezerwowanego.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Anuluj</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault();
+                  confirmDeleteJob();
+                }}
+                disabled={isDeleting}
+                className="bg-destructive hover:bg-destructive/90 text-destructive-foreground gap-2"
+              >
+                {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Usuń zadanie
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     );
   }
@@ -621,7 +717,10 @@ const AdminQrJobs = () => {
                         size="sm"
                         variant="ghost"
                         className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                        onClick={(e) => deleteJob(job.id, e)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setJobToDelete(job);
+                        }}
                         title="Usuń zadanie"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -634,6 +733,32 @@ const AdminQrJobs = () => {
           </table>
         </div>
       )}
+
+      <AlertDialog open={!!jobToDelete} onOpenChange={(open) => { if (!open && !isDeleting) setJobToDelete(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Usunąć zadanie druku QR?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Czy na pewno chcesz usunąć zadanie <strong>{jobToDelete?.name}</strong>?
+              Kody QR dla sztuk w tym zadaniu zostaną wyczyszczone, a sztuki przywrócone do stanu zarezerwowanego.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Anuluj</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDeleteJob();
+              }}
+              disabled={isDeleting}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground gap-2"
+            >
+              {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              Usuń zadanie
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

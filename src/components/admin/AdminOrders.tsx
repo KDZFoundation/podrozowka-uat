@@ -114,7 +114,7 @@ interface ConfirmCodResponse {
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   pending: { label: "Oczekujące", className: "bg-muted text-muted-foreground" },
-  paid: { label: "Opłacone", className: "bg-[hsl(var(--gold))]/15 text-[hsl(var(--gold))]" },
+  paid: { label: "W przygotowaniu", className: "bg-[hsl(var(--gold))]/15 text-[hsl(var(--gold))]" },
   fulfilled: { label: "Zrealizowane", className: "bg-accent/15 text-accent" },
   cancelled: { label: "Anulowane", className: "bg-destructive/15 text-destructive" },
 };

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, Check, X, Globe2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Globe2, Sparkles, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { WORLD_COUNTRIES } from "@/data/worldCountries";
 
 interface Country {
   id: string;
@@ -19,6 +20,8 @@ interface Country {
 const AdminCountries = () => {
   const [countries, setCountries] = useState<Country[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSeeding, setIsSeeding] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const { toast } = useToast();
@@ -42,6 +45,41 @@ const AdminCountries = () => {
     setForm({ iso2: '', iso3: '', name_pl: '', slug: '', active: true });
     setEditingId(null);
     setShowAdd(false);
+  };
+
+  const handleSeedAllWorldCountries = async () => {
+    setIsSeeding(true);
+    try {
+      // Chunking upserts in batches of 50 for safety
+      const batchSize = 50;
+      let successCount = 0;
+
+      for (let i = 0; i < WORLD_COUNTRIES.length; i += batchSize) {
+        const batch = WORLD_COUNTRIES.slice(i, i + batchSize);
+        const { error } = await supabase
+          .from('countries')
+          .upsert(batch, { onConflict: 'iso2' });
+
+        if (error) {
+          throw error;
+        }
+        successCount += batch.length;
+      }
+
+      toast({
+        title: "Słownik krajów zaktualizowany!",
+        description: `Pomyślnie zaimportowano/zaktualizowano ${successCount} krajów świata.`,
+      });
+      fetchCountries();
+    } catch (err) {
+      toast({
+        title: "Błąd importu krajów",
+        description: (err as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSeeding(false);
+    }
   };
 
   const handleSave = async () => {
@@ -101,17 +139,62 @@ const AdminCountries = () => {
     fetchCountries();
   };
 
-  if (isLoading) return <div className="animate-pulse text-muted-foreground text-center py-8">Ładowanie...</div>;
+  const filteredCountries = countries.filter((c) => {
+    const q = searchQuery.toLowerCase().trim();
+    if (!q) return true;
+    return (
+      c.name_pl.toLowerCase().includes(q) ||
+      c.iso2.toLowerCase().includes(q) ||
+      (c.iso3 && c.iso3.toLowerCase().includes(q))
+    );
+  });
+
+  if (isLoading) return <div className="animate-pulse text-muted-foreground text-center py-8">Ładowanie krajów...</div>;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-xl font-bold text-foreground flex items-center gap-2">
-          <Globe2 className="w-5 h-5 text-primary" /> Kraje ({countries.length})
-        </h2>
-        <Button size="sm" onClick={() => { resetForm(); setShowAdd(true); }}>
-          <Plus className="w-4 h-4 mr-1" /> Dodaj kraj
-        </Button>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4">
+        <div>
+          <h2 className="font-display text-xl font-bold text-foreground flex items-center gap-2">
+            <Globe2 className="w-5 h-5 text-primary" /> Słownik Kraje ({countries.length})
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Zarządzaj bazą wszystkich państw i terytoriów świata dostępnych w systemie.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSeedAllWorldCountries}
+            disabled={isSeeding}
+            className="gap-1.5 text-xs text-primary border-primary/30 hover:bg-primary/5"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            {isSeeding ? "Importowanie..." : `Zaimportuj Kraje Świata (${WORLD_COUNTRIES.length})`}
+          </Button>
+
+          <Button size="sm" onClick={() => { resetForm(); setShowAdd(true); }}>
+            <Plus className="w-4 h-4 mr-1" /> Dodaj Kraj
+          </Button>
+        </div>
+      </div>
+
+      {/* Filter / Search Bar */}
+      <div className="flex items-center gap-2 bg-card p-2 rounded-lg border shadow-xs">
+        <Search className="w-4 h-4 text-muted-foreground ml-2" />
+        <Input
+          placeholder="Szukaj kraju wg nazwy, ISO2 lub ISO3..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="border-0 shadow-none focus-visible:ring-0 text-sm h-8"
+        />
+        {searchQuery && (
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setSearchQuery("")}>
+            <X className="w-3.5 h-3.5" />
+          </Button>
+        )}
       </div>
 
       {/* Add/Edit form */}
@@ -120,26 +203,26 @@ const AdminCountries = () => {
           className="bg-card rounded-xl p-4 shadow-soft border border-border space-y-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className="text-xs text-muted-foreground">ISO2 *</label>
+              <label className="text-xs text-muted-foreground block mb-1">Kod ISO2 *</label>
               <Input value={form.iso2} onChange={(e) => setForm({ ...form, iso2: e.target.value.toUpperCase() })} placeholder="PL" maxLength={2} />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">ISO3</label>
+              <label className="text-xs text-muted-foreground block mb-1">Kod ISO3</label>
               <Input value={form.iso3} onChange={(e) => setForm({ ...form, iso3: e.target.value.toUpperCase() })} placeholder="POL" maxLength={3} />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">Nazwa (PL) *</label>
+              <label className="text-xs text-muted-foreground block mb-1">Nazwa Polska *</label>
               <Input value={form.name_pl} onChange={(e) => setForm({ ...form, name_pl: e.target.value })} placeholder="Polska" />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">Slug</label>
+              <label className="text-xs text-muted-foreground block mb-1">Slug URL</label>
               <Input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="polska" />
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-3 pt-1">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} className="rounded" />
-              Aktywny
+              Aktywny w systemie
             </label>
             <div className="flex-1" />
             <Button variant="outline" size="sm" onClick={resetForm}><X className="w-4 h-4 mr-1" />Anuluj</Button>
@@ -149,40 +232,63 @@ const AdminCountries = () => {
       )}
 
       {/* Table */}
-      <div className="bg-card rounded-xl shadow-soft overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-card rounded-xl shadow-soft border overflow-hidden">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left p-3 font-medium text-muted-foreground">ISO2</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">ISO3</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Nazwa</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Slug</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
-                <th className="text-right p-3 font-medium text-muted-foreground">Akcje</th>
+            <thead className="sticky top-0 bg-muted/80 backdrop-blur-xs z-10">
+              <tr className="border-b border-border text-xs text-muted-foreground uppercase font-medium">
+                <th className="text-left p-3">Flaga / ISO2</th>
+                <th className="text-left p-3">ISO3</th>
+                <th className="text-left p-3">Nazwa (PL)</th>
+                <th className="text-left p-3">Slug</th>
+                <th className="text-left p-3">Status</th>
+                <th className="text-right p-3">Akcje</th>
               </tr>
             </thead>
-            <tbody>
-              {countries.map((c) => (
-                <tr key={c.id} className="border-b border-border/50 hover:bg-muted/30">
-                  <td className="p-3 font-mono">{c.iso2}</td>
-                  <td className="p-3 font-mono text-muted-foreground">{c.iso3 || '—'}</td>
-                  <td className="p-3 font-medium">{c.name_pl}</td>
-                  <td className="p-3 text-muted-foreground">{c.slug}</td>
+            <tbody className="divide-y">
+              {filteredCountries.map((c) => (
+                <tr key={c.id} className="hover:bg-muted/30 transition-colors">
+                  <td className="p-3 font-mono font-bold flex items-center gap-2">
+                    <img
+                      src={`https://flagcdn.com/w40/${c.iso2.toLowerCase()}.png`}
+                      alt={c.iso2}
+                      className="w-5 h-3.5 object-cover rounded-xs border shadow-2xs"
+                      onError={(e) => (e.currentTarget.style.display = 'none')}
+                    />
+                    <span>{c.iso2}</span>
+                  </td>
+                  <td className="p-3 font-mono text-xs text-muted-foreground">{c.iso3 || '—'}</td>
+                  <td className="p-3 font-semibold">{c.name_pl}</td>
+                  <td className="p-3 text-xs text-muted-foreground font-mono">{c.slug || '—'}</td>
                   <td className="p-3">
                     <button onClick={() => toggleActive(c.id, c.active)}
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer ${c.active ? 'bg-accent/15 text-accent' : 'bg-muted text-muted-foreground'}`}>
+                      className={`px-2.5 py-0.5 rounded-full text-xs font-medium cursor-pointer ${
+                        c.active
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                          : 'bg-muted text-muted-foreground'
+                      }`}>
                       {c.active ? 'Aktywny' : 'Nieaktywny'}
                     </button>
                   </td>
                   <td className="p-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => handleEdit(c)} className="p-1.5 rounded hover:bg-muted"><Pencil className="w-4 h-4 text-muted-foreground" /></button>
-                      <button onClick={() => handleDelete(c.id)} className="p-1.5 rounded hover:bg-destructive/10"><Trash2 className="w-4 h-4 text-destructive" /></button>
+                      <button onClick={() => handleEdit(c)} className="p-1.5 rounded hover:bg-muted" title="Edytuj">
+                        <Pencil className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                      <button onClick={() => handleDelete(c.id)} className="p-1.5 rounded hover:bg-destructive/10" title="Usuń">
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </button>
                     </div>
                   </td>
                 </tr>
               ))}
+              {filteredCountries.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                    Brak wyników wyszukiwania. Kliknij "Zaimportuj Kraje Świata", aby automatycznie dodać całą bazę!
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
