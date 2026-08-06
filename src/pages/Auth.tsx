@@ -324,6 +324,9 @@ const Auth = ({ mode = "login" }: AuthProps) => {
                           provider: "google",
                           options: {
                             redirectTo: oauthRedirectUri,
+                            queryParams: {
+                              prompt: "select_account",
+                            },
                           },
                         });
                         if (error) {
