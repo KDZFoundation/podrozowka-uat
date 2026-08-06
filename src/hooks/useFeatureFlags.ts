@@ -6,7 +6,10 @@ export type FeatureFlagKey =
   | "wall_of_connections"
   | "travelers_journal"
   | "cultural_missions"
-  | "cod_payment_enabled";
+  | "cod_payment_enabled"
+  | "inpost_shipping_enabled"
+  | "orlen_paczka_enabled"
+  | "pocztex_shipping_enabled";
 
 export type FeatureFlags = Record<FeatureFlagKey, boolean>;
 
@@ -16,6 +19,9 @@ const DEFAULT_FLAGS: FeatureFlags = {
   travelers_journal: false,
   cultural_missions: false,
   cod_payment_enabled: true,
+  inpost_shipping_enabled: true,
+  orlen_paczka_enabled: true,
+  pocztex_shipping_enabled: true,
 };
 
 interface FeatureFlagRow {

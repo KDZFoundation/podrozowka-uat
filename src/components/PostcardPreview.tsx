@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { RotateCcw } from "lucide-react";
 import krakowImage from "@/assets/krakow-square.jpg";
+import { PostcardBack } from "@/components/postcard/PostcardBack";
 
 const PostcardPreview = () => {
   const [isFlipped, setIsFlipped] = useState(false);
@@ -64,52 +65,10 @@ const PostcardPreview = () => {
 
               {/* Back of card */}
               <div 
-                className="absolute inset-0 bg-card rounded-xl shadow-elevated p-4 md:p-6 flex flex-col"
+                className="absolute inset-0 bg-white rounded-xl shadow-elevated overflow-hidden"
                 style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
               >
-                {/* Header */}
-                <div className="text-center mb-3">
-                  <p className="font-display text-lg font-bold text-foreground">Podróżówka</p>
-                  <p className="text-xs text-muted-foreground">Odwrócona pocztówka z Polski</p>
-                </div>
-
-                <div className="flex-1 flex gap-3">
-                  {/* Mini Europe map */}
-                  <div className="w-1/3 bg-secondary rounded-lg p-2 flex flex-col items-center justify-center">
-                    <svg viewBox="0 0 100 80" className="w-full h-auto">
-                      {/* Simplified Europe outline */}
-                      <path 
-                        d="M20,20 Q30,10 50,15 Q70,10 80,25 Q85,40 75,55 Q60,70 40,65 Q20,60 15,45 Q10,30 20,20" 
-                        fill="hsl(var(--muted))" 
-                        stroke="hsl(var(--border))" 
-                        strokeWidth="1"
-                      />
-                      {/* Poland highlighted */}
-                      <circle cx="55" cy="35" r="6" fill="hsl(var(--primary))" />
-                      <text x="55" y="38" textAnchor="middle" fontSize="5" fill="hsl(var(--primary-foreground))" fontWeight="bold">PL</text>
-                    </svg>
-                    <p className="text-[10px] text-muted-foreground mt-1">Europa</p>
-                  </div>
-
-                  {/* Message area */}
-                  <div className="flex-1 flex flex-col">
-                    <div className="flex-1 border border-dashed border-border rounded-lg p-2 mb-2">
-                      <p className="text-[10px] text-muted-foreground mb-1">Miejsce na wiadomość:</p>
-                      <div className="space-y-1">
-                        <div className="h-2 bg-muted/50 rounded w-full" />
-                        <div className="h-2 bg-muted/50 rounded w-4/5" />
-                        <div className="h-2 bg-muted/50 rounded w-3/5" />
-                      </div>
-                    </div>
-                    
-                    {/* Author info */}
-                    <div className="bg-secondary/50 rounded p-2">
-                      <p className="text-[9px] text-muted-foreground">Fotografia:</p>
-                      <p className="text-[10px] text-foreground font-medium">Kraków, Rynek Główny</p>
-                      <p className="text-[9px] text-muted-foreground">© Jan Kowalski</p>
-                    </div>
-                  </div>
-                </div>
+                <PostcardBack showCropMarks={false} className="p-2 w-full h-full" />
               </div>
             </motion.div>
 

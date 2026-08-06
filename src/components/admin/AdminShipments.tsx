@@ -27,6 +27,8 @@ interface ShipmentRow {
   shipped_at: string | null;
   delivered_at: string | null;
   created_at: string;
+  inpost_shipment_id?: string | null;
+  size?: string | null;
 }
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -57,12 +59,14 @@ const AdminShipments = () => {
 
   // Detail
   const [selectedShipment, setSelectedShipment] = useState<ShipmentRow | null>(null);
+  const [selectedParcelSize, setSelectedParcelSize] = useState<"small" | "medium" | "large">("small");
+  const [isGeneratingInpost, setIsGeneratingInpost] = useState(false);
 
   const fetchShipments = useCallback(async () => {
     setIsLoading(true);
     let query = supabase
       .from("shipments")
-      .select("id, order_id, user_id, status, tracking_number, carrier, shipped_at, delivered_at, created_at")
+      .select("id, order_id, user_id, status, tracking_number, carrier, shipped_at, delivered_at, created_at, inpost_shipment_id, size")
       .order("created_at", { ascending: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
@@ -145,6 +149,51 @@ const AdminShipments = () => {
       fetchShipments();
     }
     setIsCreating(false);
+  };
+
+  const generateInpostShipment = async (orderId: string, size: string = "small") => {
+    setIsGeneratingInpost(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-inpost-shipment", {
+        body: { order_id: orderId, size },
+      });
+
+      if (error) {
+        toast({
+          title: "Błąd integracji InPost ShipX",
+          description: error.message || "Nie udało się połączyć z funkcją brzegową.",
+          variant: "destructive",
+        });
+      } else if (data?.error) {
+        toast({
+          title: "Błąd InPost ShipX",
+          description: typeof data.error === "string" ? data.error : JSON.stringify(data.error),
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Przesyłka zarejestrowana w InPost Sandbox!",
+          description: `Numer przesyłki: ${data.shipment?.tracking_number || data.tracking_number}`,
+        });
+        fetchShipments();
+        if (selectedShipment) {
+          setSelectedShipment({
+            ...selectedShipment,
+            tracking_number: data.shipment?.tracking_number || data.tracking_number,
+            carrier: "InPost",
+            inpost_shipment_id: data.shipment?.inpost_shipment_id || data.shipx_response?.id,
+          });
+        }
+      }
+    } catch (err: unknown) {
+      toast({
+        title: "Błąd wywołania",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingInpost(false);
+    }
   };
 
   const updateStatus = async (shipmentId: string, status: string) => {
@@ -242,6 +291,44 @@ const AdminShipments = () => {
                 placeholder="np. InPost, DPD"
               />
             </div>
+          </div>
+
+          <div className="border-t border-border pt-4 mt-2">
+            <h4 className="font-semibold text-sm mb-3 text-foreground flex items-center gap-2">
+              <Truck className="w-4 h-4 text-primary" /> Generowanie przesyłki InPost ShipX (Sandbox)
+            </h4>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="w-[180px]">
+                <label className="text-xs text-muted-foreground block mb-1">Gabaryt paczki:</label>
+                <Select value={selectedParcelSize} onValueChange={(v: "small" | "medium" | "large") => setSelectedParcelSize(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="small">Gabaryt A (Mała)</SelectItem>
+                    <SelectItem value="medium">Gabaryt B (Średnia)</SelectItem>
+                    <SelectItem value="large">Gabaryt C (Duża)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="pt-5">
+                <Button
+                  onClick={() => generateInpostShipment(selectedShipment.order_id, selectedParcelSize)}
+                  disabled={isGeneratingInpost}
+                  className="gap-2"
+                >
+                  {isGeneratingInpost ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Truck className="w-4 h-4" />
+                  )}
+                  Zgłoś w InPost ShipX
+                </Button>
+              </div>
+            </div>
+            {selectedShipment.inpost_shipment_id && (
+              <p className="text-xs text-muted-foreground mt-2 font-mono">
+                ID przesyłki InPost: {selectedShipment.inpost_shipment_id}
+              </p>
+            )}
           </div>
         </div>
       </div>

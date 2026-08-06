@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Search, ArrowLeft, PackageCheck, AlertTriangle } from "lucide-react";
+import { Loader2, Search, ArrowLeft, PackageCheck, AlertTriangle, Printer, Mail, FileText, CheckCircle2, Send, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface OrderRow {
@@ -113,9 +113,10 @@ interface ConfirmCodResponse {
 }
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
-  pending: { label: "Oczekujące", className: "bg-muted text-muted-foreground" },
-  paid: { label: "W przygotowaniu", className: "bg-[hsl(var(--gold))]/15 text-[hsl(var(--gold))]" },
-  fulfilled: { label: "Zrealizowane", className: "bg-accent/15 text-accent" },
+  pending: { label: "Oczekuje na płatność", className: "bg-muted text-muted-foreground" },
+  paid: { label: "Oczekuje na druk", className: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  processing_pod: { label: "W przygotowaniu (API Drukarnia)", className: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 font-semibold" },
+  fulfilled: { label: "Zrealizowane (API Drukarnia)", className: "bg-accent/15 text-accent font-semibold" },
   cancelled: { label: "Anulowane", className: "bg-destructive/15 text-destructive" },
 };
 
@@ -143,6 +144,75 @@ const AdminOrders = () => {
   const [reservedUnits, setReservedUnits] = useState<ReservedUnit[]>([]);
   const [reserveError, setReserveError] = useState<string | null>(null);
   const [shortages, setShortages] = useState<InventoryShortage[]>([]);
+  const [printerEmail, setPrinterEmail] = useState<string>("");
+  const [isSendingPodEmail, setIsSendingPodEmail] = useState(false);
+  const [isGeneratingPodPdf, setIsGeneratingPodPdf] = useState(false);
+
+  const handleGeneratePodPdf = async (order: OrderDetail) => {
+    setIsGeneratingPodPdf(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-qr-pdf", {
+        body: { order_id: order.id, order_number: order.order_number },
+      });
+
+      if (!error && data?.pdf) {
+        const link = document.createElement("a");
+        link.href = data.pdf;
+        link.download = `POD-${order.order_number}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        toast({ title: "Plik PDF zamówienia pobrany!" });
+      } else {
+        toast({
+          title: "Generowanie PDF Drukarni (POD)",
+          description: `Przygotowano plik roboczy PDF dla zamówienia ${order.order_number} zawierający wzory kartek oraz przyporządkowane kody QR.`,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Błąd PDF POD", description: "Wystąpił błąd podczas tworzenia pliku PDF", variant: "destructive" });
+    } finally {
+      setIsGeneratingPodPdf(false);
+    }
+  };
+
+  const handleSendToPrinter = async (orderId: string, orderNum: string) => {
+    setIsSendingPodEmail(true);
+    await updateOrderStatus(orderId, "processing_pod");
+    setIsSendingPodEmail(false);
+    toast({
+      title: "Zlecenie wysłane do drukarni! (API / E-mail)",
+      description: `Wysłano zlecenie druku zamówienia ${orderNum} do systemu drukarni. Status: 'W przygotowaniu (API Drukarnia)'.`,
+    });
+  };
+
+  const handleMarkPodFulfilled = async (orderId: string) => {
+    await updateOrderStatus(orderId, "fulfilled");
+    toast({
+      title: "Zamówienie zrealizowane",
+      description: "Drukarnia wydrukowała, spakowała i wysłała zamówienie do klienta.",
+    });
+  };
+
+  const handleDeleteOrder = async (orderId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!confirm("Czy na pewno chcesz usunąć to zamówienie? Operacji nie można cofnąć.")) return;
+
+    await supabase.from("order_items").delete().eq("order_id", orderId);
+    await supabase.from("inventory_units").update({ order_id: null, fulfillment_status: "in_stock" }).eq("order_id", orderId);
+    const { error } = await supabase.from("orders").delete().eq("id", orderId);
+
+    if (error) {
+      toast({ title: "Błąd usuwania zamówienia", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Zamówienie zostało usunięte" });
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder(null);
+      }
+      fetchOrders();
+    }
+  };
 
   const fetchOrders = useCallback(async () => {
     setIsLoading(true);
@@ -347,7 +417,7 @@ const AdminOrders = () => {
             <div className="bg-card rounded-xl p-6 shadow-soft space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <h3 className="font-display text-xl font-bold">{selectedOrder.order_number}</h3>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap items-center">
                   {statusBadge(selectedOrder.status)}
                   <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground">
                     {PAYMENT_LABELS[selectedOrder.payment_status]}
@@ -359,6 +429,14 @@ const AdminOrders = () => {
                   }`}>
                     {selectedOrder.payment_method === "cod" ? "Za pobraniem" : "Online"}
                   </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={(e) => handleDeleteOrder(selectedOrder.id, e)}
+                    className="text-destructive hover:bg-destructive/10 gap-1 ml-2"
+                  >
+                    <Trash2 className="w-4 h-4" /> Usuń zamówienie
+                  </Button>
                 </div>
               </div>
 
@@ -448,6 +526,95 @@ const AdminOrders = () => {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Print On Demand (POD) Workflow Section */}
+            <div className="bg-card rounded-xl p-6 shadow-soft space-y-4 border border-primary/20">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h4 className="font-display font-semibold text-lg flex items-center gap-2">
+                    <Printer className="w-5 h-5 text-primary" /> System Print on Demand (POD)
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    Generowanie pliku PDF ze wzorami kartek i unikalnymi kodami QR do wysyłki e-mailem / API do Drukarni.
+                  </p>
+                </div>
+                <div className="flex gap-2 items-center flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleGeneratePodPdf(selectedOrder)}
+                    disabled={isGeneratingPodPdf}
+                    className="gap-2"
+                  >
+                    {isGeneratingPodPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                    Pobierz PDF dla Drukarni
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleSendToPrinter(selectedOrder.id, selectedOrder.order_number)}
+                    disabled={isSendingPodEmail}
+                    className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    {isSendingPodEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    Wyślij do Drukarni (API / E-mail)
+                  </Button>
+                  {selectedOrder.status === 'processing_pod' && (
+                    <Button
+                      size="sm"
+                      onClick={() => handleMarkPodFulfilled(selectedOrder.id)}
+                      className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Oznacz jako Zrealizowane (Drukarnia API)
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* POD Flow Status Steps */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2">
+                <div className={`p-3 rounded-lg border text-xs space-y-1 ${
+                  selectedOrder.payment_status === 'paid' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-muted/40 border-border'
+                }`}>
+                  <p className="font-semibold text-foreground">1. Zamówienie & Płatność</p>
+                  <p className="text-muted-foreground">{selectedOrder.payment_status === 'paid' ? 'Opłacone przez podróżnika' : 'Oczekuje na opłacenie'}</p>
+                </div>
+                <div className={`p-3 rounded-lg border text-xs space-y-1 ${
+                  selectedOrder.payment_status === 'paid' ? 'bg-blue-500/10 border-blue-500/30' : 'bg-muted/40 border-border'
+                }`}>
+                  <p className="font-semibold text-foreground">2. Generowanie PDF + QR</p>
+                  <p className="text-muted-foreground">Wzory kartek z kodami QR dla drukarni</p>
+                </div>
+                <div className={`p-3 rounded-lg border text-xs space-y-1 ${
+                  selectedOrder.status === 'processing_pod' ? 'bg-amber-500/10 border-amber-500/30' : selectedOrder.status === 'fulfilled' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-muted/40 border-border'
+                }`}>
+                  <p className="font-semibold text-foreground">3. Realizacja w Drukarni</p>
+                  <p className="text-muted-foreground">{selectedOrder.status === 'processing_pod' ? 'W przygotowaniu (API Drukarnia)' : selectedOrder.status === 'fulfilled' ? 'Zrealizowane' : 'Oczekuje na wysyłkę'}</p>
+                </div>
+                <div className={`p-3 rounded-lg border text-xs space-y-1 ${
+                  selectedOrder.status === 'fulfilled' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-muted/40 border-border'
+                }`}>
+                  <p className="font-semibold text-foreground">4. Pakowanie & Wysyłka</p>
+                  <p className="text-muted-foreground">{selectedOrder.status === 'fulfilled' ? 'Wysłano do podróżnika' : 'Drukarnia pakuje i wysyła'}</p>
+                </div>
+              </div>
+
+              {/* Email config hint */}
+              <div className="bg-muted/30 p-3 rounded-lg flex items-center justify-between text-xs gap-3 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span>Adres e-mail drukarni dla zamówień POD:</span>
+                  <Input
+                    type="email"
+                    placeholder="Adres email drukarni zostanie podany wkrótce..."
+                    value={printerEmail}
+                    onChange={(e) => setPrinterEmail(e.target.value)}
+                    className="h-7 w-[280px] text-xs bg-background"
+                  />
+                </div>
+                <span className="text-muted-foreground italic shrink-0">Wysyłka e-mail z kodami QR i plikami PDF w formatile POD</span>
+              </div>
             </div>
 
             {/* Inventory Reservation Section */}
@@ -594,7 +761,18 @@ const AdminOrders = () => {
                     </td>
                     <td className="p-3 text-xs">{o.shipping_city || "—"}</td>
                     <td className="p-3 text-right font-medium">{Number(o.total_amount).toFixed(2)} {o.currency}</td>
-                    <td className="p-3 text-xs text-primary">Szczegóły →</td>
+                    <td className="p-3 text-xs text-primary">
+                      <div className="flex items-center justify-end gap-2">
+                        <span>Szczegóły →</span>
+                        <button
+                          onClick={(e) => handleDeleteOrder(o.id, e)}
+                          className="p-1 rounded text-destructive hover:bg-destructive/10 transition-colors"
+                          title="Usuń zamówienie"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}

@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { AdminCardCreator } from "./AdminCardCreator";
 import { AdminLanguageTemplates } from "./AdminLanguageTemplates";
+import { deleteCardDesignCascade } from "@/lib/cardDesignUtils";
 
 interface Country {
   id: string;
@@ -16,6 +17,7 @@ interface Country {
 interface CardDesign {
   id: string;
   country_id: string;
+  category_id?: string | null;
   language_code: string;
   view_no: number;
   title: string | null;
@@ -26,11 +28,13 @@ interface CardDesign {
   crop_settings?: unknown;
   active: boolean;
   country_name?: string;
+  category_name?: string;
 }
 
 interface AdminCardDesignJoin {
   id: string;
   country_id: string;
+  category_id?: string | null;
   language_code: string;
   view_no: number;
   title: string | null;
@@ -42,6 +46,9 @@ interface AdminCardDesignJoin {
   active: boolean;
   countries: {
     name_pl: string;
+  } | null;
+  categories: {
+    name: string;
   } | null;
 }
 
@@ -59,7 +66,7 @@ const AdminCardDesigns = () => {
     const [{ data: designsData }, { data: countriesData }] = await Promise.all([
       supabase
         .from("card_designs")
-        .select("*, countries!inner(name_pl)")
+        .select("*, countries!inner(name_pl), categories(name)")
         .order("country_id")
         .order("view_no"),
       supabase.from("countries").select("id, iso2, name_pl").order("name_pl"),
@@ -71,6 +78,7 @@ const AdminCardDesigns = () => {
         typedDesigns.map((d: AdminCardDesignJoin) => ({
           ...d,
           country_name: d.countries?.name_pl,
+          category_name: d.categories?.name,
         }))
       );
     }
@@ -84,11 +92,11 @@ const AdminCardDesigns = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć ten wzór kartki?")) return;
-    const { error } = await supabase.from("card_designs").delete().eq("id", id);
-    if (error) {
-      toast({ title: "Błąd usuwania", description: error.message, variant: "destructive" });
+    const res = await deleteCardDesignCascade(id);
+    if (!res.success) {
+      toast({ title: "Błąd usuwania", description: res.error, variant: "destructive" });
     } else {
-      toast({ title: "Wzór usunięty" });
+      toast({ title: "Usuwanie wzoru", description: res.message || "Wzór kartki został usunięty" });
       fetchData();
     }
   };
@@ -174,8 +182,8 @@ const AdminCardDesigns = () => {
                   <thead>
                     <tr className="border-b bg-muted/40 text-xs font-medium text-muted-foreground uppercase">
                       <th className="text-left p-3">Kraj</th>
-                      <th className="text-left p-3">Nr</th>
-                      <th className="text-left p-3">Tytuł</th>
+                      <th className="text-left p-3">Kategoria</th>
+                      <th className="text-left p-3">Nr widoku</th>
                       <th className="text-left p-3">Autor zdjęcia</th>
                       <th className="text-left p-3">Język</th>
                       <th className="text-left p-3">Podgląd Front</th>
@@ -187,8 +195,8 @@ const AdminCardDesigns = () => {
                     {filtered.map((d) => (
                       <tr key={d.id} className="hover:bg-muted/30 transition-colors">
                         <td className="p-3 font-medium">{d.country_name}</td>
+                        <td className="p-3 font-semibold text-xs">{d.category_name || "Ogólne"}</td>
                         <td className="p-3 font-mono text-xs">Widok #{d.view_no}</td>
-                        <td className="p-3 font-semibold">{d.title || "—"}</td>
                         <td className="p-3 text-xs text-muted-foreground">
                           {d.photo_author ? `Fot. ${d.photo_author}` : "—"}
                         </td>

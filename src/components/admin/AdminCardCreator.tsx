@@ -8,10 +8,12 @@ import {
   Languages,
   Sliders,
   Eye,
+  QrCode,
   Sparkles,
   Camera,
   Globe,
-  RotateCcw
+  RotateCcw,
+  Trash2,
 } from "lucide-react";
 import { PostcardFront } from "@/components/postcard/PostcardFront";
 import { PostcardBack } from "@/components/postcard/PostcardBack";
@@ -22,6 +24,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { deleteCardDesignCascade } from "@/lib/cardDesignUtils";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -29,6 +32,12 @@ interface Country {
   id: string;
   iso2: string;
   name_pl: string;
+}
+
+interface Category {
+  id: string;
+  name: string;
+  slug: string;
 }
 
 interface LanguageTemplate {
@@ -51,9 +60,10 @@ interface CardCreatorProps {
   initialDesign?: {
     id?: string;
     country_id: string;
+    category_id?: string | null;
     language_code: string;
     view_no: number;
-    title: string | null;
+    title?: string | null;
     thank_you_text: string | null;
     image_front_url: string | null;
     photo_author: string | null;
@@ -72,6 +82,7 @@ export const AdminCardCreator = ({
   onCancel,
 }: CardCreatorProps) => {
   const [countries, setCountries] = useState<Country[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [langTemplates, setLangTemplates] = useState<LanguageTemplate[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -80,19 +91,18 @@ export const AdminCardCreator = ({
 
   // Form State
   const [countryId, setCountryId] = useState(initialDesign?.country_id || "");
+  const [categoryId, setCategoryId] = useState<string>(initialDesign?.category_id || "");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
   const [languageCode, setLanguageCode] = useState(initialDesign?.language_code || "pl");
   const [viewNo, setViewNo] = useState(initialDesign?.view_no || 1);
-  const [title, setTitle] = useState(initialDesign?.title || "");
   const [thankYouText, setThankYouText] = useState(
-    initialDesign?.thank_you_text || "DZIĘKUJĘ ŻE JESTEŚ Z NAMI!"
+    initialDesign?.thank_you_text || "miejsce do wpisania treści podziękowania (w danym języku)"
   );
   const [backQrLabel, setBackQrLabel] = useState(
-    initialDesign?.back_qr_label || "Podziękuj autorowi za pocztówkę"
+    initialDesign?.back_qr_label || "miejsce na wpisanie treści zeskanowania kodu (w danym języku)"
   );
   const [photoAuthor, setPhotoAuthor] = useState(initialDesign?.photo_author || "");
   const [imageUrl, setImageUrl] = useState(initialDesign?.image_front_url || "");
-  const [priceGrosze, setPriceGrosze] = useState<number>(initialDesign?.price_grosze || 1500);
   const [active, setActive] = useState(initialDesign?.active ?? true);
 
   // Crop Settings State
@@ -107,15 +117,17 @@ export const AdminCardCreator = ({
   const [posX, setPosX] = useState<number>(parsedCrop.x ?? 50);
   const [posY, setPosY] = useState<number>(parsedCrop.y ?? 50);
 
-  // Fetch Countries & Templates
+  // Fetch Countries, Categories & Templates
   const loadData = useCallback(async () => {
-    const [{ data: cData }, { data: tData }] = await Promise.all([
+    const [{ data: cData }, { data: tData }, { data: catData }] = await Promise.all([
       supabase.from("countries").select("id, iso2, name_pl").order("name_pl"),
       supabase.from("card_language_templates").select("*").order("country_id"),
+      supabase.from("categories").select("id, name, slug").order("sort_order").order("name"),
     ]);
 
     if (cData) setCountries(cData as Country[]);
     if (tData) setLangTemplates(tData as unknown as LanguageTemplate[]);
+    if (catData) setCategories(catData as Category[]);
   }, []);
 
   useEffect(() => {
@@ -125,7 +137,7 @@ export const AdminCardCreator = ({
   // When Country or Language Template changes
   const availableTemplates = langTemplates.filter((t) => t.country_id === countryId);
 
-  const handleCountrySelect = (cId: string) => {
+  const handleCountrySelect = async (cId: string) => {
     setCountryId(cId);
     setSelectedTemplateId("");
     // Find first template for this country
@@ -135,6 +147,41 @@ export const AdminCardCreator = ({
       setLanguageCode(firstTpl.language_code);
       setThankYouText(firstTpl.front_thank_you_text);
       setBackQrLabel(firstTpl.back_qr_label);
+    }
+
+    if (cId && categoryId && !initialDesign?.id) {
+      const { data } = await supabase
+        .from("card_designs")
+        .select("view_no")
+        .eq("country_id", cId)
+        .eq("category_id", categoryId)
+        .order("view_no", { ascending: false })
+        .limit(1);
+
+      if (data && data.length > 0) {
+        setViewNo((data[0].view_no || 0) + 1);
+      } else {
+        setViewNo(1);
+      }
+    }
+  };
+
+  const handleCategorySelect = async (catId: string) => {
+    setCategoryId(catId);
+    if (countryId && catId && !initialDesign?.id) {
+      const { data } = await supabase
+        .from("card_designs")
+        .select("view_no")
+        .eq("country_id", countryId)
+        .eq("category_id", catId)
+        .order("view_no", { ascending: false })
+        .limit(1);
+
+      if (data && data.length > 0) {
+        setViewNo((data[0].view_no || 0) + 1);
+      } else {
+        setViewNo(1);
+      }
     }
   };
 
@@ -197,8 +244,8 @@ export const AdminCardCreator = ({
       toast({ title: "Wybierz kraj", variant: "destructive" });
       return;
     }
-    if (!title.trim()) {
-      toast({ title: "Podaj tytuł pocztówki", variant: "destructive" });
+    if (!categoryId) {
+      toast({ title: "Wybierz kategorię", variant: "destructive" });
       return;
     }
 
@@ -213,14 +260,15 @@ export const AdminCardCreator = ({
 
     const payload = {
       country_id: countryId,
+      category_id: categoryId || null,
       language_code: languageCode || "pl",
       view_no: viewNo,
-      title: title.trim(),
+      title: null,
       thank_you_text: thankYouText.trim() || null,
       back_qr_label: backQrLabel.trim() || null,
       photo_author: photoAuthor.trim() || null,
       image_front_url: imageUrl.trim() || null,
-      price_grosze: priceGrosze,
+      price_grosze: initialDesign?.price_grosze || 1500,
       currency: "PLN",
       crop_settings: cropSettingsObj,
       active: active,
@@ -248,6 +296,27 @@ export const AdminCardCreator = ({
     }
   };
 
+  const handleDelete = async () => {
+    if (!initialDesign?.id) return;
+    if (!confirm(`Czy na pewno chcesz usunąć ten wzór kartki (Widok #${initialDesign.view_no})?`)) return;
+    setIsSaving(true);
+    try {
+      const res = await deleteCardDesignCascade(initialDesign.id);
+      if (!res.success) {
+        toast({ title: "Błąd usuwania", description: res.error, variant: "destructive" });
+      } else {
+        toast({ title: "Usuwanie wzoru", description: res.message || "Wzór kartki został usunięty" });
+        onSaveSuccess();
+      }
+    } catch (err) {
+      toast({ title: "Błąd usuwania", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const selectedCountry = countries.find((c) => c.id === countryId);
+
   return (
     <div className="bg-card border rounded-2xl p-6 shadow-sm space-y-6">
       {/* Header */}
@@ -261,6 +330,16 @@ export const AdminCardCreator = ({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {initialDesign?.id && (
+            <Button
+              variant="outline"
+              onClick={handleDelete}
+              disabled={isSaving}
+              className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30"
+            >
+              <Trash2 className="w-4 h-4 mr-1" /> Usuń Wzór
+            </Button>
+          )}
           <Button variant="outline" onClick={onCancel} disabled={isSaving}>
             <X className="w-4 h-4 mr-1" /> Anuluj
           </Button>
@@ -276,17 +355,17 @@ export const AdminCardCreator = ({
           {/* Section 1: Basic Info */}
           <div className="space-y-3 bg-muted/30 p-4 rounded-xl border">
             <h3 className="font-semibold text-sm flex items-center gap-2 text-foreground">
-              <Globe className="w-4 h-4 text-primary" /> Kraj & Szablon Językowy
+              <Globe className="w-4 h-4 text-primary" /> Kraj, Kategoria & Numer Widoku
             </h3>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">
-                  Kraj <span className="text-destructive">*</span>
+                  1. Kraj <span className="text-destructive">*</span>
                 </label>
                 <Select value={countryId} onValueChange={handleCountrySelect}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Wybierz kraj" />
+                    <SelectValue placeholder="Wybierz kraj..." />
                   </SelectTrigger>
                   <SelectContent>
                     {countries.map((c) => (
@@ -300,13 +379,32 @@ export const AdminCardCreator = ({
 
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">
-                  Nr widoku <span className="text-destructive">*</span>
+                  2. Kategoria <span className="text-destructive">*</span>
+                </label>
+                <Select value={categoryId} onValueChange={handleCategorySelect}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Kategoria..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">
+                  3. Nr widoku <span className="text-destructive">*</span>
                 </label>
                 <Input
                   type="number"
                   min={1}
                   value={viewNo}
                   onChange={(e) => setViewNo(parseInt(e.target.value) || 1)}
+                  placeholder="np. 1"
                 />
               </div>
             </div>
@@ -337,32 +435,6 @@ export const AdminCardCreator = ({
                 </Select>
               </div>
             )}
-
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2">
-                <label className="text-xs font-medium text-muted-foreground block mb-1">
-                  Tytuł widoku / pocztówki <span className="text-destructive">*</span>
-                </label>
-                <Input
-                  placeholder="np. Wieża Eiffla, Paryż"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">
-                  Cena (PLN)
-                </label>
-                <Input
-                  type="number"
-                  step="0.50"
-                  min="0"
-                  value={priceGrosze / 100}
-                  onChange={(e) => setPriceGrosze(Math.round(parseFloat(e.target.value || "0") * 100))}
-                />
-              </div>
-            </div>
           </div>
 
           {/* Section 2: Photo & Author */}
@@ -502,25 +574,25 @@ export const AdminCardCreator = ({
 
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">
-                3. Treść dolna (na dole między ikonicznymi ludzikami)
+                miejsce do wpisania treści podziękowania (w danym języku)
               </label>
               <Textarea
                 rows={2}
                 value={thankYouText}
                 onChange={(e) => setThankYouText(e.target.value)}
-                placeholder="Wpisz tutaj treść..."
+                placeholder="miejsce do wpisania treści podziękowania (w danym języku)"
               />
             </div>
 
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">
-                Napis na tył przy kodzie QR
+                napis na tył przy kodzie QR to miejsce na wpisanie treści zeskanowania kodu (w danym języku)
               </label>
               <Textarea
                 rows={2}
                 value={backQrLabel}
                 onChange={(e) => setBackQrLabel(e.target.value)}
-                placeholder="Podziękuj autorowi za pocztówkę..."
+                placeholder="miejsce na wpisanie treści zeskanowania kodu (w danym języku)"
               />
             </div>
 
@@ -573,8 +645,12 @@ export const AdminCardCreator = ({
                 />
               </div>
             ) : (
+              /* BACK OF POSTCARD CANVAS */
               <div className="w-full max-w-[520px]">
-                <PostcardBack qrLabel={backQrLabel} showCropMarks />
+                <PostcardBack
+                  backQrLabel={backQrLabel}
+                  showCropMarks={true}
+                />
               </div>
             )}
           </div>

@@ -1,67 +1,190 @@
 import React from "react";
-import { QrCode } from "lucide-react";
+import { ColoredHikerSVG } from "./PostcardFront";
 
 export interface PostcardBackProps {
-  qrLabel?: string | null;
+  backQrLabel?: string | null;
   showCropMarks?: boolean;
   className?: string;
+  qrCodeUrl?: string | null;
 }
 
-/** Canonical POD reverse: the admin preview and print renderer share this composition. */
 export const PostcardBack: React.FC<PostcardBackProps> = ({
-  qrLabel,
+  backQrLabel,
   showCropMarks = true,
   className = "",
+  qrCodeUrl,
 }) => {
-  const displayQrLabel = qrLabel?.trim() || "ZESKANUJ";
+  const displayLabel = backQrLabel?.trim() || "ZESKANUJ";
 
   return (
-    <div className={`relative bg-white p-4 sm:p-6 shadow-xl select-none ${className}`}>
-      {showCropMarks && <>
-        <div className="absolute top-1 left-1 h-3 w-3 border-l-2 border-t-2 border-slate-900" />
-        <div className="absolute top-1 right-1 h-3 w-3 border-r-2 border-t-2 border-slate-900" />
-        <div className="absolute bottom-1 left-1 h-3 w-3 border-b-2 border-l-2 border-slate-900" />
-        <div className="absolute bottom-1 right-1 h-3 w-3 border-b-2 border-r-2 border-slate-900" />
-      </>}
+    <div className={`relative p-6 sm:p-8 bg-white select-none ${className}`}>
+      {/* Printer Crop / Cut Marks outside card frame */}
+      {showCropMarks && (
+        <>
+          {/* Top Center Crop Mark */}
+          <div className="absolute top-1 left-1/2 -translate-x-1/2 w-4 h-0 border-t-2 border-slate-900 pointer-events-none" />
 
-      <div className="relative aspect-[1.42/1] overflow-hidden border border-slate-200 bg-[#fffefb] px-[5.5%] py-[4.5%] text-slate-700">
-        <header className="flex items-start justify-between border-b border-slate-300 pb-[2.5%]">
-          <div className="leading-none">
-            <p className="font-serif text-[clamp(13px,2.4vw,23px)] font-bold tracking-tight text-[#214c3e]">Podróżówka</p>
-            <p className="mt-1 text-[clamp(6px,1.15vw,10px)] font-medium uppercase tracking-[0.16em] text-slate-500">odwrócona pocztówka</p>
-          </div>
-          <div className="relative h-[18%] min-h-10 w-[14%] min-w-12 overflow-hidden border-2 border-dashed border-[#76958a] bg-sky-50">
-            <div className="absolute -top-2 left-1 h-4 w-7 rounded-full bg-white" />
-            <div className="absolute -top-1 right-0 h-3 w-5 rounded-full bg-white" />
-            <div className="absolute -bottom-2 left-0 h-5 w-10 rounded-[100%_100%_0_0] bg-emerald-300" />
-            <span className="absolute inset-x-0 bottom-1 text-center text-[6px] font-bold uppercase tracking-wider text-[#365c50]">znaczek</span>
-          </div>
-        </header>
+          {/* Bottom Center Crop Mark */}
+          <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-4 h-0 border-b-2 border-slate-900 pointer-events-none" />
 
-        <div className="grid h-[73%] grid-cols-12 gap-[4%] pt-[3.5%]">
-          <section className="col-span-5 flex flex-col justify-between border-r border-dashed border-slate-300 pr-[7%]">
-            <div className="relative mx-auto w-[92%]">
-              <svg viewBox="0 0 180 118" className="h-auto w-full" aria-label="Mapa Europy z Polską">
-                <path d="M22 32 C36 14 57 17 70 22 C84 9 106 12 119 23 C142 17 159 32 155 50 C172 64 157 81 142 83 C133 102 109 104 92 96 C74 110 48 102 43 84 C22 85 10 67 21 53 C10 44 12 36 22 32Z" fill="#edf3ee" stroke="#76958a" strokeWidth="2" />
-                <path d="M89 47 l13 -3 10 8 -4 13 -14 3 -10 -9Z" fill="#fff" stroke="#d13f3f" strokeWidth="1.4" />
-                <path d="M85 57 h25" stroke="#d13f3f" strokeWidth="4" />
-                <path d="M42 78 C63 63 70 72 83 60 C98 47 113 75 137 52" fill="none" stroke="#446d5c" strokeDasharray="4 4" strokeWidth="2" />
-                <circle cx="135" cy="53" r="4" fill="#315b49" />
-                <path d="M135 48 v-9 M131 42 h8 M132 54 l-5 10 M138 54 l6 8" stroke="#315b49" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-              <p className="-mt-1 text-center text-[clamp(6px,1vw,9px)] font-medium text-[#446d5c]">Z Polski w świat</p>
-            </div>
-            <div className="flex items-end gap-2">
-              <div className="flex h-[clamp(40px,7vw,66px)] w-[clamp(40px,7vw,66px)] shrink-0 items-center justify-center border border-dashed border-[#76958a] bg-white p-1.5"><QrCode className="h-full w-full text-slate-600" strokeWidth={1.5} /></div>
-              <div className="pb-1"><p className="text-[clamp(7px,1.25vw,11px)] font-bold uppercase tracking-[0.12em] text-[#214c3e]">{displayQrLabel}</p><p className="mt-1 text-[clamp(5px,0.85vw,8px)] leading-tight text-slate-500">Odkryj historię tej Podróżówki.</p></div>
-            </div>
-          </section>
-          <section className="col-span-7 flex flex-col justify-end pb-[3%]">
-            <p className="mb-[7%] text-[clamp(7px,1.2vw,10px)] uppercase tracking-[0.12em] text-slate-400">Adres odbiorcy</p>
-            <div className="space-y-[10%]">{[0, 1, 2, 3].map((line) => <div key={line} className="border-b border-slate-400" />)}</div>
-          </section>
+          {/* Top-Left Crop Marks */}
+          <div className="absolute top-1 left-4 w-5 h-0 border-t-2 border-slate-900 pointer-events-none" />
+          <div className="absolute top-4 left-1 w-0 h-5 border-l-2 border-slate-900 pointer-events-none" />
+
+          {/* Top-Right Crop Marks */}
+          <div className="absolute top-1 right-4 w-5 h-0 border-t-2 border-slate-900 pointer-events-none" />
+          <div className="absolute top-4 right-1 w-0 h-5 border-r-2 border-slate-900 pointer-events-none" />
+
+          {/* Bottom-Left Crop Marks */}
+          <div className="absolute bottom-1 left-4 w-5 h-0 border-b-2 border-slate-900 pointer-events-none" />
+          <div className="absolute bottom-4 left-1 w-0 h-5 border-l-2 border-slate-900 pointer-events-none" />
+
+          {/* Bottom-Right Crop Marks */}
+          <div className="absolute bottom-1 right-4 w-5 h-0 border-b-2 border-slate-900 pointer-events-none" />
+          <div className="absolute bottom-4 right-1 w-0 h-5 border-r-2 border-slate-900 pointer-events-none" />
+        </>
+      )}
+
+      {/* Main Card Canvas */}
+      <div className="relative w-full aspect-[1.42/1] bg-white overflow-hidden p-4 sm:p-6 flex flex-col justify-between border border-slate-100">
+        
+        {/* Top Header & Stamp Row */}
+        <div className="relative z-10 flex items-start justify-between w-full">
+          {/* Top-Left: Logo & Subtitle */}
+          <div className="flex flex-col items-start pt-1">
+            <h1 className="text-xl sm:text-2xl font-normal text-slate-900 tracking-wide font-sans">
+              Podróżówka
+            </h1>
+            <div className="w-44 sm:w-56 h-[1.5px] bg-slate-900 my-1" />
+            <p className="text-[10px] sm:text-xs text-slate-600 font-light tracking-wider pl-4">
+              odwrócona pocztówka
+            </p>
+          </div>
+
+          {/* Top-Right: Stamp Box */}
+          <div className="w-16 h-16 sm:w-20 sm:h-20 bg-[#bae6fd] border border-slate-200 overflow-hidden flex flex-col justify-end relative shrink-0 shadow-2xs">
+            {/* Stamp Clouds */}
+            <div className="absolute top-2 left-2 w-8 h-4 bg-white/90 rounded-full" />
+            <div className="absolute top-1 right-2 w-10 h-5 bg-white/95 rounded-full" />
+            {/* Stamp Hills */}
+            <div
+              className="absolute -bottom-1 -left-2 -right-2 h-7 bg-[#a3e635]"
+              style={{ borderRadius: "100% 100% 0 0" }}
+            />
+            <div
+              className="absolute -bottom-2 -left-4 -right-4 h-5 bg-[#65a30d]"
+              style={{ borderRadius: "100% 100% 0 0" }}
+            />
+          </div>
         </div>
-        {showCropMarks && <div className="absolute inset-x-0 bottom-0 border-b border-dashed border-slate-500" />}
+
+        {/* Center Section: Europe Map with Poland + Dashed Trail with Hiker */}
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-start overflow-hidden">
+          <svg
+            viewBox="0 0 500 350"
+            className="w-full h-full"
+            fill="none"
+            stroke="none"
+          >
+            {/* Europe Map Vector Outline */}
+            <g stroke="#64748b" strokeWidth="1" strokeLinejoin="round" fill="none" opacity="0.6">
+              {/* British Isles */}
+              <path d="M 80 160 Q 90 140 100 150 Q 110 170 95 190 Q 80 180 80 160 Z" />
+              <path d="M 65 170 Q 75 160 75 180 Q 65 190 65 170 Z" />
+
+              {/* Scandinavia */}
+              <path d="M 180 60 Q 210 40 230 70 Q 220 120 180 130 Q 160 100 180 60 Z" />
+
+              {/* Iberia / Spain / Portugal */}
+              <path d="M 60 270 L 110 270 L 105 310 L 55 305 Z" />
+
+              {/* France */}
+              <path d="M 110 210 L 145 200 L 150 245 L 115 255 Z" />
+
+              {/* Italy */}
+              <path d="M 180 250 L 200 280 L 210 305 L 195 310 L 175 270 Z" />
+
+              {/* Germany, Benelux, Central Europe */}
+              <path d="M 145 170 L 185 165 L 190 210 L 150 215 Z" />
+
+              {/* Poland - Flag Colors inside */}
+              {/* Upper half of Poland (White) */}
+              <path
+                d="M 185 175 L 220 170 L 225 190 L 188 192 Z"
+                fill="#ffffff"
+                stroke="#334155"
+                strokeWidth="1.2"
+                opacity="1"
+              />
+              {/* Lower half of Poland (Red) */}
+              <path
+                d="M 188 192 L 225 190 L 220 210 L 185 208 Z"
+                fill="#dc2626"
+                stroke="#334155"
+                strokeWidth="1.2"
+                opacity="1"
+              />
+
+              {/* Eastern Europe & Balkans */}
+              <path d="M 225 165 L 280 150 L 270 230 L 210 230 Z" />
+
+              {/* Iceland */}
+              <path d="M 50 110 Q 70 100 75 115 Q 60 130 50 110 Z" />
+            </g>
+
+            {/* Dashed trail line from Atlantic/West through Scandinavia towards stamp */}
+            <path
+              d="M 45 155 Q 50 130 110 135 Q 170 140 215 150 Q 280 150 410 115"
+              stroke="#334155"
+              strokeWidth="1.5"
+              strokeDasharray="8 6"
+              fill="none"
+              opacity="0.85"
+            />
+          </svg>
+
+          {/* Hiker figure positioned walking along the trail near top-center */}
+          <div className="absolute top-[38%] left-[42%] -translate-x-1/2 -translate-y-1/2 z-10">
+            <ColoredHikerSVG className="w-9 h-11 sm:w-11 sm:h-13" />
+          </div>
+        </div>
+
+        {/* Right Section: Address Lines & Bottom QR section */}
+        <div className="relative z-10 flex flex-col justify-end items-end w-full space-y-4 pt-12">
+          {/* 4 Parallel Address Lines */}
+          <div className="w-1/2 sm:w-[52%] space-y-4 sm:space-y-5 pr-2">
+            <div className="w-full border-b border-slate-800" />
+            <div className="w-full border-b border-slate-800" />
+            <div className="w-full border-b border-slate-800" />
+            <div className="w-full border-b border-slate-800" />
+          </div>
+
+          {/* Bottom Right: ZESKANUJ Text + QR Placeholder */}
+          <div className="flex items-center gap-3 pt-2 pr-1">
+            <span className="text-xs sm:text-sm font-sans tracking-widest text-slate-500 uppercase font-normal">
+              {displayLabel}
+            </span>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-[#bae6fd] border border-slate-200 overflow-hidden shrink-0 flex flex-col justify-end relative shadow-2xs">
+              {qrCodeUrl ? (
+                <img src={qrCodeUrl} alt="QR Code" className="w-full h-full object-cover" />
+              ) : (
+                <>
+                  {/* Mini sky & hills placeholder inside QR box matching template */}
+                  <div className="absolute top-1 left-1 w-5 h-2.5 bg-white/90 rounded-full" />
+                  <div
+                    className="absolute -bottom-1 -left-1 -right-1 h-4 bg-[#84cc16]"
+                    style={{ borderRadius: "100% 100% 0 0" }}
+                  />
+                  <div
+                    className="absolute -bottom-1 -left-2 -right-2 h-2.5 bg-[#65a30d]"
+                    style={{ borderRadius: "100% 100% 0 0" }}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   );

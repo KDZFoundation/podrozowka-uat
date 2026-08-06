@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { diagnoseUploadError, logUploadAttempt } from "@/lib/uploadDiagnostics";
+import { deleteCardDesignCascade } from "@/lib/cardDesignUtils";
 
 interface Country {
   id: string;
@@ -392,11 +393,11 @@ const AdminProducts = () => {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const { error } = await supabase.from("card_designs").delete().eq("id", deleteTarget.id);
-    if (error) {
-      toast({ title: "Nie udało się usunąć", description: error.message, variant: "destructive" });
+    const res = await deleteCardDesignCascade(deleteTarget.id);
+    if (!res.success) {
+      toast({ title: "Nie udało się usunąć", description: res.error, variant: "destructive" });
     } else {
-      toast({ title: "Produkt usunięty" });
+      toast({ title: "Produkt usunięty", description: res.message });
       fetchAll();
     }
     setDeleteTarget(null);

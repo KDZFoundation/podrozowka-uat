@@ -41,7 +41,8 @@ import AdminGamification from "@/components/admin/AdminGamification";
 import AdminProducts from "@/components/admin/AdminProducts";
 import AdminFiscalFailures from "@/components/admin/AdminFiscalFailures";
 import AdminCategories from "@/components/admin/AdminCategories";
-import AdminPaymentSettings from "@/components/admin/AdminPaymentSettings";
+import AdminIntegrations from "@/components/admin/AdminIntegrations";
+import { Blocks } from "lucide-react";
 
 type TabId =
   | "overview"
@@ -60,7 +61,7 @@ type TabId =
   | "lab"
   | "gamification"
   | "fiscal"
-  | "payments";
+  | "integrations";
 
 interface AdminStats {
   totalUnits: number;
@@ -149,11 +150,11 @@ const AdminPanel = () => {
     { id: "overview", label: "Przegląd", icon: BarChart3 },
     { id: "map", label: "Mapa Globalna", icon: MapIcon },
     { id: "countries", label: "Kraje", icon: Globe2 },
-    { id: "card-designs", label: "Wzory kartek", icon: Image },
+    { id: "card-designs", label: "Kreator wzorów", icon: Image },
     { id: "products", label: "Produkty", icon: ShoppingBag },
     { id: "categories", label: "Kategorie", icon: Tags },
-    { id: "inventory", label: "Magazyn", icon: Box },
-    { id: "orders", label: "Zamówienia", icon: ShoppingCart },
+    { id: "inventory", label: "Magazyn (POD)", icon: Box },
+    { id: "orders", label: "Zamówienia (Drukarnia)", icon: ShoppingCart },
     { id: "shipments", label: "Wysyłki", icon: Truck },
     { id: "qr-jobs", label: "Druk QR", icon: QrCode },
     { id: "registrations", label: "Rejestracje", icon: UserCheck },
@@ -161,7 +162,7 @@ const AdminPanel = () => {
     { id: "dev-tools", label: "Narzędzia Dev", icon: Wrench },
     { id: "gamification", label: "Grywalizacja", icon: Trophy },
     { id: "fiscal", label: "Fiskalizacja", icon: Receipt },
-    { id: "payments", label: "Płatności", icon: CreditCard },
+    { id: "integrations", label: "Integracje", icon: Blocks },
     { id: "lab", label: "Laboratorium", icon: FlaskConical },
   ];
 
@@ -416,7 +417,7 @@ CREATE POLICY "Admins manage categories"
         {activeTab === "dev-tools" && <AdminDevTools />}
         {activeTab === "gamification" && <AdminGamification />}
         {activeTab === "fiscal" && <AdminFiscalFailures />}
-        {activeTab === "payments" && <AdminPaymentSettings />}
+        {activeTab === "integrations" && <AdminIntegrations />}
         {activeTab === "lab" && <AdminLab />}
       </main>
     </div>
