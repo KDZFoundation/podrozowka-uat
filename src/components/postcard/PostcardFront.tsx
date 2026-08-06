@@ -29,11 +29,10 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
   const posX = cropSettings?.x ?? 50;
   const posY = cropSettings?.y ?? 50;
 
-  const displayAuthor = photoAuthor?.trim()
-    ? photoAuthor.trim().startsWith("@")
-      ? photoAuthor.trim()
-      : `@${photoAuthor.trim()}`
-    : "@Autor zdjęcia";
+  const normalizedAuthor = photoAuthor?.trim() || "Autor zdjęcia";
+  const displayAuthor = normalizedAuthor.startsWith("@") || normalizedAuthor.startsWith("(C)") || normalizedAuthor.startsWith("©")
+    ? normalizedAuthor
+    : `(C) ${normalizedAuthor}`;
 
   const displayContent = contentText?.trim() || "Wpisz tutaj treść...";
 
@@ -54,7 +53,7 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
       )}
 
       {/* Main Postcard Front Canvas */}
-      <div className="relative w-full aspect-[1.45/1] flex flex-col justify-between bg-white border border-slate-100 overflow-hidden">
+      <div className="relative w-full aspect-[1.42/1] flex flex-col justify-between bg-white border border-slate-100 overflow-hidden">
         {/* 1. OKNO NA WCZYTANIE ZDJĘCIA */}
         <div className="relative w-full h-[76%] bg-sky-100 overflow-hidden border-b border-slate-100 group">
           {imageUrl ? (

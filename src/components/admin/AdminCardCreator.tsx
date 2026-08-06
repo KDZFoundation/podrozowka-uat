@@ -8,13 +8,13 @@ import {
   Languages,
   Sliders,
   Eye,
-  QrCode,
   Sparkles,
   Camera,
   Globe,
   RotateCcw
 } from "lucide-react";
 import { PostcardFront } from "@/components/postcard/PostcardFront";
+import { PostcardBack } from "@/components/postcard/PostcardBack";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -247,8 +247,6 @@ export const AdminCardCreator = ({
       setIsSaving(false);
     }
   };
-
-  const selectedCountry = countries.find((c) => c.id === countryId);
 
   return (
     <div className="bg-card border rounded-2xl p-6 shadow-sm space-y-6">
@@ -575,70 +573,8 @@ export const AdminCardCreator = ({
                 />
               </div>
             ) : (
-              /* BACK OF POSTCARD CANVAS */
-              <div
-                className="relative bg-white text-slate-900 rounded-lg shadow-xl border border-slate-200 overflow-hidden select-none p-5 flex flex-col justify-between"
-                style={{
-                  width: "100%",
-                  maxWidth: "520px",
-                  aspectRatio: "1.48 / 1",
-                }}
-              >
-                {/* Header line with Country & Flag */}
-                <div className="flex items-center justify-between border-b pb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-extrabold tracking-widest text-slate-900 uppercase">
-                      PODRÓŻÓWKA
-                    </span>
-                    <span className="text-xs text-slate-400">|</span>
-                    <span className="text-xs font-semibold text-slate-600">
-                      {selectedCountry?.name_pl || "Kraj"} ({selectedCountry?.iso2 || "PL"})
-                    </span>
-                  </div>
-                  <span className="text-xs font-mono text-slate-400">
-                    V{viewNo.toString().padStart(2, "0")}
-                  </span>
-                </div>
-
-                {/* Main Back Content: Left QR area, Right Address Area */}
-                <div className="grid grid-cols-12 gap-4 flex-1 pt-3">
-                  {/* Left Column: QR Code + Text */}
-                  <div className="col-span-6 border-r pr-3 flex flex-col justify-between">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1">
-                        Kod Doładowania / Podziękowania
-                      </span>
-                      <div className="p-2 border border-dashed rounded-lg bg-slate-50 flex items-center gap-3">
-                        <div className="w-12 h-12 bg-slate-200 rounded flex items-center justify-center shrink-0">
-                          <QrCode className="w-8 h-8 text-slate-600" />
-                        </div>
-                        <p className="text-[11px] font-medium text-slate-700 leading-tight">
-                          {backQrLabel || "Podziękuj autorowi za pocztówkę"}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="text-[10px] text-slate-400 leading-snug">
-                      Zarejestruj pocztówkę na www.podrozowka.pl wpisując kod spod zdrapki.
-                    </div>
-                  </div>
-
-                  {/* Right Column: Stamp + Address lines */}
-                  <div className="col-span-6 pl-2 flex flex-col justify-between">
-                    {/* Stamp Placeholder */}
-                    <div className="self-end w-12 h-14 border-2 border-dashed border-slate-300 rounded flex items-center justify-center text-[9px] text-slate-400 text-center uppercase font-bold">
-                      Znaczek
-                    </div>
-
-                    {/* Address Lines */}
-                    <div className="space-y-3 pt-4">
-                      <div className="border-b border-slate-300 w-full" />
-                      <div className="border-b border-slate-300 w-full" />
-                      <div className="border-b border-slate-300 w-full" />
-                      <div className="border-b border-slate-300 w-3/4" />
-                    </div>
-                  </div>
-                </div>
+              <div className="w-full max-w-[520px]">
+                <PostcardBack qrLabel={backQrLabel} showCropMarks />
               </div>
             )}
           </div>
