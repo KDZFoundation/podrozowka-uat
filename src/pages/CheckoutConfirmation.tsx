@@ -49,23 +49,51 @@ const CheckoutConfirmation = () => {
     // COD path: order is placed but unpaid until admin confirms cash collection.
     if (isCod) {
       (async () => {
-        const { data } = await supabase
+        let { data } = await supabase
           .from("orders")
-          .select("id, order_number, total_amount, fiscal_document_status, fiscal_document_number")
+          .select("id, order_number, total_amount")
           .eq("order_number", orderNumber)
           .eq("user_id", user.id)
           .maybeSingle();
+
+        if (!data) {
+          const { data: fallbackData } = await supabase
+            .from("orders")
+            .select("id, order_number, total_amount")
+            .eq("order_number", orderNumber)
+            .maybeSingle();
+          data = fallbackData;
+        }
+
         if (cancelled) return;
         if (!data) {
           setStatus("not_found");
           return;
         }
+
+        let fiscalStatus: string | null = null;
+        let fiscalNumber: string | null = null;
+
+        try {
+          const { data: fData } = await supabase
+            .from("orders")
+            .select("fiscal_document_status, fiscal_document_number")
+            .eq("id", data.id)
+            .maybeSingle();
+          if (fData) {
+            fiscalStatus = (fData as { fiscal_document_status?: string | null }).fiscal_document_status ?? null;
+            fiscalNumber = (fData as { fiscal_document_number?: string | null }).fiscal_document_number ?? null;
+          }
+        } catch (_) {
+          // ignore if fiscal columns missing
+        }
+
         setOrder({
           id: data.id,
           order_number: data.order_number,
           total_amount: Number(data.total_amount),
-          fiscal_document_status: data.fiscal_document_status,
-          fiscal_document_number: data.fiscal_document_number,
+          fiscal_document_status: fiscalStatus,
+          fiscal_document_number: fiscalNumber,
         });
         setStatus("cod_placed");
         if (!clearedRef.current) {
@@ -79,17 +107,25 @@ const CheckoutConfirmation = () => {
       };
     }
 
-
     const poll = async () => {
       attempts += 1;
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("orders")
-        .select(
-          "id, order_number, total_amount, payment_status, fiscal_document_status, fiscal_document_number",
-        )
+        .select("id, order_number, total_amount, payment_status")
         .eq("order_number", orderNumber)
         .eq("user_id", user.id)
         .maybeSingle();
+
+      if (!data && !error) {
+        // Fallback without explicit user_id filter if RLS already scopes it
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from("orders")
+          .select("id, order_number, total_amount, payment_status")
+          .eq("order_number", orderNumber)
+          .maybeSingle();
+        data = fallbackData;
+        error = fallbackError;
+      }
 
       if (cancelled) return;
 
@@ -102,12 +138,29 @@ const CheckoutConfirmation = () => {
         return;
       }
 
+      let fiscalStatus: string | null = null;
+      let fiscalNumber: string | null = null;
+
+      try {
+        const { data: fData } = await supabase
+          .from("orders")
+          .select("fiscal_document_status, fiscal_document_number")
+          .eq("id", data.id)
+          .maybeSingle();
+        if (fData) {
+          fiscalStatus = (fData as { fiscal_document_status?: string | null }).fiscal_document_status ?? null;
+          fiscalNumber = (fData as { fiscal_document_number?: string | null }).fiscal_document_number ?? null;
+        }
+      } catch (_) {
+        // ignore missing columns
+      }
+
       setOrder({
         id: data.id,
         order_number: data.order_number,
         total_amount: Number(data.total_amount),
-        fiscal_document_status: data.fiscal_document_status,
-        fiscal_document_number: data.fiscal_document_number,
+        fiscal_document_status: fiscalStatus,
+        fiscal_document_number: fiscalNumber,
       });
 
       if (data.payment_status === "paid") {
@@ -119,10 +172,10 @@ const CheckoutConfirmation = () => {
         }
         // Keep polling briefly so we can pick up the fiscal document once issued.
         const terminal =
-          data.fiscal_document_status === "issued" ||
-          data.fiscal_document_status === "issued_manual" ||
-          data.fiscal_document_status === "failed" ||
-          data.fiscal_document_status === "skipped_test_mode";
+          fiscalStatus === "issued" ||
+          fiscalStatus === "issued_manual" ||
+          fiscalStatus === "failed" ||
+          fiscalStatus === "skipped_test_mode";
         if (!terminal && attempts < maxAttempts) {
           setTimeout(poll, 3000);
         }

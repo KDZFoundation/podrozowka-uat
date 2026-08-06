@@ -95,9 +95,9 @@ Deno.serve(async (req) => {
     });
 
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsErr } = await supabase.auth.getClaims(token);
-    if (claimsErr || !claimsData?.claims) return jsonResp({ error: "unauthorized" }, 401);
-    const userEmail = String(claimsData.claims.email || "");
+    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
+    if (userErr || !user) return jsonResp({ error: "unauthorized" }, 401);
+    const userEmail = String(user.email || "");
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") return jsonResp({ error: "invalid_body" }, 400);
