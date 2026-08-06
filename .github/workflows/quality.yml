@@ -12,6 +12,16 @@ on:
       - uat
       - production
 
+# Zasada najmniejszych uprawnień - Quality Gate tylko czyta repo
+permissions:
+  contents: read
+
+# Anuluje poprzedni run na tym samym branchu/PR, jeśli wpadnie nowy push
+# (oszczędza minuty CI przy szybkich commitach z AI Studio)
+concurrency:
+  group: quality-gate-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality-gate:
     name: Quality Gate
@@ -40,12 +50,29 @@ jobs:
         run: npm run test
 
       - name: Build application
+        env:
+          # Sekrety per środowisko - skonfigurować w Settings > Secrets and variables > Actions
+          # Nazwy przykładowe, dopasuj do faktycznych zmiennych używanych przez aplikację
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
-          if [ "${{ github.ref_name }}" = "uat" ]; then
+          # github.ref_name dla eventu pull_request wskazuje na tymczasową
+          # referencję mergea (np. "123/merge"), NIE na branch docelowy.
+          # Dla PR-ów trzeba użyć github.base_ref, żeby zbudować z właściwą
+          # konfiguracją środowiskową (dev/uat/prod).
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            TARGET_BRANCH="${{ github.base_ref }}"
+          else
+            TARGET_BRANCH="${{ github.ref_name }}"
+          fi
+
+          echo "Building for target branch: $TARGET_BRANCH"
+
+          if [ "$TARGET_BRANCH" = "uat" ]; then
             npm run build:uat
-          elif [ "${{ github.ref_name }}" = "production" ]; then
+          elif [ "$TARGET_BRANCH" = "production" ]; then
             npm run build:prod
-          elif [ "${{ github.ref_name }}" = "main" ]; then
+          elif [ "$TARGET_BRANCH" = "main" ]; then
             npm run build:dev
           else
             npm run build
