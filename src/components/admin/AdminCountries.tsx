@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, Check, X, Globe2, Sparkles, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Globe2, Sparkles, Search, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +15,7 @@ interface Country {
   slug: string | null;
   active: boolean;
   created_at: string;
+  flag_url: string | null;
 }
 
 const AdminCountries = () => {
@@ -24,10 +25,12 @@ const AdminCountries = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [isFlagUploading, setIsFlagUploading] = useState(false);
+  const flagInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   // Form state
-  const [form, setForm] = useState({ iso2: '', iso3: '', name_pl: '', slug: '', active: true });
+  const [form, setForm] = useState({ iso2: '', iso3: '', name_pl: '', slug: '', flag_url: '', active: true });
 
   const fetchCountries = useCallback(async () => {
     const { data, error } = await supabase
@@ -42,7 +45,7 @@ const AdminCountries = () => {
   useEffect(() => { fetchCountries(); }, [fetchCountries]);
 
   const resetForm = () => {
-    setForm({ iso2: '', iso3: '', name_pl: '', slug: '', active: true });
+    setForm({ iso2: '', iso3: '', name_pl: '', slug: '', flag_url: '', active: true });
     setEditingId(null);
     setShowAdd(false);
   };
@@ -93,7 +96,7 @@ const AdminCountries = () => {
     if (editingId) {
       const { error } = await supabase
         .from('countries')
-        .update({ iso2: form.iso2, iso3: form.iso3 || null, name_pl: form.name_pl, slug, active: form.active })
+        .update({ iso2: form.iso2, iso3: form.iso3 || null, name_pl: form.name_pl, slug, flag_url: form.flag_url || null, active: form.active })
         .eq('id', editingId);
 
       if (error) {
@@ -106,7 +109,7 @@ const AdminCountries = () => {
     } else {
       const { error } = await supabase
         .from('countries')
-        .insert({ iso2: form.iso2, iso3: form.iso3 || null, name_pl: form.name_pl, slug, active: form.active });
+        .insert({ iso2: form.iso2, iso3: form.iso3 || null, name_pl: form.name_pl, slug, flag_url: form.flag_url || null, active: form.active });
 
       if (error) {
         toast({ title: "Błąd dodawania", description: error.message, variant: "destructive" });
@@ -119,12 +122,69 @@ const AdminCountries = () => {
   };
 
   const handleEdit = (c: Country) => {
-    setForm({ iso2: c.iso2, iso3: c.iso3 || '', name_pl: c.name_pl, slug: c.slug || '', active: c.active });
+    setForm({ iso2: c.iso2, iso3: c.iso3 || '', name_pl: c.name_pl, slug: c.slug || '', flag_url: c.flag_url || '', active: c.active });
     setEditingId(c.id);
     setShowAdd(true);
   };
 
+  const handleFlagUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Wybierz plik graficzny", description: "Obsługiwane są PNG, JPG i WEBP.", variant: "destructive" });
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast({ title: "Plik jest zbyt duży", description: "Flaga może mieć maksymalnie 2 MB.", variant: "destructive" });
+      return;
+    }
+
+    setIsFlagUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Zaloguj się ponownie przed przesłaniem flagi.");
+
+      const extension = file.name.split(".").pop() || "png";
+      const countryCode = form.iso2.trim().toLowerCase() || "country";
+      const path = `${user.id}/country-flags/${countryCode}-${Date.now()}.${extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from("postcard-photos")
+        .upload(path, file, { cacheControl: "3600" });
+
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from("postcard-photos").getPublicUrl(path);
+      setForm((current) => ({ ...current, flag_url: data.publicUrl }));
+      toast({ title: "Flaga przesłana" });
+    } catch (error) {
+      toast({ title: "Błąd przesyłania flagi", description: (error as Error).message, variant: "destructive" });
+    } finally {
+      setIsFlagUploading(false);
+      event.target.value = "";
+    }
+  };
+
   const handleDelete = async (id: string) => {
+    const country = countries.find((item) => item.id === id);
+    const { count, error: usageError } = await supabase
+      .from('card_designs')
+      .select('id', { count: 'exact', head: true })
+      .eq('country_id', id);
+
+    if (usageError) {
+      toast({ title: "Nie udało się sprawdzić kraju", description: usageError.message, variant: "destructive" });
+      return;
+    }
+
+    if ((count ?? 0) > 0) {
+      toast({
+        title: "Nie można usunąć kraju używanego przez wzory",
+        description: `${country?.name_pl ?? "Ten kraj"} ma przypisane wzory (${count}). Aby zachować historię zamówień, ustaw kraj jako nieaktywny zamiast go usuwać.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const { error } = await supabase.from('countries').delete().eq('id', id);
     if (error) {
       toast({ title: "Błąd usuwania", description: error.message, variant: "destructive" });
@@ -219,6 +279,27 @@ const AdminCountries = () => {
               <Input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="polska" />
             </div>
           </div>
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-3">
+            <img
+              src={form.flag_url || (form.iso2 ? `https://flagcdn.com/w80/${form.iso2.toLowerCase()}.png` : "")}
+              alt="Podgląd flagi"
+              className={`h-12 w-12 object-contain ${form.flag_url || form.iso2 ? "" : "hidden"}`}
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium">Flaga kraju na tyle kartki</p>
+              <p className="text-xs text-muted-foreground">Własny plik zastępuje automatyczną flagę ISO2.</p>
+            </div>
+            <input ref={flagInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFlagUpload} />
+            <Button type="button" variant="outline" size="sm" onClick={() => flagInputRef.current?.click()} disabled={isFlagUploading}>
+              <Upload className="mr-1.5 h-4 w-4" />
+              {isFlagUploading ? "Przesyłanie..." : "Wczytaj flagę"}
+            </Button>
+            {form.flag_url && (
+              <Button type="button" variant="ghost" size="sm" onClick={() => setForm((current) => ({ ...current, flag_url: "" }))}>
+                Usuń własną
+              </Button>
+            )}
+          </div>
           <div className="flex items-center gap-3 pt-1">
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} className="rounded" />
@@ -250,7 +331,7 @@ const AdminCountries = () => {
                 <tr key={c.id} className="hover:bg-muted/30 transition-colors">
                   <td className="p-3 font-mono font-bold flex items-center gap-2">
                     <img
-                      src={`https://flagcdn.com/w40/${c.iso2.toLowerCase()}.png`}
+                      src={c.flag_url || `https://flagcdn.com/w40/${c.iso2.toLowerCase()}.png`}
                       alt={c.iso2}
                       className="w-5 h-3.5 object-cover rounded-xs border shadow-2xs"
                       onError={(e) => (e.currentTarget.style.display = 'none')}

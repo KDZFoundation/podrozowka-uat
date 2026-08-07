@@ -10,8 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Search, ArrowLeft, PackageCheck, AlertTriangle, Printer, Mail, FileText, CheckCircle2, Send, Trash2 } from "lucide-react";
+import { Loader2, Search, ArrowLeft, PackageCheck, Printer, Mail, FileText, CheckCircle2, Send, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { generatePodPrintPdf } from "@/lib/generatePodPrintPdf";
 
 interface OrderRow {
   id: string;
@@ -22,6 +23,7 @@ interface OrderRow {
   payment_method: string;
   total_amount: number;
   currency: string;
+  customer_email: string | null;
   shipping_name: string | null;
   shipping_city: string | null;
   created_at: string;
@@ -37,6 +39,7 @@ interface OrderDetail {
   payment_method: string;
   total_amount: number;
   currency: string;
+  customer_email: string | null;
   shipping_name: string | null;
   shipping_address: string | null;
   shipping_city: string | null;
@@ -81,12 +84,6 @@ interface ReservedUnit {
   country: string | null;
 }
 
-interface InventoryShortage {
-  card_design_id: string;
-  requested: number;
-  available: number;
-}
-
 interface AdminInventoryUnitJoin {
   id: string;
   internal_inventory_code: string;
@@ -101,16 +98,20 @@ interface AdminInventoryUnitJoin {
   } | null;
 }
 
-interface ReserveInventoryResult {
-  success: boolean;
-  error?: string;
-  shortages?: InventoryShortage[];
-}
-
 interface ConfirmCodResponse {
   error?: string;
   success?: boolean;
 }
+
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "Wystąpił błąd podczas tworzenia pliku PDF";
+};
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
   pending: { label: "Oczekuje na płatność", className: "bg-muted text-muted-foreground" },
@@ -140,38 +141,60 @@ const AdminOrders = () => {
   const [page, setPage] = useState(0);
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [reserving, setReserving] = useState(false);
   const [reservedUnits, setReservedUnits] = useState<ReservedUnit[]>([]);
-  const [reserveError, setReserveError] = useState<string | null>(null);
-  const [shortages, setShortages] = useState<InventoryShortage[]>([]);
   const [printerEmail, setPrinterEmail] = useState<string>("");
   const [isSendingPodEmail, setIsSendingPodEmail] = useState(false);
   const [isGeneratingPodPdf, setIsGeneratingPodPdf] = useState(false);
+  const [lastGeneratedPodPdf, setLastGeneratedPodPdf] = useState<{
+    orderId: string;
+    fileName: string;
+    downloadUrl: string;
+  } | null>(null);
+
+  useEffect(() => () => {
+    if (lastGeneratedPodPdf) URL.revokeObjectURL(lastGeneratedPodPdf.downloadUrl);
+  }, [lastGeneratedPodPdf]);
 
   const handleGeneratePodPdf = async (order: OrderDetail) => {
     setIsGeneratingPodPdf(true);
     try {
-      const { data, error } = await supabase.functions.invoke("generate-qr-pdf", {
-        body: { order_id: order.id, order_number: order.order_number },
-      });
+      // A PDF is generated from a prepared QR print job, not directly from an order.
+      const { data: printJob, error: printJobError } = await supabase
+        .from("qr_print_jobs")
+        .select("id")
+        .eq("order_id", order.id)
+        .in("status", ["ready", "printed"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (!error && data?.pdf) {
-        const link = document.createElement("a");
-        link.href = data.pdf;
-        link.download = `POD-${order.order_number}.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        toast({ title: "Plik PDF zamówienia pobrany!" });
-      } else {
+      if (printJobError) throw printJobError;
+      if (!printJob) {
         toast({
-          title: "Generowanie PDF Drukarni (POD)",
-          description: `Przygotowano plik roboczy PDF dla zamówienia ${order.order_number} zawierający wzory kartek oraz przyporządkowane kody QR.`,
+          title: "Brak przygotowanego pliku POD",
+          description: `Dla zamówienia ${order.order_number} nie utworzono jeszcze kodów QR. Najpierw przygotuj zadanie druku POD.`,
+          variant: "destructive",
         });
+        return;
       }
+
+      const result = await generatePodPrintPdf(printJob.id, order.order_number);
+      setLastGeneratedPodPdf({
+        orderId: order.id,
+        fileName: result.fileName,
+        downloadUrl: result.downloadUrl,
+      });
+      toast({
+        title: "Plik produkcyjny SRA3 pobrany",
+        description: `${result.itemCount} kartek na ${result.sheetCount} arkuszach, front + tył, indywidualne kody QR.`,
+      });
     } catch (err) {
       console.error(err);
-      toast({ title: "Błąd PDF POD", description: "Wystąpił błąd podczas tworzenia pliku PDF", variant: "destructive" });
+      toast({
+        title: "Błąd PDF POD",
+        description: getErrorMessage(err),
+        variant: "destructive",
+      });
     } finally {
       setIsGeneratingPodPdf(false);
     }
@@ -199,8 +222,59 @@ const AdminOrders = () => {
     if (e) e.stopPropagation();
     if (!confirm("Czy na pewno chcesz usunąć to zamówienie? Operacji nie można cofnąć.")) return;
 
-    await supabase.from("order_items").delete().eq("order_id", orderId);
-    await supabase.from("inventory_units").update({ order_id: null, fulfillment_status: "in_stock" }).eq("order_id", orderId);
+    const { data: qrJobs, error: qrJobsError } = await supabase
+      .from("qr_print_jobs")
+      .select("id")
+      .eq("order_id", orderId);
+
+    if (qrJobsError) {
+      toast({ title: "Błąd odczytu zadania QR", description: qrJobsError.message, variant: "destructive" });
+      return;
+    }
+
+    const qrJobIds = qrJobs.map((job) => job.id);
+    if (qrJobIds.length > 0) {
+      const { error: qrItemsError } = await supabase.from("qr_print_job_items").delete().in("print_job_id", qrJobIds);
+      if (qrItemsError) {
+        toast({ title: "Błąd usuwania pozycji QR", description: qrItemsError.message, variant: "destructive" });
+        return;
+      }
+
+      const { error: qrJobsDeleteError } = await supabase.from("qr_print_jobs").delete().in("id", qrJobIds);
+      if (qrJobsDeleteError) {
+        toast({ title: "Błąd usuwania zadania QR", description: qrJobsDeleteError.message, variant: "destructive" });
+        return;
+      }
+    }
+
+    const { error: shipmentError } = await supabase.from("shipments").delete().eq("order_id", orderId);
+    if (shipmentError) {
+      toast({ title: "Błąd usuwania wysyłki", description: shipmentError.message, variant: "destructive" });
+      return;
+    }
+
+    const { error: itemsError } = await supabase.from("order_items").delete().eq("order_id", orderId);
+    if (itemsError) {
+      toast({ title: "Błąd usuwania pozycji zamówienia", description: itemsError.message, variant: "destructive" });
+      return;
+    }
+
+    const { error: inventoryError } = await supabase
+      .from("inventory_units")
+      .update({
+        order_id: null,
+        fulfillment_status: "in_stock",
+        public_claim_code: null,
+        public_claim_token_hash: null,
+        qr_generated_at: null,
+        qr_applied_at: null,
+      })
+      .eq("order_id", orderId);
+    if (inventoryError) {
+      toast({ title: "Błąd zwalniania sztuk magazynowych", description: inventoryError.message, variant: "destructive" });
+      return;
+    }
+
     const { error } = await supabase.from("orders").delete().eq("id", orderId);
 
     if (error) {
@@ -218,7 +292,7 @@ const AdminOrders = () => {
     setIsLoading(true);
     let query = supabase
       .from("orders")
-      .select("id, order_number, user_id, status, payment_status, total_amount, currency, shipping_name, shipping_city, created_at")
+      .select("id, order_number, user_id, status, payment_status, total_amount, currency, customer_email, shipping_name, shipping_city, created_at")
       .order("created_at", { ascending: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
@@ -283,8 +357,6 @@ const AdminOrders = () => {
       });
       fetchReservedUnits(orderId);
     }
-    setReserveError(null);
-    setShortages([]);
     setDetailLoading(false);
   };
 
@@ -309,7 +381,10 @@ const AdminOrders = () => {
     const updates: Partial<Database["public"]["Tables"]["orders"]["Update"]> = {
       payment_status: paymentStatus as Database["public"]["Enums"]["payment_status"],
     };
-    if (paymentStatus === "paid") updates.paid_at = new Date().toISOString();
+    if (paymentStatus === "paid") {
+      updates.paid_at = new Date().toISOString();
+      updates.status = "paid" as Database["public"]["Enums"]["order_status"];
+    }
 
     const { error } = await supabase.from("orders").update(updates).eq("id", orderId);
     if (error) {
@@ -336,29 +411,6 @@ const AdminOrders = () => {
         country: u.card_designs?.countries?.name_pl || null,
       }))
     );
-  };
-
-  const reserveInventory = async (orderId: string) => {
-    setReserving(true);
-    setReserveError(null);
-    setShortages([]);
-
-    const { data, error } = await supabase.rpc("reserve_inventory_for_order", { _order_id: orderId });
-    const result = data as unknown as ReserveInventoryResult;
-
-    if (error) {
-      setReserveError(error.message);
-      toast({ title: "Błąd rezerwacji", description: error.message, variant: "destructive" });
-    } else if (result && !result.success) {
-      setReserveError(result.error || "Wystąpił nieznany błąd");
-      if (result.shortages) setShortages(result.shortages);
-      toast({ title: "Nie udało się zarezerwować", description: result.error || "Błąd", variant: "destructive" });
-    } else {
-      toast({ title: "Sztuki zarezerwowane pomyślnie!" });
-      fetchReservedUnits(orderId);
-      fetchDetail(orderId);
-    }
-    setReserving(false);
   };
 
   const [confirmingCod, setConfirmingCod] = useState(false);
@@ -389,6 +441,7 @@ const AdminOrders = () => {
     return (
       o.order_number.toLowerCase().includes(q) ||
       o.display_name?.toLowerCase().includes(q) ||
+      o.customer_email?.toLowerCase().includes(q) ||
       o.shipping_name?.toLowerCase().includes(q) ||
       o.shipping_city?.toLowerCase().includes(q)
     );
@@ -544,16 +597,23 @@ const AdminOrders = () => {
                     size="sm"
                     variant="outline"
                     onClick={() => handleGeneratePodPdf(selectedOrder)}
-                    disabled={isGeneratingPodPdf}
+                    disabled={isGeneratingPodPdf || selectedOrder.payment_status !== "paid"}
                     className="gap-2"
                   >
                     {isGeneratingPodPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
                     Pobierz PDF dla Drukarni
                   </Button>
+                  {lastGeneratedPodPdf?.orderId === selectedOrder.id && (
+                    <Button size="sm" variant="ghost" asChild>
+                      <a href={lastGeneratedPodPdf.downloadUrl} download={lastGeneratedPodPdf.fileName}>
+                        Pobierz ponownie PDF
+                      </a>
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     onClick={() => handleSendToPrinter(selectedOrder.id, selectedOrder.order_number)}
-                    disabled={isSendingPodEmail}
+                    disabled={isSendingPodEmail || selectedOrder.payment_status !== "paid"}
                     className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                   >
                     {isSendingPodEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -617,38 +677,16 @@ const AdminOrders = () => {
               </div>
             </div>
 
-            {/* Inventory Reservation Section */}
+            {/* POD units are generated after payment; there is no stock reservation. */}
             <div className="bg-card rounded-xl p-6 shadow-soft space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="font-display font-semibold">Rezerwacja sztuk z magazynu</h4>
-                {selectedOrder.payment_status === 'paid' && reservedUnits.length === 0 && (
-                  <Button onClick={() => reserveInventory(selectedOrder.id)} disabled={reserving} size="sm" className="gap-2">
-                    {reserving ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
-                    Zarezerwuj sztuki
-                  </Button>
-                )}
-              </div>
-
-              {reserveError && (
-                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 space-y-2">
-                  <div className="flex items-center gap-2 text-destructive">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span className="text-sm font-medium">{reserveError}</span>
-                  </div>
-                  {shortages.length > 0 && (
-                    <div className="text-sm space-y-1">
-                      {shortages.map((s: InventoryShortage, i: number) => (
-                        <p key={i} className="text-destructive/80">
-                          Wzór {s.card_design_id?.slice(0, 8)}... — potrzeba: {s.requested}, dostępne: {s.available}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+              <h4 className="font-display font-semibold">Sztuki POD z indywidualnymi kodami QR</h4>
 
               {selectedOrder.payment_status !== 'paid' && reservedUnits.length === 0 && (
-                <p className="text-sm text-muted-foreground">Rezerwacja możliwa po opłaceniu zamówienia.</p>
+                <p className="text-sm text-muted-foreground">Sztuki i kody QR zostaną utworzone automatycznie po opłaceniu zamówienia.</p>
+              )}
+
+              {selectedOrder.payment_status === 'paid' && reservedUnits.length === 0 && (
+                <p className="text-sm text-muted-foreground">Trwa przygotowanie sztuk i kodów QR dla zadania POD.</p>
               )}
 
               {reservedUnits.length > 0 && (
@@ -677,7 +715,7 @@ const AdminOrders = () => {
                       ))}
                     </tbody>
                   </table>
-                  <p className="text-xs text-muted-foreground mt-2">Zarezerwowano {reservedUnits.length} sztuk</p>
+                  <p className="text-xs text-muted-foreground mt-2">Utworzono {reservedUnits.length} sztuk POD z unikalnymi kodami QR</p>
                 </div>
               )}
             </div>
@@ -688,8 +726,20 @@ const AdminOrders = () => {
   }
 
   return (
-    <div className="space-y-4">
-      <h2 className="font-display text-xl font-bold text-foreground">Zarządzanie zamówieniami</h2>
+    <div className="space-y-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="mb-1 text-sm font-medium text-primary">Kolejka produkcyjna</p>
+          <h2 className="font-display text-2xl font-bold text-foreground">Zamówienia POD</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Otwórz opłacone zamówienie, przygotuj plik SRA3 z kodami QR, a następnie przekaż je do drukarni.</p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 rounded-2xl border border-primary/15 bg-primary/[0.04] p-4 text-sm md:grid-cols-3">
+        <div><span className="font-semibold text-primary">1. Opłacone</span><p className="mt-1 text-muted-foreground">System tworzy jednostki POD i indywidualne QR.</p></div>
+        <div><span className="font-semibold text-primary">2. PDF SRA3</span><p className="mt-1 text-muted-foreground">Pobierz arkusz produkcyjny front + tył.</p></div>
+        <div><span className="font-semibold text-primary">3. Drukarnia</span><p className="mt-1 text-muted-foreground">Wyślij zlecenie i aktualizuj status realizacji.</p></div>
+      </div>
 
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[200px]">
@@ -728,7 +778,8 @@ const AdminOrders = () => {
               <tr className="border-b border-border">
                 <th className="text-left p-3 font-medium text-muted-foreground">Nr zamówienia</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Klient</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Data</th>
+                 <th className="text-left p-3 font-medium text-muted-foreground">E-mail</th>
+                 <th className="text-left p-3 font-medium text-muted-foreground">Data</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Płatność</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Metoda</th>
@@ -747,7 +798,8 @@ const AdminOrders = () => {
                   <tr key={o.id} className="border-b border-border/50 hover:bg-muted/30 cursor-pointer" onClick={() => fetchDetail(o.id)}>
                     <td className="p-3 font-mono text-xs">{o.order_number}</td>
                     <td className="p-3">{o.display_name || "—"}</td>
-                    <td className="p-3 text-xs text-muted-foreground">{formatDate(o.created_at)}</td>
+                     <td className="p-3 text-xs text-muted-foreground">{o.customer_email || "—"}</td>
+                     <td className="p-3 text-xs text-muted-foreground">{formatDate(o.created_at)}</td>
                     <td className="p-3">{statusBadge(o.status)}</td>
                     <td className="p-3 text-xs">{PAYMENT_LABELS[o.payment_status]}</td>
                     <td className="p-3 text-xs">

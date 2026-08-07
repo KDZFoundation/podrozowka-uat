@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
+import OrderSteps from "@/components/checkout/OrderSteps";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/contexts/CartContext";
 import { useCheckout } from "@/contexts/CheckoutContext";
@@ -213,8 +214,10 @@ const CheckoutConfirmation = () => {
         <meta name="robots" content="noindex" />
       </Helmet>
       <Header />
-      <main className="flex-1 container mx-auto px-4 py-12">
-        <div className="max-w-xl mx-auto bg-card rounded-2xl shadow-card p-8 text-center">
+      <main id="main-content" className="container mx-auto flex-1 px-4 pb-12 pt-24 md:pt-28">
+        <div className="mx-auto max-w-xl">
+          <OrderSteps current={3} />
+          <div className="rounded-2xl bg-card p-8 text-center shadow-card">
           {status === "loading" && (
             <>
               <Loader2 className="w-12 h-12 text-primary mx-auto mb-4 animate-spin" />
@@ -238,7 +241,7 @@ const CheckoutConfirmation = () => {
                 <p className="text-lg font-semibold mb-6">{formatPln(order.total_amount)}</p>
               )}
               <p className="text-sm text-muted-foreground mb-6">
-                Dziękujemy! Zajmiemy się przygotowaniem zamówienia i wyślemy je do wybranego paczkomatu.
+                Dziękujemy! Twoje Podróżówki trafiły do przygotowania do druku. Po realizacji wyślemy je wybraną metodą dostawy.
               </p>
 
               {order && (
@@ -371,6 +374,7 @@ const CheckoutConfirmation = () => {
               </Button>
             </>
           )}
+          </div>
         </div>
       </main>
       <Footer />

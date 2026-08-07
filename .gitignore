@@ -27,3 +27,15 @@ dist-ssr
 .env
 .env.*
 !.env.example
+
+# Local Supabase tooling and schema-export diagnostics. The reviewed canonical
+# baseline is tracked from supabase/migrations, not from these generated files.
+.tools/
+.baseline-test-*/
+.schema-export-*/
+.supabase-deploy-*/
+supabase/baselines/*.sql
+
+# Local PDF previews and development-server output.
+tmp/
+output/

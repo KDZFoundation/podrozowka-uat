@@ -122,6 +122,7 @@ const AdminInventory = () => {
   const [initQuantity, setInitQuantity] = useState("5000");
   const [initBatchName, setInitBatchName] = useState("");
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isClearingInventory, setIsClearingInventory] = useState(false);
 
   // Detail view
   const [selectedUnit, setSelectedUnit] = useState<InventoryUnit | null>(null);
@@ -337,6 +338,41 @@ const AdminInventory = () => {
     }
   };
 
+  const handleClearInventory = async () => {
+    if (!confirm("Czy na pewno chcesz usunąć wszystkie pozycje z magazynu? Operacji nie można cofnąć.")) return;
+
+    setIsClearingInventory(true);
+    try {
+      const { error: jobItemsError } = await supabase
+        .from("qr_print_job_items")
+        .delete()
+        .not("id", "is", null);
+      if (jobItemsError) throw jobItemsError;
+
+      const { error: jobsError } = await supabase
+        .from("qr_print_jobs")
+        .delete()
+        .not("id", "is", null);
+      if (jobsError) throw jobsError;
+
+      const { error: unitsError } = await supabase
+        .from("inventory_units")
+        .delete()
+        .not("id", "is", null);
+      if (unitsError) throw unitsError;
+
+      setSelectedUnit(null);
+      setUnitEvents([]);
+      toast({ title: "Magazyn został wyczyszczony" });
+      await fetchUnits();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Nie udało się wyczyścić magazynu.";
+      toast({ title: "Błąd czyszczenia magazynu", description: message, variant: "destructive" });
+    } finally {
+      setIsClearingInventory(false);
+    }
+  };
+
   const formatDate = (d: string | null) =>
     d ? new Date(d).toLocaleDateString("pl-PL", { day: "numeric", month: "short", year: "numeric" }) : "—";
 
@@ -454,9 +490,15 @@ const AdminInventory = () => {
           <h2 className="font-display text-xl font-bold text-foreground">Magazyn & System POD</h2>
           <p className="text-xs text-muted-foreground">System realizuje zamówienia w formule Print On Demand (POD) — bezpośrednio na zlecenie z drukarni.</p>
         </div>
-        <Button onClick={() => setShowInitDialog(true)} size="sm" className="gap-2">
-          <Plus className="w-4 h-4" /> Nowa partia
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="destructive" onClick={handleClearInventory} size="sm" disabled={isClearingInventory} className="gap-2">
+            {isClearingInventory ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            Wyczyść magazyn
+          </Button>
+          <Button onClick={() => setShowInitDialog(true)} size="sm" className="gap-2">
+            <Plus className="w-4 h-4" /> Nowa partia
+          </Button>
+        </div>
       </div>
 
       {/* Init batch dialog */}

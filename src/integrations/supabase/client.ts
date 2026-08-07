@@ -127,7 +127,7 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
           id, business_status, fulfillment_status, registered_at, traveler_user_id,
           card_designs!inner(title, image_front_url, country_id)
         `)
-        .eq("public_claim_token_hash", tokenHash)
+        .in("public_claim_token_hash", [tokenHash, token])
         .maybeSingle();
 
       if (fetchError || !unit) {
@@ -238,7 +238,7 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
       const { data: unit } = await supabase
         .from("inventory_units")
         .select("id")
-        .eq("public_claim_token_hash", tokenHash)
+        .in("public_claim_token_hash", [tokenHash, token])
         .maybeSingle();
 
       if (!unit) {
@@ -359,7 +359,9 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
           id: generatedId,
           user_id: userId,
           order_number: generatedNumber,
-          status: "pending",
+          // The development fallback completes online payment immediately, so its
+          // fulfillment status must match the recorded payment state.
+          status: payment_method === "online" ? "paid" : "pending",
           payment_status: payment_method === "online" ? "paid" : "unpaid",
           paid_at: payment_method === "online" ? new Date().toISOString() : null,
           total_amount: calculatedTotal,
@@ -468,7 +470,7 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
 
       await supabase
         .from("orders")
-        .update({ payment_status: "paid", paid_at: new Date().toISOString() })
+        .update({ payment_status: "paid", status: "paid", paid_at: new Date().toISOString() })
         .eq("id", orderId);
 
       return {
@@ -501,7 +503,7 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
 
     const { error: updateErr } = await supabase
       .from("orders")
-      .update({ payment_status: "paid", paid_at: new Date().toISOString() })
+      .update({ payment_status: "paid", status: "paid", paid_at: new Date().toISOString() })
       .eq("id", orderId);
 
     if (updateErr) {
@@ -668,7 +670,9 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
 
       const item = items[i];
       const claimCode = item.public_claim_code;
-      const qrUrl = item.qr_url;
+      // POD QR records use a relative path. Resolve it only when rendering so
+      // a test print uses localhost and a production print uses its own domain.
+      const qrUrl = new URL(item.qr_url, window.location.origin).toString();
       const inventoryUnit = item.inventory_units as unknown as {
         internal_inventory_code: string | null;
         card_designs: {
@@ -1008,3 +1012,4 @@ if (typeof window !== "undefined") {
 }
 
 export const supabaseUrl = activeUrl;
+export const supabaseAnonKey = activeKey || CONFIGS.dev.anonKey;

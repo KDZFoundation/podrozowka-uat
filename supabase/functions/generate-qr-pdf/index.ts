@@ -90,6 +90,10 @@ Deno.serve(async (req) => {
       });
     }
 
+    // QR records contain a relative registration path so the same order can be
+    // printed after moving from local development to the production domain.
+    const publicBaseUrl = Deno.env.get('SITE_URL') || Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '.lovable.app') || 'https://podrozowka.lovable.app';
+
     // Generate PDF - Square 35x35mm stickers layout for postcard back
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
     const pageWidth = 210;
@@ -145,7 +149,8 @@ interface PrintJobItem {
       const y = topMargin + row * (stickerSize + rowGap);
 
       // Generate QR code as data URL
-      const qrDataUrl = await QRCode.toDataURL(item.qr_url, {
+      const registrationUrl = new URL(item.qr_url, publicBaseUrl).toString();
+      const qrDataUrl = await QRCode.toDataURL(registrationUrl, {
         width: 180,
         margin: 1,
         errorCorrectionLevel: 'M',

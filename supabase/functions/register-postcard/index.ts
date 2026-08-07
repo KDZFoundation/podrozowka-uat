@@ -4,7 +4,9 @@ import { buildCorsHeaders } from "../_shared/cors.ts";
 async function hashToken(token: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(token);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) throw new Error("Web Crypto API is unavailable");
+  const hashBuffer = await subtle.digest("SHA-256", data);
   return Array.from(new Uint8Array(hashBuffer))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -32,14 +34,16 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "token is required" }), { status: 400, headers: jsonHeaders });
       }
 
-      const tokenHash = await hashToken(token);
+      // POD tokens are stored as random, plaintext values. Older units may
+      // contain a SHA-256 hash, so use it only when the runtime supports it.
+      const tokenHash = globalThis.crypto?.subtle ? await hashToken(token) : null;
       const { data: unit, error } = await supabase
         .from("inventory_units")
         .select(`
           id, business_status, fulfillment_status, registered_at, traveler_user_id,
-          card_designs!inner(title, image_front_url, countries!inner(name_pl, iso2))
+          card_designs!inner(title, image_front_url, language_code, countries!inner(name_pl, iso2))
         `)
-        .eq("public_claim_token_hash", tokenHash)
+        .in("public_claim_token_hash", tokenHash ? [token, tokenHash] : [token])
         .maybeSingle();
 
       if (error || !unit) {
@@ -76,6 +80,7 @@ Deno.serve(async (req) => {
         card_designs: {
           title: string | null;
           image_front_url: string | null;
+          language_code: string | null;
           countries: {
             name_pl: string | null;
             iso2: string | null;
@@ -107,6 +112,7 @@ Deno.serve(async (req) => {
           image_front_url: design?.image_front_url,
           country_name: design?.countries?.name_pl,
           country_iso2: design?.countries?.iso2,
+          language_code: design?.language_code || "en",
         },
       }), { status: 200, headers: jsonHeaders });
     }
@@ -147,12 +153,12 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Wiadomość zbyt długa (max 500)" }), { status: 400, headers: jsonHeaders });
       }
 
-      const tokenHash = await hashToken(token);
+      const tokenHash = globalThis.crypto?.subtle ? await hashToken(token) : null;
 
       const { data: unit, error: fetchError } = await supabase
         .from("inventory_units")
         .select("id")
-        .eq("public_claim_token_hash", tokenHash)
+        .in("public_claim_token_hash", tokenHash ? [token, tokenHash] : [token])
         .maybeSingle();
 
       if (fetchError || !unit) {

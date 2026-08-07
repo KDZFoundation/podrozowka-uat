@@ -8,7 +8,7 @@ const PostcardPreview = () => {
   const [isFlipped, setIsFlipped] = useState(false);
 
   return (
-    <section className="py-16 md:py-24 bg-secondary/30">
+    <section id="jak-to-dziala" className="bg-secondary/30 py-16 md:py-24">
       <div className="container mx-auto px-4">
         <div className="text-center mb-10">
           <span className="inline-block px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium mb-4">

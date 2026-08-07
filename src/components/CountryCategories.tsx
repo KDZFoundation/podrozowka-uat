@@ -1,7 +1,6 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { TrendingUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
 interface CountryCategory {
@@ -10,41 +9,14 @@ interface CountryCategory {
   name: string;
   thankYou: string;
   greetings: string;
-  sold: number;
   available: number;
 }
-
-const AnimatedCounter = ({ value, suffix = "" }: { value: number; suffix?: string }) => {
-  const [displayValue, setDisplayValue] = useState(0);
-
-  useEffect(() => {
-    const duration = 1500;
-    const steps = 30;
-    const stepValue = value / steps;
-    let current = 0;
-    
-    const timer = setInterval(() => {
-      current += stepValue;
-      if (current >= value) {
-        setDisplayValue(value);
-        clearInterval(timer);
-      } else {
-        setDisplayValue(Math.floor(current));
-      }
-    }, duration / steps);
-
-    return () => clearInterval(timer);
-  }, [value]);
-
-  return <span>{displayValue}{suffix}</span>;
-};
 
 const DEFAULT_FEATURED_COUNTRIES = ["DE", "IT", "ES", "GB", "FR", "UA", "TH", "IN", "TR", "US", "CZ", "HR", "GR", "HU", "CN", "NO"];
 
 const CountryCategories = () => {
   const [categories, setCategories] = useState<CountryCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadCountryCategories = async () => {
@@ -89,7 +61,6 @@ const CountryCategories = () => {
             name: c.name_pl,
             thankYou: thankYouMap.get(c.id) || "Dziękuję",
             greetings: "Pozdrowienia",
-            sold: Math.floor(Math.random() * 150) + 100, // Dynamic presentation metric
             available: designCountsMap.get(c.id) || 2,
           }))
           .sort((a, b) => b.available - a.available || a.name.localeCompare(b.name, "pl"));
@@ -101,8 +72,6 @@ const CountryCategories = () => {
 
     loadCountryCategories();
   }, []);
-
-  const totalSold = categories.reduce((acc, country) => acc + country.sold, 0);
 
   if (isLoading) {
     return (
@@ -127,13 +96,9 @@ const CountryCategories = () => {
             w wybranym języku. Idealna pamiątka dla osób, które spotkasz w podróży.
           </p>
 
-          {/* Total counter */}
-          <div className="inline-flex items-center gap-3 bg-accent/10 px-6 py-3 rounded-full">
-            <TrendingUp className="w-5 h-5 text-accent" />
-            <span className="text-foreground font-medium">
-              Łącznie sprzedano: <span className="font-display font-bold text-accent"><AnimatedCounter value={totalSold} /></span> Podróżówek
-            </span>
-          </div>
+          <p className="inline-flex rounded-full bg-accent/10 px-4 py-2 text-sm font-medium text-accent">
+            Wybierz kraj odbiorcy i przejdź do dostępnych wzorów
+          </p>
         </div>
 
         {/* Country grid */}
@@ -149,8 +114,6 @@ const CountryCategories = () => {
                 whileInView={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.4, delay: index * 0.05 }}
                 viewport={{ once: true }}
-                onMouseEnter={() => setHoveredId(country.id)}
-                onMouseLeave={() => setHoveredId(null)}
                 className="group relative bg-card rounded-xl p-5 shadow-soft hover:shadow-card transition-all duration-300 cursor-pointer border border-transparent hover:border-primary/20 h-full flex flex-col justify-between"
               >
                 <div>
@@ -187,24 +150,7 @@ const CountryCategories = () => {
                   </div>
                 </div>
 
-                {/* Sales counter */}
-                <div className="flex items-center gap-2 text-sm mt-2">
-                  <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
-                    <motion.div
-                      className="h-full bg-primary rounded-full"
-                      initial={{ width: 0 }}
-                      whileInView={{ width: `${Math.min((country.sold / 500) * 100, 100)}%` }}
-                      transition={{ duration: 1, delay: 0.2 }}
-                      viewport={{ once: true }}
-                    />
-                  </div>
-                  <span className="text-muted-foreground font-medium whitespace-nowrap text-xs">
-                    {country.sold} sprzedanych
-                  </span>
-                </div>
-
-                {/* Hover overlay */}
-                <div className={`absolute inset-0 bg-primary/5 rounded-xl transition-opacity duration-300 ${hoveredId === country.id ? "opacity-100" : "opacity-0"}`} />
+                <span className="mt-4 inline-flex items-center text-sm font-semibold text-primary">Zobacz wzory →</span>
               </motion.div>
             </Link>
           ))}

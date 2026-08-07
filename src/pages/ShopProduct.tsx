@@ -7,6 +7,7 @@ import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useCart } from "@/contexts/CartContext";
+import { getProductTitle } from "@/lib/productTitle";
 
 interface Country {
   id: string;
@@ -28,6 +29,8 @@ interface Product {
   image_front_url: string | null;
   price_grosze: number;
   country_id: string;
+  language_code: string;
+  view_no: number;
   active: boolean;
   countries: Country | null;
   categories: Category | null;
@@ -45,22 +48,22 @@ const formatPln = (grosze: number) =>
 const ShopProduct = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { addItem, getQuantity } = useCart();
+  const { addItem } = useCart();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [images, setImages] = useState<ExtraImage[]>([]);
-  const [stock, setStock] = useState<number>(0);
   const [activeImage, setActiveImage] = useState<string | null>(null);
+  const [quantityToAdd, setQuantityToAdd] = useState<number>(1);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!id) return;
     const load = async () => {
       setIsLoading(true);
-      const [{ data: p }, { data: imgs }, { data: stockData }] = await Promise.all([
+      const [{ data: p }, { data: imgs }] = await Promise.all([
         supabase
           .from("card_designs")
-          .select("id, title, description, image_front_url, price_grosze, country_id, active, countries!inner(id, iso2, name_pl), categories(id, name, slug, icon_url)")
+          .select("id, title, description, image_front_url, price_grosze, country_id, language_code, view_no, active, countries!inner(id, iso2, name_pl), categories(id, name, slug, icon_url)")
           .eq("id", id)
           .eq("active", true)
           .gt("price_grosze", 0)
@@ -70,7 +73,6 @@ const ShopProduct = () => {
           .select("id, url, sort_order")
           .eq("card_design_id", id)
           .order("sort_order", { ascending: true }),
-        supabase.rpc("get_product_stock", { _id: id }),
       ]);
 
       if (!p) {
@@ -80,7 +82,6 @@ const ShopProduct = () => {
       }
       setProduct(p as unknown as Product);
       setImages((imgs as ExtraImage[]) || []);
-      setStock((stockData as number) || 0);
       setActiveImage((p as unknown as Product).image_front_url || (imgs && imgs[0]?.url) || null);
       setIsLoading(false);
     };
@@ -89,21 +90,13 @@ const ShopProduct = () => {
 
   useEffect(() => {
     if (product) {
-      document.title = `${product.title || "Produkt"} – Sklep – Podróżówka`;
+      document.title = `${getProductTitle(product)} – Sklep – Podróżówka`;
       const meta = document.querySelector('meta[name="description"]');
       if (meta && product.description) {
         meta.setAttribute("content", product.description.slice(0, 155));
       }
     }
   }, [product]);
-
-  const [quantityToAdd, setQuantityToAdd] = useState<number>(10);
-
-  useEffect(() => {
-    if (stock > 0) {
-      setQuantityToAdd(Math.min(10, stock));
-    }
-  }, [stock]);
 
   const gallery = useMemo(() => {
     const list: string[] = [];
@@ -114,29 +107,19 @@ const ShopProduct = () => {
     return list;
   }, [product, images]);
 
-  const inCart = product ? getQuantity(product.id) : 0;
-  const canAdd = stock > 0 && inCart < stock;
-
   const handleAddToCart = () => {
     if (!product) return;
-    if (stock === 0) {
-      toast.error("Produkt niedostępny");
-      return;
-    }
-    const toAdd = Math.max(1, quantityToAdd);
-    if (inCart + toAdd > stock) {
-      toast.error(`Nie można dodać ${toAdd} szt. — w magazynie zostało ${stock - inCart} szt.`);
-      return;
-    }
-    addItem(product.id, toAdd, stock);
-    toast.success(`Dodano ${toAdd} szt. do koszyka`);
+    const quantity = Math.max(1, Math.floor(quantityToAdd) || 1);
+    addItem(product.id, quantity);
+    const noun = quantity === 1 ? "pocztówkę" : quantity >= 2 && quantity <= 4 ? "pocztówki" : "pocztówek";
+    toast.success(`Dodano ${quantity} ${noun} do koszyka`);
   };
 
   if (isLoading || !product) {
     return (
       <div className="min-h-screen bg-background flex flex-col">
         <Header />
-        <main className="flex-1 container mx-auto px-4 py-8">
+        <main id="main-content" className="container mx-auto flex-1 px-4 pb-8 pt-24 md:pt-28">
           <div className="grid md:grid-cols-2 gap-8 animate-pulse">
             <div className="aspect-[3/2] bg-muted rounded-xl" />
             <div className="space-y-4">
@@ -156,20 +139,20 @@ const ShopProduct = () => {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
-      <main className="flex-1 container mx-auto px-4 py-8">
+      <main id="main-content" className="container mx-auto flex-1 px-4 pb-10 pt-24 md:pb-14 md:pt-28">
         <nav className="flex items-center gap-1 text-sm text-muted-foreground mb-6">
           <Link to="/sklep" className="hover:text-foreground">
             Sklep
           </Link>
           <ChevronRight className="w-4 h-4" />
-          <span className="text-foreground truncate">{product.title}</span>
+          <span className="text-foreground truncate">{getProductTitle(product)}</span>
         </nav>
 
         <div className="grid md:grid-cols-2 gap-8">
           <div className="space-y-3">
             <div className="aspect-[3/2] bg-muted rounded-xl overflow-hidden">
               {activeImage ? (
-                <img src={activeImage} alt={product.title || ""} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <img src={activeImage} alt={getProductTitle(product)} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <Package className="w-12 h-12 text-muted-foreground" />
@@ -210,23 +193,12 @@ const ShopProduct = () => {
                 </span>
               )}
             </div>
-            <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">{product.title}</h1>
+            <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">{getProductTitle(product)}</h1>
             <p className="font-display text-3xl font-bold text-primary mb-6">{formatPln(product.price_grosze)}</p>
 
-            <div className="mb-6 space-y-2">
-              {stock > 0 ? (
-                <p className="text-sm text-accent font-medium">
-                  <span className="inline-block w-2 h-2 rounded-full bg-accent mr-2" />
-                  Dostępne w magazynie: {stock} szt.
-                </p>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  <span className="inline-block w-2 h-2 rounded-full bg-muted-foreground mr-2" />
-                  Niedostępne
-                </p>
-              )}
+            <div className="mb-6">
               <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-800 dark:text-amber-200">
-                📌 <strong>Uwaga:</strong> Minimalne zamówienie to <strong>10 podróżówek</strong> w koszyku.
+                📌 <strong>Uwaga:</strong> możesz łączyć różne wzory. Minimalne zamówienie to <strong>10 podróżówek</strong> w całym koszyku.
               </div>
             </div>
 
@@ -236,58 +208,43 @@ const ShopProduct = () => {
               </div>
             )}
 
-            {canAdd && (
-              <div className="mb-6 space-y-2">
-                <label className="text-xs font-medium text-muted-foreground block">Liczba sztuk do dodania:</label>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center border border-border rounded-lg bg-card">
-                    <button
-                      type="button"
-                      onClick={() => setQuantityToAdd((q) => Math.max(1, q - 1))}
-                      className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-l-lg transition-colors font-bold"
-                    >
-                      -
-                    </button>
-                    <input
-                      type="number"
-                      min={1}
-                      max={stock}
-                      value={quantityToAdd}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        if (!isNaN(val)) setQuantityToAdd(Math.min(stock, Math.max(1, val)));
-                      }}
-                      className="w-16 text-center font-bold bg-transparent border-0 focus:outline-none text-sm"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setQuantityToAdd((q) => Math.min(stock, q + 1))}
-                      className="px-3 py-2 text-muted-foreground hover:text-foreground hover:bg-muted rounded-r-lg transition-colors font-bold"
-                    >
-                      +
-                    </button>
-                  </div>
-                  <div className="flex gap-1">
-                    {[10, 20, 50].map((num) => (
-                      <button
-                        key={num}
-                        type="button"
-                        onClick={() => setQuantityToAdd(Math.min(stock, num))}
-                        className={`px-2.5 py-1.5 rounded text-xs font-medium border transition-colors ${
-                          quantityToAdd === num
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-muted/50 border-border hover:bg-muted text-foreground"
-                        }`}
-                      >
-                        {num} szt.
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            <div className="mb-5">
+              <label htmlFor="postcard-quantity" className="mb-2 block text-sm font-medium text-foreground">
+                Liczba podróżówek tego wzoru
+              </label>
+              <div className="flex w-fit items-center overflow-hidden rounded-lg border border-border bg-card">
+                <button
+                  type="button"
+                  onClick={() => setQuantityToAdd((quantity) => Math.max(1, quantity - 1))}
+                  className="px-3 py-2 text-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Zmniejsz liczbę podróżówek"
+                >
+                  −
+                </button>
+                <input
+                  id="postcard-quantity"
+                  type="number"
+                  min={1}
+                  max={1000}
+                  value={quantityToAdd}
+                  onChange={(event) => {
+                    const value = Number.parseInt(event.target.value, 10);
+                    setQuantityToAdd(Number.isFinite(value) ? Math.max(1, value) : 1);
+                  }}
+                  className="w-14 border-x border-border bg-background py-2 text-center text-sm font-semibold outline-none focus:ring-2 focus:ring-primary"
+                />
+                <button
+                  type="button"
+                  onClick={() => setQuantityToAdd((quantity) => quantity + 1)}
+                  className="px-3 py-2 text-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label="Zwiększ liczbę podróżówek"
+                >
+                  +
+                </button>
               </div>
-            )}
+            </div>
 
-            <Button size="lg" onClick={handleAddToCart} disabled={!canAdd} className="w-full md:w-auto font-medium">
+            <Button size="lg" onClick={handleAddToCart} className="w-full md:w-auto font-medium">
               <ShoppingCart className="w-4 h-4 mr-2" />
               Dodaj do koszyka ({quantityToAdd} szt.)
             </Button>

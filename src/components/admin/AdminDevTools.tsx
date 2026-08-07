@@ -229,6 +229,7 @@ const AdminDevTools = () => {
         .from("card_designs")
         .select("id")
         .eq("country_id", countryId)
+        .eq("language_code", "ja")
         .limit(1)
         .maybeSingle();
 
@@ -237,7 +238,7 @@ const AdminDevTools = () => {
       } else {
         const { data: newDesign, error: dErr } = await supabase
           .from("card_designs")
-          .insert({ country_id: countryId, view_no: 1, title: "Test Pocztówka Japonia", language_code: "pl", active: true })
+          .insert({ country_id: countryId, view_no: 999, title: "テスト用ポストカード：日本", language_code: "ja", active: true })
           .select("id")
           .single();
         if (dErr) throw dErr;

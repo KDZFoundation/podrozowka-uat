@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           card_design_id: string
           created_at: string
+          flag_url: string | null
           id: string
           sort_order: number
           url: string
@@ -25,6 +26,7 @@ export type Database = {
         Insert: {
           card_design_id: string
           created_at?: string
+          flag_url?: string | null
           id?: string
           sort_order?: number
           url: string
@@ -32,6 +34,7 @@ export type Database = {
         Update: {
           card_design_id?: string
           created_at?: string
+          flag_url?: string | null
           id?: string
           sort_order?: number
           url?: string
@@ -509,6 +512,7 @@ export type Database = {
           company_name: string | null
           company_nip: string | null
           created_at: string
+          customer_email: string | null
           currency: string
           fiscal_document_error: string | null
           fiscal_document_external_id: string | null
@@ -546,6 +550,7 @@ export type Database = {
           company_name?: string | null
           company_nip?: string | null
           created_at?: string
+          customer_email?: string | null
           currency?: string
           fiscal_document_error?: string | null
           fiscal_document_external_id?: string | null
@@ -583,6 +588,7 @@ export type Database = {
           company_name?: string | null
           company_nip?: string | null
           created_at?: string
+          customer_email?: string | null
           currency?: string
           fiscal_document_error?: string | null
           fiscal_document_external_id?: string | null

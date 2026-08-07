@@ -27,6 +27,7 @@ import InpostGeowidget from "@/components/checkout/InpostGeowidget";
 import PaymentMethodPicker from "@/components/checkout/PaymentMethodPicker";
 import ShippingMethodPicker from "@/components/checkout/ShippingMethodPicker";
 import CourierAddressForm from "@/components/checkout/CourierAddressForm";
+import OrderSteps from "@/components/checkout/OrderSteps";
 import { isValidNip, normalizeNip } from "@/lib/nip";
 
 const formatPln = (grosze: number) =>
@@ -196,7 +197,8 @@ const Checkout = () => {
         <link rel="canonical" href="https://podrozowka.lovable.app/checkout" />
       </Helmet>
       <Header />
-      <main className="flex-1 container mx-auto px-4 py-8">
+      <main id="main-content" className="container mx-auto flex-1 px-4 pb-10 pt-24 md:pb-14 md:pt-28">
+        <OrderSteps current={2} />
         <div className="mb-6">
           <Link
             to="/koszyk"
@@ -206,9 +208,11 @@ const Checkout = () => {
           </Link>
         </div>
 
-        <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-8">
-          Zamówienie
-        </h1>
+        <div className="mb-8">
+          <p className="mb-2 text-sm font-medium text-primary">Krok 2 z 3</p>
+          <h1 className="font-display text-3xl font-bold text-foreground md:text-4xl">Dostawa i płatność</h1>
+          <p className="mt-2 text-muted-foreground">Po opłaceniu przygotujemy Twoje Podróżówki do druku.</p>
+        </div>
 
         {isBelowMin && (
           <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-900 dark:text-amber-200 flex items-start gap-3 mb-6">
@@ -272,9 +276,10 @@ const Checkout = () => {
 
             {/* Payment method */}
             <div className="bg-card rounded-2xl shadow-card p-6">
-              <h2 className="font-display text-lg font-semibold text-foreground mb-4">
-                Metoda płatności
-              </h2>
+              <div className="mb-4 flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">2</div>
+                <h2 className="font-display text-lg font-semibold text-foreground">Metoda płatności</h2>
+              </div>
               <PaymentMethodPicker value={paymentMethod} onChange={setPaymentMethod} />
             </div>
 
@@ -396,7 +401,7 @@ const Checkout = () => {
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium line-clamp-2">
-                          {it.title || "Bez tytułu"}
+                          {it.title || "Podróżówka"}
                         </p>
                         {it.unavailable ? (
                           <p className="text-xs text-destructive flex items-center gap-1 mt-0.5">
@@ -454,7 +459,7 @@ const Checkout = () => {
                     Przekierowywanie…
                   </>
                 ) : (
-                  "Dalej"
+                  `Przejdź do płatności · ${formatPln(totalGrosze)}`
                 )}
               </Button>
               {!shippingValid && (

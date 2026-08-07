@@ -254,6 +254,16 @@ const Settings = () => {
               )}
             />
 
+            <FormItem>
+              <FormLabel>Adres e-mail konta</FormLabel>
+              <FormControl>
+                <Input type="email" value={user.email ?? ""} readOnly disabled />
+              </FormControl>
+              <p className="text-xs text-muted-foreground">
+                Ten adres jest używany do potwierdzania konta i zostanie zapisany przy nowych zamówieniach.
+              </p>
+            </FormItem>
+
             <div className="grid grid-cols-2 gap-4">
               <FormField
                 control={form.control}

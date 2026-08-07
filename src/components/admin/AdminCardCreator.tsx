@@ -32,6 +32,7 @@ interface Country {
   id: string;
   iso2: string;
   name_pl: string;
+  flag_url: string | null;
 }
 
 interface Category {
@@ -70,7 +71,6 @@ interface CardCreatorProps {
     back_qr_label: string | null;
     price_grosze?: number;
     crop_settings?: CropSettings | unknown;
-    active: boolean;
   };
   onSaveSuccess: () => void;
   onCancel: () => void;
@@ -103,7 +103,6 @@ export const AdminCardCreator = ({
   );
   const [photoAuthor, setPhotoAuthor] = useState(initialDesign?.photo_author || "");
   const [imageUrl, setImageUrl] = useState(initialDesign?.image_front_url || "");
-  const [active, setActive] = useState(initialDesign?.active ?? true);
 
   // Crop Settings State
   const parsedCrop: CropSettings = initialDesign?.crop_settings
@@ -120,7 +119,7 @@ export const AdminCardCreator = ({
   // Fetch Countries, Categories & Templates
   const loadData = useCallback(async () => {
     const [{ data: cData }, { data: tData }, { data: catData }] = await Promise.all([
-      supabase.from("countries").select("id, iso2, name_pl").order("name_pl"),
+      supabase.from("countries").select("*").order("name_pl"),
       supabase.from("card_language_templates").select("*").order("country_id"),
       supabase.from("categories").select("id, name, slug").order("sort_order").order("name"),
     ]);
@@ -268,10 +267,11 @@ export const AdminCardCreator = ({
       back_qr_label: backQrLabel.trim() || null,
       photo_author: photoAuthor.trim() || null,
       image_front_url: imageUrl.trim() || null,
-      price_grosze: initialDesign?.price_grosze || 1500,
+      // A design is only a template. Price and shop publication are set later in Products.
+      price_grosze: initialDesign?.price_grosze || 0,
       currency: "PLN",
       crop_settings: cropSettingsObj,
-      active: active,
+      ...(initialDesign?.id ? {} : { active: false }),
     };
 
     try {
@@ -448,7 +448,7 @@ export const AdminCardCreator = ({
                 2. Nazwa autora zdjęcia (pionowy napis po prawej stronie zdjęcia)
               </label>
               <Input
-                placeholder="np. @JanKowalski lub Autor zdjęcia"
+                placeholder="np. JanKowalski lub @JanKowalski — na kartce: fot. by @JanKowalski"
                 value={photoAuthor}
                 onChange={(e) => setPhotoAuthor(e.target.value)}
               />
@@ -596,12 +596,6 @@ export const AdminCardCreator = ({
               />
             </div>
 
-            <div className="flex items-center gap-2 pt-2">
-              <Switch checked={active} onCheckedChange={setActive} />
-              <label className="text-xs font-medium text-foreground">
-                Kartka aktywna w sklepie
-              </label>
-            </div>
           </div>
         </div>
 
@@ -649,6 +643,8 @@ export const AdminCardCreator = ({
               <div className="w-full max-w-[520px]">
                 <PostcardBack
                   backQrLabel={backQrLabel}
+                  countryIso2={selectedCountry?.iso2}
+                  countryFlagUrl={selectedCountry?.flag_url}
                   showCropMarks={true}
                 />
               </div>
