@@ -2,7 +2,7 @@ export const SHIPPING_COST_GROSZE = 1399;
 export const COD_SHIPPING_COST_GROSZE = 1699;
 
 export type PaymentMethod = "online" | "cod";
-export type ShippingMethod = "inpost" | "courier";
+export type ShippingMethod = "inpost" | "courier" | "orlen" | "pocztex";
 
 export const getShippingCostGrosze = (method: PaymentMethod): number =>
   method === "cod" ? COD_SHIPPING_COST_GROSZE : SHIPPING_COST_GROSZE;

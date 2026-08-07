@@ -27,6 +27,8 @@ interface ShipmentRow {
   shipped_at: string | null;
   delivered_at: string | null;
   created_at: string;
+  inpost_shipment_id?: string | null;
+  size?: string | null;
 }
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -57,12 +59,14 @@ const AdminShipments = () => {
 
   // Detail
   const [selectedShipment, setSelectedShipment] = useState<ShipmentRow | null>(null);
+  const [selectedParcelSize, setSelectedParcelSize] = useState<"small" | "medium" | "large">("small");
+  const [isGeneratingInpost, setIsGeneratingInpost] = useState(false);
 
   const fetchShipments = useCallback(async () => {
     setIsLoading(true);
     let query = supabase
       .from("shipments")
-      .select("id, order_id, user_id, status, tracking_number, carrier, shipped_at, delivered_at, created_at")
+      .select("id, order_id, user_id, status, tracking_number, carrier, shipped_at, delivered_at, created_at, inpost_shipment_id, size")
       .order("created_at", { ascending: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
@@ -70,22 +74,39 @@ const AdminShipments = () => {
 
     const { data } = await query;
     if (data) {
-      // Fetch order numbers and display names
-      const orderIds = [...new Set(data.map(s => s.order_id))];
-      const userIds = [...new Set(data.map(s => s.user_id))];
+      // Fetch order numbers and display names safely
+      const orderIds = [...new Set(data.map(s => s.order_id))].filter((id): id is string => Boolean(id));
+      const userIds = [...new Set(data.map(s => s.user_id))].filter((id): id is string => Boolean(id));
 
-      const [{ data: orders }, { data: profiles }] = await Promise.all([
-        supabase.from("orders").select("id, order_number").in("id", orderIds),
-        supabase.from("profiles").select("user_id, display_name").in("user_id", userIds),
-      ]);
+      let orders: { id: string; order_number: string }[] | null = null;
+      let profiles: { user_id: string; display_name: string | null }[] | null = null;
+
+      const promises: Promise<void>[] = [];
+
+      if (orderIds.length > 0) {
+        promises.push(
+          supabase.from("orders").select("id, order_number").in("id", orderIds).then(({ data }) => {
+            orders = data;
+          })
+        );
+      }
+      if (userIds.length > 0) {
+        promises.push(
+          supabase.from("profiles").select("user_id, display_name").in("user_id", userIds).then(({ data }) => {
+            profiles = data;
+          })
+        );
+      }
+
+      await Promise.all(promises);
 
       const orderMap = new Map(orders?.map(o => [o.id, o.order_number]) || []);
       const nameMap = new Map(profiles?.map(p => [p.user_id, p.display_name]) || []);
 
       setShipments(data.map(s => ({
         ...s,
-        order_number: orderMap.get(s.order_id) || null,
-        display_name: nameMap.get(s.user_id) || null,
+        order_number: s.order_id ? orderMap.get(s.order_id) || null : null,
+        display_name: s.user_id ? nameMap.get(s.user_id) || null : null,
       })));
     }
     setIsLoading(false);
@@ -128,6 +149,51 @@ const AdminShipments = () => {
       fetchShipments();
     }
     setIsCreating(false);
+  };
+
+  const generateInpostShipment = async (orderId: string, size: string = "small") => {
+    setIsGeneratingInpost(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-inpost-shipment", {
+        body: { order_id: orderId, size },
+      });
+
+      if (error) {
+        toast({
+          title: "Błąd integracji InPost ShipX",
+          description: error.message || "Nie udało się połączyć z funkcją brzegową.",
+          variant: "destructive",
+        });
+      } else if (data?.error) {
+        toast({
+          title: "Błąd InPost ShipX",
+          description: typeof data.error === "string" ? data.error : JSON.stringify(data.error),
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Przesyłka zarejestrowana w InPost Sandbox!",
+          description: `Numer przesyłki: ${data.shipment?.tracking_number || data.tracking_number}`,
+        });
+        fetchShipments();
+        if (selectedShipment) {
+          setSelectedShipment({
+            ...selectedShipment,
+            tracking_number: data.shipment?.tracking_number || data.tracking_number,
+            carrier: "InPost",
+            inpost_shipment_id: data.shipment?.inpost_shipment_id || data.shipx_response?.id,
+          });
+        }
+      }
+    } catch (err: unknown) {
+      toast({
+        title: "Błąd wywołania",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingInpost(false);
+    }
   };
 
   const updateStatus = async (shipmentId: string, status: string) => {
@@ -225,6 +291,44 @@ const AdminShipments = () => {
                 placeholder="np. InPost, DPD"
               />
             </div>
+          </div>
+
+          <div className="border-t border-border pt-4 mt-2">
+            <h4 className="font-semibold text-sm mb-3 text-foreground flex items-center gap-2">
+              <Truck className="w-4 h-4 text-primary" /> Generowanie przesyłki InPost ShipX (Sandbox)
+            </h4>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="w-[180px]">
+                <label className="text-xs text-muted-foreground block mb-1">Gabaryt paczki:</label>
+                <Select value={selectedParcelSize} onValueChange={(v: "small" | "medium" | "large") => setSelectedParcelSize(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="small">Gabaryt A (Mała)</SelectItem>
+                    <SelectItem value="medium">Gabaryt B (Średnia)</SelectItem>
+                    <SelectItem value="large">Gabaryt C (Duża)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="pt-5">
+                <Button
+                  onClick={() => generateInpostShipment(selectedShipment.order_id, selectedParcelSize)}
+                  disabled={isGeneratingInpost}
+                  className="gap-2"
+                >
+                  {isGeneratingInpost ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Truck className="w-4 h-4" />
+                  )}
+                  Zgłoś w InPost ShipX
+                </Button>
+              </div>
+            </div>
+            {selectedShipment.inpost_shipment_id && (
+              <p className="text-xs text-muted-foreground mt-2 font-mono">
+                ID przesyłki InPost: {selectedShipment.inpost_shipment_id}
+              </p>
+            )}
           </div>
         </div>
       </div>

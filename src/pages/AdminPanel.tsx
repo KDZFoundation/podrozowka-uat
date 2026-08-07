@@ -23,6 +23,7 @@ import {
   Receipt,
   Tags,
   CreditCard,
+  Printer,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -41,7 +42,8 @@ import AdminGamification from "@/components/admin/AdminGamification";
 import AdminProducts from "@/components/admin/AdminProducts";
 import AdminFiscalFailures from "@/components/admin/AdminFiscalFailures";
 import AdminCategories from "@/components/admin/AdminCategories";
-import AdminPaymentSettings from "@/components/admin/AdminPaymentSettings";
+import AdminIntegrations from "@/components/admin/AdminIntegrations";
+import { Blocks } from "lucide-react";
 
 type TabId =
   | "overview"
@@ -60,7 +62,7 @@ type TabId =
   | "lab"
   | "gamification"
   | "fiscal"
-  | "payments";
+  | "integrations";
 
 interface AdminStats {
   totalUnits: number;
@@ -145,24 +147,44 @@ const AdminPanel = () => {
 
   if (!isAdmin) return null;
 
-  const tabs: { id: TabId; label: string; icon: typeof Package }[] = [
+  const primaryTabs: { id: TabId; label: string; icon: typeof Package }[] = [
     { id: "overview", label: "Przegląd", icon: BarChart3 },
-    { id: "map", label: "Mapa Globalna", icon: MapIcon },
     { id: "countries", label: "Kraje", icon: Globe2 },
-    { id: "card-designs", label: "Wzory kartek", icon: Image },
+    { id: "card-designs", label: "Kreator wzorów", icon: Image },
     { id: "products", label: "Produkty", icon: ShoppingBag },
-    { id: "categories", label: "Kategorie", icon: Tags },
-    { id: "inventory", label: "Magazyn", icon: Box },
-    { id: "orders", label: "Zamówienia", icon: ShoppingCart },
+    { id: "orders", label: "Zamówienia (Drukarnia)", icon: ShoppingCart },
     { id: "shipments", label: "Wysyłki", icon: Truck },
+    { id: "dev-tools", label: "Narzędzia Dev", icon: Wrench },
+  ];
+
+  const supportTabs: { id: TabId; label: string; icon: typeof Package }[] = [
+    { id: "map", label: "Mapa Globalna", icon: MapIcon },
+    { id: "categories", label: "Kategorie", icon: Tags },
+    { id: "inventory", label: "Jednostki POD", icon: Box },
     { id: "qr-jobs", label: "Druk QR", icon: QrCode },
     { id: "registrations", label: "Rejestracje", icon: UserCheck },
     { id: "event-log", label: "Log zdarzeń", icon: Clock },
-    { id: "dev-tools", label: "Narzędzia Dev", icon: Wrench },
     { id: "gamification", label: "Grywalizacja", icon: Trophy },
     { id: "fiscal", label: "Fiskalizacja", icon: Receipt },
-    { id: "payments", label: "Płatności", icon: CreditCard },
+    { id: "integrations", label: "Integracje", icon: Blocks },
     { id: "lab", label: "Laboratorium", icon: FlaskConical },
+  ];
+
+  const navigationTabs = [
+    primaryTabs[0],
+    supportTabs[0],
+    ...primaryTabs.slice(1, 4),
+    supportTabs[1],
+    supportTabs[2],
+    ...primaryTabs.slice(4),
+    ...supportTabs.slice(3),
+  ];
+
+  const workflowCards: { id: TabId; step: string; title: string; description: string; icon: typeof Package }[] = [
+    { id: "card-designs", step: "01", title: "Wzory", description: "Przygotuj przód, tył i język kartki.", icon: Image },
+    { id: "products", step: "02", title: "Produkty", description: "Opublikuj wzór i ustaw cenę sklepową.", icon: ShoppingBag },
+    { id: "orders", step: "03", title: "POD i drukarnia", description: "Obsłuż opłacone zamówienie, QR oraz PDF SRA3.", icon: Printer },
+    { id: "shipments", step: "04", title: "Wysyłka", description: "Uzupełnij status nadania i zakończ realizację.", icon: Truck },
   ];
 
   const overviewCards = [
@@ -178,7 +200,7 @@ const AdminPanel = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="bg-card border-b border-border sticky top-0 z-50">
+      <header className="sticky top-0 z-50 border-b border-border bg-background/95 shadow-sm backdrop-blur-md">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-4">
@@ -195,19 +217,21 @@ const AdminPanel = () => {
         </div>
       </header>
 
-      <div className="bg-card border-b border-border">
+      <div className="border-b border-border bg-card">
         <div className="container mx-auto px-4">
-          <nav className="flex gap-1 overflow-x-auto py-2">
-            {tabs.map((tab) => (
+          <nav aria-label="Menu panelu administratora" className="overflow-x-auto py-2">
+            <div className="flex min-w-max items-center gap-1 rounded-xl bg-muted/60 p-1">
+            {navigationTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${activeTab === tab.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${activeTab === tab.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}
               >
                 <tab.icon className="w-4 h-4" />
                 {tab.label}
               </button>
             ))}
+            </div>
           </nav>
         </div>
       </div>
@@ -384,7 +408,28 @@ CREATE POLICY "Admins manage categories"
 
         {activeTab === "overview" && (
           <div className="space-y-6">
-            <h2 className="font-display text-2xl font-bold text-foreground">Statystyki platformy</h2>
+            <div>
+              <p className="mb-2 text-sm font-medium text-primary">Centrum operacyjne</p>
+              <h2 className="font-display text-2xl font-bold text-foreground">Przepływ POD</h2>
+              <p className="mt-1 text-muted-foreground">Pracuj w kolejności od wzoru do wysyłki. Jednostki i kody QR powstają dopiero po opłaceniu zamówienia.</p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {workflowCards.map((card) => (
+                <button
+                  key={card.id}
+                  onClick={() => setActiveTab(card.id)}
+                  className="group rounded-2xl border border-border/70 bg-card p-5 text-left shadow-soft transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-card"
+                >
+                  <div className="mb-4 flex items-start justify-between">
+                    <span className="text-xs font-bold tracking-wider text-primary">{card.step}</span>
+                    <card.icon className="h-5 w-5 text-primary" />
+                  </div>
+                  <h3 className="font-display text-lg font-semibold">{card.title}</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{card.description}</p>
+                </button>
+              ))}
+            </div>
+            <h3 className="pt-2 font-display text-xl font-bold text-foreground">Stan platformy</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {overviewCards.map((s) => (
                 <motion.div
@@ -416,7 +461,7 @@ CREATE POLICY "Admins manage categories"
         {activeTab === "dev-tools" && <AdminDevTools />}
         {activeTab === "gamification" && <AdminGamification />}
         {activeTab === "fiscal" && <AdminFiscalFailures />}
-        {activeTab === "payments" && <AdminPaymentSettings />}
+        {activeTab === "integrations" && <AdminIntegrations />}
         {activeTab === "lab" && <AdminLab />}
       </main>
     </div>

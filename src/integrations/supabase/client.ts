@@ -10,18 +10,18 @@ const CONFIGS = {
   },
   uat: {
     url: "https://nqqephusxnxzzkfulfae.supabase.co",
-    anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY_UAT || "",
+    anonKey: import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY_UAT || "",
   },
   prod: {
     url: "https://iyxbgyfuudwcrirlbmhb.supabase.co",
-    anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY_PROD || "",
+    anonKey: import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY_PROD || "",
   }
 };
 
 // Start by reading the Vite build-time environment variables
-let envUrl = import.meta.env.VITE_SUPABASE_URL;
-let envKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-let currentEnv = import.meta.env.VITE_APP_ENV || "development";
+let envUrl = import.meta.env?.VITE_SUPABASE_URL;
+let envKey = import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY;
+let currentEnv = import.meta.env?.VITE_APP_ENV || "development";
 
 // Automatically ignore the old, inactive Lovable database if it's still present in the environment
 if (envUrl && envUrl.includes("uacuxblipehehknafwep")) {
@@ -127,7 +127,7 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
           id, business_status, fulfillment_status, registered_at, traveler_user_id,
           card_designs!inner(title, image_front_url, country_id)
         `)
-        .eq("public_claim_token_hash", tokenHash)
+        .in("public_claim_token_hash", [tokenHash, token])
         .maybeSingle();
 
       if (fetchError || !unit) {
@@ -238,7 +238,7 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
       const { data: unit } = await supabase
         .from("inventory_units")
         .select("id")
-        .eq("public_claim_token_hash", tokenHash)
+        .in("public_claim_token_hash", [tokenHash, token])
         .maybeSingle();
 
       if (!unit) {
@@ -291,11 +291,16 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
     const body = options?.body || {};
     const { items, pickup_point, shipping_address, shipping_cost_grosze, payment_method, invoice } = body;
 
+    const totalQty = Array.isArray(items) ? items.reduce((sum: number, it: { quantity?: number }) => sum + (Number(it?.quantity) || 0), 0) : 0;
+    if (totalQty < 10) {
+      return { data: { error: "Minimalne zamówienie to 10 podróżówek" }, error: null };
+    }
+
     const { data: orderJson, error: rpcError } = await supabase.rpc("create_order", {
       _items: items,
-      _pickup_point_name: pickup_point?.name || "Paczkomat Fallback",
-      _pickup_point_address: pickup_point?.address || "Ulica Fallback",
-      _pickup_point_city: pickup_point?.city || "Miasto Fallback",
+      _pickup_point_name: pickup_point?.name || null,
+      _pickup_point_address: pickup_point?.address || null,
+      _pickup_point_city: pickup_point?.city || null,
       _shipping_cost: (shipping_cost_grosze || 0) / 100,
       _invoice_requested: invoice?.requested || false,
       _company_name: invoice?.company_name || null,
@@ -310,35 +315,169 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
       _shipping_phone: shipping_address?.phone || null,
     });
 
-    if (rpcError) {
-      console.error("[Fallback create-payment] create_order RPC failed:", rpcError);
-      return { data: null, error: rpcError };
+    let orderId = (orderJson as Record<string, unknown>)?.id as string | undefined;
+    let orderNumber: string | undefined;
+
+    if (rpcError || !orderId) {
+      console.warn("[Fallback create-payment] create_order RPC issue:", rpcError);
+      const msg = rpcError?.message || "";
+
+      if (msg.includes("out_of_stock")) {
+        return { data: { error: "out_of_stock" }, error: null };
+      }
+      if (msg.includes("invoice_nip_invalid")) {
+        return { data: { error: "invoice_nip_invalid" }, error: null };
+      }
+      if (msg.includes("invoice_company_name")) {
+        return { data: { error: "invoice_company_name_required" }, error: null };
+      }
+      if (msg.includes("invoice_company_address")) {
+        return { data: { error: "invoice_company_address_required" }, error: null };
+      }
+      if (msg.includes("invalid_shipping_cost")) {
+        return { data: { error: "invalid_shipping_cost" }, error: null };
+      }
+
+      // Direct fallback order insertion if RPC execution fails
+      const { data: userRes } = await supabase.auth.getUser();
+      const userId = userRes?.user?.id;
+      if (!userId) {
+        return { data: { error: "unauthorized" }, error: null };
+      }
+
+      const generatedId = crypto.randomUUID();
+      const generatedNumber = `ORD-${Date.now().toString(36).toUpperCase()}`;
+
+      let calculatedTotal = (shipping_cost_grosze || 0) / 100;
+      if (Array.isArray(items)) {
+        calculatedTotal += items.reduce((sum: number, it: { quantity?: number }) => sum + ((Number(it?.quantity) || 1) * 1.20), 0);
+      }
+
+      const { error: insertErr } = await supabase
+        .from("orders")
+        .insert({
+          id: generatedId,
+          user_id: userId,
+          order_number: generatedNumber,
+          // The development fallback completes online payment immediately, so its
+          // fulfillment status must match the recorded payment state.
+          status: payment_method === "online" ? "paid" : "pending",
+          payment_status: payment_method === "online" ? "paid" : "unpaid",
+          paid_at: payment_method === "online" ? new Date().toISOString() : null,
+          total_amount: calculatedTotal,
+          currency: "PLN",
+          shipping_name: shipping_address?.name || null,
+          shipping_address: shipping_address?.street || null,
+          shipping_city: shipping_address?.city || null,
+          shipping_postal_code: shipping_address?.postal_code || null,
+          shipping_country: "PL",
+          pickup_point_name: pickup_point?.name || null,
+          pickup_point_address: pickup_point?.address || null,
+          pickup_point_city: pickup_point?.city || null,
+          shipping_cost: (shipping_cost_grosze || 0) / 100,
+          invoice_requested: invoice?.requested || false,
+          company_name: invoice?.company_name || null,
+          company_nip: invoice?.company_nip || null,
+          company_address: invoice?.company_address || null,
+          payment_method: payment_method === "online" ? "online" : "cod",
+          shipping_method: pickup_point ? "inpost" : "courier",
+          shipping_phone: shipping_address?.phone || null,
+        });
+
+      if (insertErr) {
+        console.error("[Fallback create-payment] direct insert failed:", insertErr);
+        return { data: { error: insertErr.message || "Failed to create order" }, error: null };
+      }
+
+      orderId = generatedId;
+      orderNumber = generatedNumber;
+
+      if (Array.isArray(items) && items.length > 0) {
+        const orderItems = items.map((it: { card_design_id: string; quantity: number }) => ({
+          order_id: generatedId,
+          card_design_id: it.card_design_id,
+          quantity: it.quantity || 1,
+          unit_price: 1.20,
+          total_price: (it.quantity || 1) * 1.20,
+        }));
+        await supabase.from("order_items").insert(orderItems);
+      }
+    } else {
+      const { data: orderRow } = await supabase
+        .from("orders")
+        .select("order_number")
+        .eq("id", orderId)
+        .maybeSingle();
+
+      orderNumber = orderRow?.order_number || `ORD-${orderId.substring(0, 8).toUpperCase()}`;
     }
-
-    const orderId = (orderJson as Record<string, unknown>)?.id as string | undefined;
-    if (!orderId) {
-      return { data: null, error: { message: "Failed to create order" } };
-    }
-
-    const { data: orderRow } = await supabase
-      .from("orders")
-      .select("order_number")
-      .eq("id", orderId)
-      .maybeSingle();
-
-    const orderNumber = orderRow?.order_number || `ORD-${orderId.substring(0, 8).toUpperCase()}`;
 
     if (payment_method === "online") {
+      const confirmationUrl = `/checkout/potwierdzenie?order=${encodeURIComponent(orderNumber)}`;
+      let redirectUrl = confirmationUrl;
+
+      // Try P24 Sandbox transaction registration if credentials exist in env
+      const p24MerchantId = import.meta.env.VITE_P24_MERCHANT_ID;
+      const p24PosId = import.meta.env.VITE_P24_POS_ID || p24MerchantId;
+      const p24ApiKey = import.meta.env.VITE_P24_API_KEY;
+      const p24CrcKey = import.meta.env.VITE_P24_CRC_KEY;
+
+      if (p24ApiKey && p24CrcKey && p24MerchantId) {
+        try {
+          const totalGrosze = Math.round(calculatedTotal * 100);
+          const signPayload = JSON.stringify({
+            sessionId: orderId,
+            merchantId: Number(p24MerchantId),
+            amount: totalGrosze,
+            currency: "PLN",
+            crc: p24CrcKey,
+          });
+          const encoder = new TextEncoder();
+          const buf = encoder.encode(signPayload);
+          const digest = await crypto.subtle.digest("SHA-384", buf);
+          const sign = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+
+          const origin = typeof window !== "undefined" ? window.location.origin : "";
+          const regRes = await fetch("https://sandbox.przelewy24.pl/api/v1/transaction/register", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Basic ${btoa(`${p24PosId}:${p24ApiKey}`)}`,
+            },
+            body: JSON.stringify({
+              merchantId: Number(p24MerchantId),
+              posId: Number(p24PosId),
+              sessionId: orderId,
+              amount: totalGrosze,
+              currency: "PLN",
+              description: `Podróżówka – zamówienie ${orderNumber}`,
+              email: userRes?.user?.email || "klient@podrozowka.pl",
+              country: "PL",
+              language: "pl",
+              urlReturn: `${origin}${confirmationUrl}`,
+              sign,
+              encoding: "UTF-8",
+            }),
+          });
+          const regJson = await regRes.json().catch(() => ({}));
+          if (regJson?.data?.token) {
+            redirectUrl = `https://sandbox.przelewy24.pl/trnRequest/${regJson.data.token}`;
+          }
+        } catch (p24Err) {
+          console.warn("[Fallback create-payment] P24 sandbox register failed, using confirmation URL:", p24Err);
+        }
+      }
+
       await supabase
         .from("orders")
-        .update({ payment_status: "paid", paid_at: new Date().toISOString() })
+        .update({ payment_status: "paid", status: "paid", paid_at: new Date().toISOString() })
         .eq("id", orderId);
 
       return {
         data: {
           order_number: orderNumber,
           payment_method: "online",
-          redirect_url: "/dashboard/orders",
+          redirect_url: redirectUrl,
         },
         error: null,
       };
@@ -364,7 +503,7 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
 
     const { error: updateErr } = await supabase
       .from("orders")
-      .update({ payment_status: "paid", paid_at: new Date().toISOString() })
+      .update({ payment_status: "paid", status: "paid", paid_at: new Date().toISOString() })
       .eq("id", orderId);
 
     if (updateErr) {
@@ -499,25 +638,41 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
 
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pageWidth = 210;
-    const margin = 15;
-    const colWidth = (pageWidth - 2 * margin) / 2;
-    const rowHeight = 55;
-    const qrSize = 35;
+    const pageHeight = 297;
+    const stickerSize = 35; // 35mm x 35mm square sticker
+    const colGap = 3.5;
+    const rowGap = 3.5;
+    const colsPerPage = 5;
+    const rowsPerPage = 7;
+    const itemsPerPage = colsPerPage * rowsPerPage;
 
-    let col = 0;
-    let row = 0;
+    const leftMargin = 10.5;
+    const topMargin = 15.5;
 
     for (let i = 0; i < items.length; i++) {
-      if (i > 0 && col === 0 && row === 0) {
+      const posOnPage = i % itemsPerPage;
+      const col = posOnPage % colsPerPage;
+      const row = Math.floor(posOnPage / colsPerPage);
+
+      if (i > 0 && posOnPage === 0) {
         doc.addPage();
       }
 
-      const x = margin + col * colWidth;
-      const y = margin + row * rowHeight;
+      if (posOnPage === 0) {
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(120, 120, 120);
+        doc.text(`Naklejki QR Podróżówka (35x35mm) — Data: ${new Date().toLocaleDateString("pl-PL")}`, leftMargin, 8);
+      }
+
+      const x = leftMargin + col * (stickerSize + colGap);
+      const y = topMargin + row * (stickerSize + rowGap);
 
       const item = items[i];
       const claimCode = item.public_claim_code;
-      const qrUrl = item.qr_url;
+      // POD QR records use a relative path. Resolve it only when rendering so
+      // a test print uses localhost and a production print uses its own domain.
+      const qrUrl = new URL(item.qr_url, window.location.origin).toString();
       const inventoryUnit = item.inventory_units as unknown as {
         internal_inventory_code: string | null;
         card_designs: {
@@ -529,44 +684,40 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
         } | null;
       } | null;
       const cardDesign = inventoryUnit?.card_designs;
-      const country = cardDesign?.countries;
+      const country = cardDesign?.countries?.name_pl || "PL";
+      const viewNo = cardDesign?.view_no || 1;
+      const invCode = inventoryUnit?.internal_inventory_code || "";
 
+      // Outer dashed border (cutting line for 35x35mm square)
       doc.setDrawColor(200, 200, 200);
-      doc.setLineDashPattern([2, 2], 0);
-      doc.rect(x, y, colWidth, rowHeight);
+      doc.setLineDashPattern([1, 1], 0);
+      doc.rect(x, y, stickerSize, stickerSize);
+
+      // QR Code (centered 25mm x 25mm)
+      const qrSize = 25;
+      const qrX = x + (stickerSize - qrSize) / 2;
+      const qrY = y + 2.5;
 
       try {
-        const qrDataUrl = await QRCode.toDataURL(qrUrl, { margin: 1, width: 150 });
-        doc.addImage(qrDataUrl, "PNG", x + 5, y + 5, qrSize, qrSize);
+        const qrDataUrl = await QRCode.toDataURL(qrUrl, { margin: 1, width: 180 });
+        doc.addImage(qrDataUrl, "PNG", qrX, qrY, qrSize, qrSize);
       } catch (qrErr) {
         console.error("Failed to generate QR data URL:", qrErr);
       }
 
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(10);
-      doc.text("PODRÓŻÓWKA", x + 43, y + 12);
-
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7);
-      doc.text(`Wzór: ${cardDesign?.title || "N/A"}`, x + 43, y + 18, { maxWidth: colWidth - 45 });
-      doc.text(`Wersja: ${cardDesign?.view_no || 1}`, x + 43, y + 23);
-      doc.text(`Kraj: ${country?.name_pl || "Polska"}`, x + 43, y + 27);
-
-      doc.setFont("helvetica", "bold");
+      // Bottom claim code (e.g. PDZ-XXXX-XXXX)
       doc.setFontSize(8);
-      doc.text(`Kod: ${claimCode}`, x + 43, y + 35);
-      doc.setFontSize(6);
-      doc.setFont("helvetica", "italic");
-      doc.text("Zeskanuj i zarejestruj kartkę!", x + 43, y + 40);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(15, 23, 42);
+      doc.text(claimCode, x + stickerSize / 2, y + 31.5, { align: "center" });
+    }
 
-      col++;
-      if (col >= 2) {
-        col = 0;
-        row++;
-        if (row >= 5) {
-          row = 0;
-        }
-      }
+    const totalPages = doc.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      doc.setPage(p);
+      doc.setFontSize(6);
+      doc.setTextColor(160, 160, 160);
+      doc.text(`Strona ${p} / ${totalPages}`, pageWidth - leftMargin, pageHeight - 5, { align: "right" });
     }
 
     const pdfDataUri = doc.output("datauristring");
@@ -584,35 +735,31 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
         return { data: null, error: { message: "invalid_mode" } };
       }
 
+      if (typeof localStorage !== "undefined") {
+        localStorage.setItem("p24_mode", mode);
+      }
+
       try {
-        const { data: existing, error: findErr } = await supabase
+        const { error: upsertErr } = await supabase
           .from("payment_settings")
-          .select("id")
-          .limit(1)
-          .maybeSingle();
+          .upsert(
+            { singleton: true, p24_mode: mode, updated_at: new Date().toISOString() },
+            { onConflict: "singleton" }
+          );
 
-        if (findErr) {
-          console.warn("[Fallback admin-payment-status] find existing settings failed:", findErr);
-        }
-
-        if (existing?.id) {
+        if (upsertErr) {
+          console.warn("[Fallback admin-payment-status] upsert failed, trying update:", upsertErr);
           const { error: updateErr } = await supabase
             .from("payment_settings")
-            .update({ p24_mode: mode })
-            .eq("id", existing.id);
+            .update({ p24_mode: mode, updated_at: new Date().toISOString() })
+            .eq("singleton", true);
+
           if (updateErr) {
-            console.error("[Fallback admin-payment-status] update failed:", updateErr);
-          }
-        } else {
-          const { error: insertErr } = await supabase
-            .from("payment_settings")
-            .insert({ p24_mode: mode });
-          if (insertErr) {
-            console.error("[Fallback admin-payment-status] insert failed:", insertErr);
+            console.warn("[Fallback admin-payment-status] update failed:", updateErr);
           }
         }
       } catch (postErr) {
-        console.error("[Fallback admin-payment-status] POST operation exception:", postErr);
+        console.warn("[Fallback admin-payment-status] POST operation exception:", postErr);
       }
     }
 
@@ -632,6 +779,10 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
       console.warn("[Fallback admin-payment-status] database exception:", dbErr);
     }
 
+    const savedLocalMode = typeof localStorage !== "undefined" ? localStorage.getItem("p24_mode") : null;
+    const body = options?.body || {};
+    const effectiveMode = (settings?.p24_mode || savedLocalMode || body.p24_mode || "sandbox") as "sandbox" | "production";
+
     const secrets = [
       { name: "P24_MERCHANT_ID", set: true, length: 6, preview: "••••4321" },
       { name: "P24_POS_ID", set: true, length: 6, preview: "••••4321" },
@@ -642,8 +793,8 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
 
     return {
       data: {
-        p24_mode: settings?.p24_mode ?? "sandbox",
-        p24_mode_updated_at: settings?.updated_at ?? null,
+        p24_mode: effectiveMode,
+        p24_mode_updated_at: settings?.updated_at ?? new Date().toISOString(),
         secrets,
         all_secrets_set: true,
       },
@@ -658,9 +809,13 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
 // If the real function is not deployed or fails, it will gracefully fall back to emulation.
 const FORCE_CLIENT_EMULATION = false;
 
-// Wrap original invoke function with fallback handling
-const originalInvoke = supabase.functions.invoke.bind(supabase.functions);
-supabase.functions.invoke = async function (functionName: string, options?: InvokeOptions) {
+// Wrap FunctionsClient.prototype.invoke with fallback handling & clear error unwrapping
+const FunctionsClientProto = (supabase.functions as unknown as {
+  constructor: { prototype: { invoke: (functionName: string, options?: InvokeOptions) => Promise<{ data: unknown; error: unknown }> } }
+}).constructor.prototype;
+const originalInvoke = FunctionsClientProto.invoke;
+
+FunctionsClientProto.invoke = async function (functionName: string, options?: InvokeOptions) {
   let name = functionName;
   if (functionName.includes("?")) {
     name = functionName.split("?")[0];
@@ -675,7 +830,7 @@ supabase.functions.invoke = async function (functionName: string, options?: Invo
     "admin-payment-status"
   ];
 
-  if (FORCE_CLIENT_EMULATION && emulatedFunctions.includes(name)) {
+  if (FORCE_CLIENT_EMULATION && currentEnv === "development" && emulatedFunctions.includes(name)) {
     console.log(`[Supabase Proxy] Direct emulation bypass for: ${name}`);
     try {
       return await handleFallbackInvoke(functionName, options);
@@ -687,19 +842,86 @@ supabase.functions.invoke = async function (functionName: string, options?: Invo
         error: {
           message: errMsg,
           status: 500,
-        } as unknown as { message: string; status: number }
-      } as unknown as ReturnType<typeof originalInvoke>;
+        }
+      };
     }
   }
 
   try {
-    const res = await originalInvoke(functionName, options);
+    const res = await originalInvoke.call(this, functionName, options);
     if (!res.error) {
       return res;
     }
-    console.warn(`[Supabase Proxy] Edge Function '${functionName}' failed/not found. Error:`, res.error, `Falling back to client-side emulation.`);
+
+    const context = (res.error as { context?: Response })?.context;
+    const isNotDeployed = context?.headers?.get?.("sb-error-code") === "NOT_FOUND";
+
+    if (!isNotDeployed && !emulatedFunctions.includes(name)) {
+      let finalMsg: string | undefined;
+
+      if (context) {
+        try {
+          let body: { error?: string; message?: string; msg?: string } | null = null;
+          if (typeof context.json === "function") {
+            body = await context.json().catch(() => null);
+          }
+          if (!body && typeof context.text === "function") {
+            const rawText = await context.text().catch(() => "");
+            if (rawText) {
+              try {
+                body = JSON.parse(rawText);
+              } catch {
+                if (rawText.length < 200 && !rawText.includes("<html")) {
+                  finalMsg = rawText;
+                }
+              }
+            }
+          }
+          if (body) {
+            finalMsg = body.error || body.message || body.msg;
+          }
+        } catch {
+          // Ignore body reading errors
+        }
+
+        if (!finalMsg || finalMsg === "Edge Function returned a non-2xx status code") {
+          const status = context.status;
+          if (status === 404) finalMsg = "Nie znaleziono żądanego zasobu";
+          else if (status === 401 || status === 403) finalMsg = "Brak autoryzacji do wykonania tej operacji";
+          else if (status === 400) finalMsg = "Nieprawidłowe parametry żądania";
+          else if (status >= 500) finalMsg = "Błąd serwera. Spróbuj ponownie później.";
+        }
+      }
+
+      if (finalMsg) {
+        return {
+          data: res.data,
+          error: {
+            ...res.error,
+            message: finalMsg,
+          },
+        };
+      }
+
+      return res;
+    }
+
+    console.warn(`[Supabase Proxy] Edge Function '${functionName}' not found on server. Falling back to client-side emulation.`);
   } catch (err) {
     console.warn(`[Supabase Proxy] Edge Function '${functionName}' failed with exception:`, err);
+  }
+
+  if (currentEnv !== "development") {
+    console.error(
+      `[Supabase Proxy] Edge Function '${functionName}' failed and client-side emulation is disabled outside development (currentEnv=${currentEnv}). Returning error instead of emulating.`
+    );
+    return {
+      data: null,
+      error: {
+        message: "Usługa chwilowo niedostępna. Spróbuj ponownie za chwilę.",
+        status: 503,
+      },
+    };
   }
 
   try {
@@ -712,8 +934,8 @@ supabase.functions.invoke = async function (functionName: string, options?: Invo
       error: {
         message: errMsg,
         status: 500,
-      } as unknown as { message: string; status: number }
-    } as unknown as ReturnType<typeof originalInvoke>;
+      }
+    };
   }
 };
 
@@ -790,3 +1012,4 @@ if (typeof window !== "undefined") {
 }
 
 export const supabaseUrl = activeUrl;
+export const supabaseAnonKey = activeKey || CONFIGS.dev.anonKey;

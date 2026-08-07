@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useCart } from "@/contexts/CartContext";
+import { getProductTitle } from "@/lib/productTitle";
 
 export interface EnrichedCartItem {
   id: string;
@@ -9,14 +10,8 @@ export interface EnrichedCartItem {
   price_grosze: number;
   currency: string;
   quantity: number;
-  stock: number;
   unavailable: boolean;
   country_name: string | null;
-}
-
-interface StockRow {
-  card_design_id: string;
-  in_stock: number;
 }
 
 interface CardDesignRow {
@@ -26,7 +21,10 @@ interface CardDesignRow {
   price_grosze: number;
   currency: string;
   active: boolean;
+  language_code: string;
+  view_no: number;
   countries: { name_pl: string | null } | null;
+  categories: { name: string | null } | null;
 }
 
 export const useCartItems = () => {
@@ -39,43 +37,34 @@ export const useCartItems = () => {
     enabled: items.length > 0,
     staleTime: 30_000,
     queryFn: async () => {
-      const [{ data: designs }, { data: stockRows }] = await Promise.all([
-        supabase
-          .from("card_designs")
-          .select("id, title, image_front_url, price_grosze, currency, active, countries(name_pl)")
-          .in("id", ids),
-        supabase.rpc("get_products_stock"),
-      ]);
-
-      const stockMap: Record<string, number> = {};
-      ((stockRows as unknown as StockRow[]) || []).forEach((r) => {
-        stockMap[r.card_design_id] = r.in_stock;
-      });
-
-      const designMap = new Map<string, CardDesignRow>();
-      ((designs as unknown as CardDesignRow[]) || []).forEach((d) => designMap.set(d.id, d));
-
-      const enriched: EnrichedCartItem[] = items.map((item) => {
-        const d = designMap.get(item.card_design_id);
-        const unavailable = !d || !d.active || d.price_grosze === 0;
-        return {
-          id: item.card_design_id,
-          title: d?.title ?? null,
-          image: d?.image_front_url ?? null,
-          price_grosze: d?.price_grosze ?? 0,
-          currency: d?.currency ?? "PLN",
-          quantity: item.quantity,
-          stock: stockMap[item.card_design_id] || 0,
-          unavailable,
-          country_name: d?.countries?.name_pl ?? null,
-        };
-      });
-
-      return enriched;
+      const { data: designs, error } = await supabase
+        .from("card_designs")
+        .select("id, title, image_front_url, price_grosze, currency, active, language_code, view_no, countries(name_pl), categories(name)")
+        .in("id", ids);
+      if (error) throw error;
+      return (designs as unknown as CardDesignRow[]) || [];
     },
   });
 
-  const enriched = query.data || [];
+  // The product lookup depends only on IDs, but quantities change locally.
+  // Derive the cart rows from the current context on every render, otherwise
+  // React Query would keep showing the quantity captured by its first fetch.
+  const designMap = new Map<string, CardDesignRow>();
+  (query.data || []).forEach((d) => designMap.set(d.id, d));
+  const enriched: EnrichedCartItem[] = items.map((item) => {
+    const d = designMap.get(item.card_design_id);
+    const unavailable = !d || !d.active || d.price_grosze === 0;
+    return {
+      id: item.card_design_id,
+      title: d ? getProductTitle(d) : null,
+      image: d?.image_front_url ?? null,
+      price_grosze: d?.price_grosze ?? 0,
+      currency: d?.currency ?? "PLN",
+      quantity: item.quantity,
+      unavailable,
+      country_name: d?.countries?.name_pl ?? null,
+    };
+  });
   const subtotalGrosze = enriched
     .filter((e) => !e.unavailable)
     .reduce((s, e) => s + e.price_grosze * e.quantity, 0);

@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, CheckCircle2, XCircle, AlertTriangle, CreditCard } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, AlertTriangle, CreditCard, Banknote } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { useQueryClient } from "@tanstack/react-query";
 
 type SecretStatus = {
   name: string;
@@ -22,6 +24,9 @@ const AdminPaymentSettings = () => {
   const [data, setData] = useState<StatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [togglingCod, setTogglingCod] = useState(false);
+  const { flags } = useFeatureFlags();
+  const queryClient = useQueryClient();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,6 +78,22 @@ const AdminPaymentSettings = () => {
   if (!data) return null;
 
   const isProduction = data.p24_mode === "production";
+
+  const toggleCodFlag = async (enabled: boolean) => {
+    setTogglingCod(true);
+    const { error } = await supabase
+      .from("feature_flags")
+      .upsert({ key: "cod_payment_enabled", is_enabled: enabled, name: "Płatność Za Pobraniem (COD)", description: "Udostępnia opcję opłacenia zamówienia przy odbiorze" });
+
+    setTogglingCod(false);
+    if (error) {
+      toast.error("Nie udało się zmienić statusu płatności COD");
+    } else {
+      toast.success(enabled ? "Płatność za pobraniem (COD) została WŁĄCZONA" : "Płatność za pobraniem (COD) została WYŁĄCZONA");
+      queryClient.invalidateQueries({ queryKey: ["feature-flags"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-feature-flags"] });
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -131,6 +152,42 @@ const AdminPaymentSettings = () => {
             </span>
           </div>
         )}
+      </div>
+
+      {/* COD Payment Toggle */}
+      <div className="bg-card rounded-xl p-6 shadow-soft border border-border">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+              <Banknote className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-display text-lg font-semibold text-foreground">
+                Płatność Za Pobraniem (COD)
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Udostępnia lub ukrywa możliwość wyboru płatności przy odbiorze w koszyku zamówienia.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <span
+              className={`text-xs font-semibold px-2.5 py-1 rounded ${
+                flags.cod_payment_enabled
+                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
+              {flags.cod_payment_enabled ? "WŁĄCZONE" : "WYŁĄCZONE"}
+            </span>
+            <Switch
+              checked={flags.cod_payment_enabled}
+              onCheckedChange={toggleCodFlag}
+              disabled={togglingCod}
+              aria-label="Przełącznik płatności COD"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Secrets status */}

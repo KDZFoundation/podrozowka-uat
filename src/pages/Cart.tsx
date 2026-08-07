@@ -7,12 +7,13 @@ import { useCart } from "@/contexts/CartContext";
 import { useCartItems } from "@/hooks/useCartItems";
 import { useAuth } from "@/hooks/useAuth";
 import { useEffect } from "react";
+import OrderSteps from "@/components/checkout/OrderSteps";
 
 const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
 
 const Cart = () => {
-  const { setQuantity, removeItem } = useCart();
+  const { setQuantity, removeItem, items: savedCartItems } = useCart();
   const { items, subtotalGrosze, isLoading } = useCartItems();
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -29,15 +30,40 @@ const Cart = () => {
     navigate("/checkout");
   };
 
-  const empty = items.length === 0 && !isLoading;
+  // Product data is read asynchronously. Keep the loading state visible while
+  // saved cart entries are being resolved, instead of briefly showing 0 items.
+  const isResolvingItems = savedCartItems.length > 0 && items.length === 0;
+  const empty = savedCartItems.length === 0 && !isLoading;
+  const totalCount = items.reduce((s, i) => s + (i.unavailable ? 0 : i.quantity), 0);
+  const isBelowMin = totalCount < 10;
+  const minOrderProgress = Math.min(100, (totalCount / 10) * 100);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
-      <main className="flex-1 container mx-auto px-4 py-8">
-        <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-8">Koszyk</h1>
+      <main id="main-content" className="container mx-auto flex-1 px-4 pb-10 pt-24 md:pb-14 md:pt-28">
+        <OrderSteps current={1} />
+        <div className="mb-8 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="mb-2 text-sm font-medium text-primary">Twoje zamówienie</p>
+            <h1 className="font-display text-3xl font-bold text-foreground md:text-4xl">Koszyk</h1>
+          </div>
+          {!empty && <p className="text-sm text-muted-foreground">{totalCount} {totalCount === 1 ? "pocztówka" : "pocztówek"} w koszyku</p>}
+        </div>
 
-        {isLoading && items.length === 0 ? (
+        {!empty && !isResolvingItems && isBelowMin && (
+          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-900 dark:text-amber-200 flex items-start gap-3 mb-6">
+            <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-sm">Minimalne zamówienie to 10 podróżówek</p>
+              <p className="text-xs mt-0.5">
+                Masz w koszyku <strong>{totalCount} szt.</strong> Dodaj jeszcze <strong>{10 - totalCount} szt.</strong>, aby złożyć zamówienie.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {(isLoading || isResolvingItems) && items.length === 0 ? (
           <div className="grid md:grid-cols-3 gap-6 animate-pulse">
             <div className="md:col-span-2 space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
@@ -64,7 +90,6 @@ const Cart = () => {
           <div className="grid md:grid-cols-3 gap-6">
             <div className="md:col-span-2 space-y-3">
               {items.map((it) => {
-                const overStock = !it.unavailable && it.quantity > it.stock;
                 return (
                   <div key={it.id} className="bg-card rounded-xl shadow-soft p-4 flex gap-4">
                     <Link to={`/sklep/${it.id}`} className="shrink-0">
@@ -121,8 +146,7 @@ const Cart = () => {
                             <span className="px-3 min-w-8 text-center font-medium">{it.quantity}</span>
                             <button
                               onClick={() => setQuantity(it.id, it.quantity + 1)}
-                              disabled={it.quantity >= it.stock}
-                              className="p-2 hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                              className="p-2 hover:bg-muted"
                               aria-label="Zwiększ"
                             >
                               <Plus className="w-4 h-4" />
@@ -132,16 +156,6 @@ const Cart = () => {
                         </div>
                       )}
 
-                      {overStock && (
-                        <p className="mt-2 text-xs text-destructive">
-                          Zmniejsz ilość — dostępne tylko {it.stock} szt.
-                        </p>
-                      )}
-                      {!it.unavailable && !overStock && it.quantity === it.stock && it.stock > 0 && (
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          To maksymalna dostępna ilość ({it.stock} szt.).
-                        </p>
-                      )}
                     </div>
                   </div>
                 );
@@ -149,8 +163,34 @@ const Cart = () => {
             </div>
 
             <div>
-              <div className="bg-card rounded-xl shadow-soft p-5 sticky top-24 space-y-4">
+              <div className="sticky top-28 space-y-4 rounded-2xl border border-border/70 bg-card p-5 shadow-card">
                 <h2 className="font-display text-lg font-bold">Podsumowanie</h2>
+                <div className="rounded-xl border border-border/70 bg-muted/35 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+                    <span className="font-medium">Minimum zamówienia</span>
+                    <span className={`font-semibold ${isBelowMin ? "text-amber-600 dark:text-amber-400" : "text-primary"}`}>
+                      {totalCount} / 10 szt.
+                    </span>
+                  </div>
+                  <div
+                    className="h-2 overflow-hidden rounded-full bg-border"
+                    role="progressbar"
+                    aria-label="Postęp do minimalnego zamówienia"
+                    aria-valuemin={0}
+                    aria-valuemax={10}
+                    aria-valuenow={Math.min(totalCount, 10)}
+                  >
+                    <div
+                      className={`h-full rounded-full transition-[width] duration-300 ${isBelowMin ? "bg-amber-500" : "bg-primary"}`}
+                      style={{ width: `${minOrderProgress}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    {isBelowMin
+                      ? `Dobierz jeszcze ${10 - totalCount} szt., aby przejść do płatności.`
+                      : "Minimum osiągnięte — możesz wybrać dostawę i płatność."}
+                  </p>
+                </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Suma częściowa</span>
                   <span className="font-semibold">{formatPln(subtotalGrosze)}</span>
@@ -158,9 +198,14 @@ const Cart = () => {
                 <p className="text-xs text-muted-foreground">
                   Koszt dostawy zostanie doliczony przy zamówieniu.
                 </p>
-                <Button size="lg" className="w-full" onClick={handleCheckout} disabled={subtotalGrosze === 0}>
-                  Przejdź do zamówienia
+                <Button size="lg" className="w-full" onClick={handleCheckout} disabled={subtotalGrosze === 0 || isBelowMin}>
+                  Wybierz dostawę i płatność
                 </Button>
+                {isBelowMin && (
+                  <Button asChild variant="outline" className="w-full">
+                    <Link to="/sklep">Dobierz wzory w sklepie</Link>
+                  </Button>
+                )}
               </div>
             </div>
           </div>

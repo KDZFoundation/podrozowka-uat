@@ -58,6 +58,9 @@ interface CardDesignRowWithCountry {
   countries: {
     name_pl: string;
   } | null;
+  categories: {
+    name: string;
+  } | null;
 }
 
 interface CardDesignUnit {
@@ -99,7 +102,15 @@ const emptyForm = {
 };
 
 type FormState = typeof emptyForm;
-type FormErrors = Partial<Record<keyof FormState, string>>;
+type FormErrors = Partial<Record<keyof FormState | "source_design_id", string>>;
+
+const buildProductTitle = (design: CardDesignRowWithCountry) => {
+  const country = design.countries?.name_pl || "Nieznany kraj";
+  const categoryInitial = design.categories?.name?.trim().charAt(0).toLocaleUpperCase("pl-PL") || "O";
+  const view = String(design.view_no).padStart(2, "0");
+  const language = design.language_code.toUpperCase();
+  return `Podróżówka ${country}, ${categoryInitial} V${view} ${language}`;
+};
 
 const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
@@ -109,6 +120,7 @@ const AdminProducts = () => {
   const { toast } = useToast();
 
   const [products, setProducts] = useState<ProductRow[]>([]);
+  const [designs, setDesigns] = useState<CardDesignRowWithCountry[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
@@ -117,6 +129,7 @@ const AdminProducts = () => {
 
   const [showDialog, setShowDialog] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [sourceDesignId, setSourceDesignId] = useState("");
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
@@ -133,7 +146,7 @@ const AdminProducts = () => {
     const [{ data: designs }, { data: countriesData }, { data: categoriesData }, { data: units }] = await Promise.all([
       supabase
         .from("card_designs")
-        .select("*, countries!inner(name_pl)")
+        .select("*, countries!inner(name_pl), categories(name)")
         .order("created_at", { ascending: false }),
       supabase.from("countries").select("id, iso2, name_pl").order("name_pl"),
       supabase.from("categories").select("id, name, icon_url, sort_order").order("sort_order").order("name"),
@@ -146,8 +159,9 @@ const AdminProducts = () => {
 
     if (designs) {
       const typedDesigns = designs as unknown as CardDesignRowWithCountry[];
+      setDesigns(typedDesigns);
       setProducts(
-        typedDesigns.map((d: CardDesignRowWithCountry) => ({
+        typedDesigns.filter((d) => d.active).map((d: CardDesignRowWithCountry) => ({
           ...d,
           country_name: d.countries?.name_pl || undefined,
         })),
@@ -172,7 +186,8 @@ const AdminProducts = () => {
 
   const openAdd = () => {
     setEditingId(null);
-    setForm(emptyForm);
+    setSourceDesignId("");
+    setForm({ ...emptyForm, price_pln: "4.99" });
     setErrors({});
     setExtraImages([]);
     setShowDialog(true);
@@ -226,6 +241,7 @@ const AdminProducts = () => {
   const closeDialog = () => {
     setShowDialog(false);
     setEditingId(null);
+    setSourceDesignId("");
     setForm(emptyForm);
     setErrors({});
     setExtraImages([]);
@@ -233,6 +249,17 @@ const AdminProducts = () => {
 
   const validate = (): FormErrors => {
     const e: FormErrors = {};
+    if (!editingId) {
+      if (!sourceDesignId) e.source_design_id = "Wybierz wzór z kreatora";
+      const priceStr = form.price_pln.replace(",", ".").trim();
+      if (!priceStr) e.price_pln = "Cena jest wymagana";
+      else {
+        const parsed = Number(priceStr);
+        if (!Number.isFinite(parsed) || parsed <= 0) e.price_pln = "Cena musi być większa od 0";
+        else if (!/^\d+(\.\d{1,2})?$/.test(priceStr)) e.price_pln = "Maks. 2 miejsca po przecinku";
+      }
+      return e;
+    }
     if (!form.title.trim()) e.title = "Nazwa jest wymagana";
     else if (form.title.length > 200) e.title = "Nazwa może mieć maks. 200 znaków";
     if (form.description && form.description.length > 2000) e.description = "Opis może mieć maks. 2000 znaków";
@@ -281,13 +308,27 @@ const AdminProducts = () => {
       }
       toast({ title: "Produkt zaktualizowany" });
     } else {
-      const { error } = await supabase.from("card_designs").insert(payload);
+      const sourceDesign = designs.find((design) => design.id === sourceDesignId);
+      if (!sourceDesign) {
+        setSaving(false);
+        toast({ title: "Wzór nie został odnaleziony", variant: "destructive" });
+        return;
+      }
+      const { error } = await supabase
+        .from("card_designs")
+        .update({
+          title: buildProductTitle(sourceDesign),
+          price_grosze: priceGrosze,
+          currency: "PLN",
+          active: true,
+        })
+        .eq("id", sourceDesignId);
       setSaving(false);
       if (error) {
         toast({ title: "Błąd dodawania", description: error.message, variant: "destructive" });
         return;
       }
-      toast({ title: "Produkt dodany" });
+      toast({ title: "Produkt opublikowany w sklepie" });
     }
 
     closeDialog();
@@ -392,11 +433,14 @@ const AdminProducts = () => {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const { error } = await supabase.from("card_designs").delete().eq("id", deleteTarget.id);
+    const { error } = await supabase
+      .from("card_designs")
+      .update({ active: false })
+      .eq("id", deleteTarget.id);
     if (error) {
-      toast({ title: "Nie udało się usunąć", description: error.message, variant: "destructive" });
+      toast({ title: "Nie udało się wycofać produktu", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Produkt usunięty" });
+      toast({ title: "Produkt wycofany ze sklepu. Wzór pozostał w kreatorze." });
       fetchAll();
     }
     setDeleteTarget(null);
@@ -555,7 +599,7 @@ const AdminProducts = () => {
           >
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h3 className="font-display text-lg font-bold">
-                {editingId ? "Edytuj produkt" : "Nowy produkt"}
+                {editingId ? "Edytuj produkt" : "Dodaj produkt ze wzoru"}
               </h3>
               <button onClick={closeDialog} className="p-1 rounded hover:bg-muted">
                 <X className="w-4 h-4" />
@@ -563,6 +607,37 @@ const AdminProducts = () => {
             </div>
 
             <div className="p-4 space-y-4">
+              {!editingId && (
+                <div>
+                  <label className="text-xs text-muted-foreground">Wzór z kreatora *</label>
+                  <select
+                    value={sourceDesignId}
+                    onChange={(e) => setSourceDesignId(e.target.value)}
+                    className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm"
+                  >
+                    <option value="">Wybierz zapisany wzór...</option>
+                    {designs.map((design) => (
+                      <option key={design.id} value={design.id}>
+                        {design.countries?.name_pl || "—"} — V{design.view_no} {design.title ? `(${design.title})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.source_design_id && <p className="text-xs text-destructive mt-1">{errors.source_design_id}</p>}
+                  <div className="mt-4 max-w-xs">
+                    <label className="text-xs text-muted-foreground">Cena (PLN) *</label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={form.price_pln}
+                      onChange={(e) => setForm({ ...form, price_pln: e.target.value })}
+                      placeholder="np. 19.99"
+                    />
+                    {errors.price_pln && <p className="text-xs text-destructive mt-1">{errors.price_pln}</p>}
+                  </div>
+                </div>
+              )}
+              {editingId && <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-muted-foreground">Nazwa *</label>
@@ -762,6 +837,7 @@ const AdminProducts = () => {
                   {form.active ? "Aktywny — widoczny w sklepie" : "Nieaktywny — ukryty"}
                 </label>
               </div>
+              </>}
             </div>
 
             <div className="flex justify-end gap-2 p-4 border-t border-border">
@@ -779,15 +855,15 @@ const AdminProducts = () => {
       <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Usunąć produkt?</AlertDialogTitle>
+            <AlertDialogTitle>Wycofać produkt ze sklepu?</AlertDialogTitle>
             <AlertDialogDescription>
-              Czy na pewno chcesz usunąć produkt „{deleteTarget?.title}"? Tej operacji nie można cofnąć.
+              Produkt przestanie być widoczny w sklepie. Wzór pozostanie dostępny w Kreatorze wzorów.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Anuluj</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              Usuń
+              Wycofaj ze sklepu
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

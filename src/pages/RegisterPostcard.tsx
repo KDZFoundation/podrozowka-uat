@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { Loader2, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, supabaseAnonKey, supabaseUrl } from "@/integrations/supabase/client";
 import RegisterPostcardForm from "@/components/register/RegisterPostcardForm";
 import RegisterPostcardSuccess from "@/components/register/RegisterPostcardSuccess";
 import RegisterPostcardAlreadyRegistered from "@/components/register/RegisterPostcardAlreadyRegistered";
@@ -16,11 +16,13 @@ export interface PostcardInfo {
   registered_at: string | null;
   traveler_name: string | null;
   recipient_name: string | null;
+  available_countries?: Array<{ iso2: string; name_pl: string }>;
   design: {
     title: string;
     image_front_url: string | null;
     country_name: string;
     country_iso2: string;
+    language_code: string;
   };
 }
 
@@ -33,6 +35,23 @@ const RegisterPostcard = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
 
+  const requestRegistration = async (method: "GET" | "POST", body?: Record<string, unknown>) => {
+    const url = new URL("/functions/v1/register-postcard", supabaseUrl);
+    if (method === "GET") url.searchParams.set("token", qrToken || "");
+    const response = await fetch(url.toString(), {
+      method,
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
+    if (!response.ok) throw new Error(payload?.error || payload?.message || "Nie znaleziono kartki");
+    return payload;
+  };
+
   useEffect(() => {
     const fetchPostcard = async () => {
       if (!qrToken) {
@@ -42,19 +61,10 @@ const RegisterPostcard = () => {
       }
 
       try {
-        const { data, error } = await supabase.functions.invoke(
-          `register-postcard?token=${encodeURIComponent(qrToken)}`,
-          { method: "GET" }
-        );
-        if (error) {
-          const ctxMsg = (error as { context?: { error?: string } })?.context?.error;
-          setError(typeof ctxMsg === "string" ? ctxMsg : "Nie znaleziono kartki");
-          setIsLoading(false);
-          return;
-        }
+        const data = await requestRegistration("GET");
         setPostcard(data as PostcardInfo);
-      } catch {
-        setError("Wystąpił błąd podczas ładowania");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Wystąpił błąd podczas ładowania");
       }
       setIsLoading(false);
     };
@@ -67,27 +77,20 @@ const RegisterPostcard = () => {
     recipientMessage: string;
     recipientEmail: string;
     contactOptIn: boolean;
+    registeredCountryIso2?: string;
     latitude?: number;
     longitude?: number;
   }) => {
-    const { error } = await supabase.functions.invoke("register-postcard", {
-      method: "POST",
-      body: {
+    await requestRegistration("POST", {
         token: qrToken,
         recipient_name: data.recipientName.trim(),
         recipient_message: data.recipientMessage.trim() || undefined,
         recipient_email: data.recipientEmail.trim() || undefined,
         contact_opt_in: data.contactOptIn,
+        registered_country_iso2: data.registeredCountryIso2 || undefined,
         latitude: data.latitude ?? undefined,
         longitude: data.longitude ?? undefined,
-      },
     });
-
-    if (error) {
-      const ctxMsg = (error as { context?: { error?: string } })?.context?.error;
-      throw new Error(typeof ctxMsg === "string" ? ctxMsg : "Wystąpił błąd");
-    }
-
 
     setIsSuccess(true);
     toast({ title: "Kartka zarejestrowana! 🎉" });

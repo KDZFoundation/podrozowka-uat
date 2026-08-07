@@ -57,9 +57,9 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsErr } = await userClient.auth.getClaims(token);
-    if (claimsErr || !claimsData?.claims) return textResp("unauthorized", 401);
-    const uid = claimsData.claims.sub as string;
+    const { data: { user }, error: userErr } = await userClient.auth.getUser(token);
+    if (userErr || !user) return textResp("unauthorized", 401);
+    const uid = user.id;
 
     const url = new URL(req.url);
     const orderNumber = url.searchParams.get("order");

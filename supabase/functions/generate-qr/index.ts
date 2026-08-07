@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
     }
 
     // Check units are in valid state for QR generation
-    const invalidUnits = units.filter(u => u.fulfillment_status !== 'reserved' && u.fulfillment_status !== 'in_stock');
+    const invalidUnits = units.filter(u => u.fulfillment_status !== 'reserved' && u.fulfillment_status !== 'in_stock' && u.fulfillment_status !== 'shipped' && u.fulfillment_status !== 'purchased');
     if (invalidUnits.length > 0) {
       return new Response(JSON.stringify({ 
         error: `${invalidUnits.length} units are not in valid state (must be reserved or in_stock)`,

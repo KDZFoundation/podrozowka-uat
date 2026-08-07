@@ -4,7 +4,9 @@ import { buildCorsHeaders } from "../_shared/cors.ts";
 async function hashToken(token: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(token);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) throw new Error("Web Crypto API is unavailable");
+  const hashBuffer = await subtle.digest("SHA-256", data);
   return Array.from(new Uint8Array(hashBuffer))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -32,14 +34,16 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "token is required" }), { status: 400, headers: jsonHeaders });
       }
 
-      const tokenHash = await hashToken(token);
+      // POD tokens are stored as random, plaintext values. Older units may
+      // contain a SHA-256 hash, so use it only when the runtime supports it.
+      const tokenHash = globalThis.crypto?.subtle ? await hashToken(token) : null;
       const { data: unit, error } = await supabase
         .from("inventory_units")
         .select(`
           id, business_status, fulfillment_status, registered_at, traveler_user_id,
-          card_designs!inner(title, image_front_url, countries!inner(name_pl, iso2))
+          card_designs!inner(title, image_front_url, language_code, countries!inner(name_pl, iso2))
         `)
-        .eq("public_claim_token_hash", tokenHash)
+        .in("public_claim_token_hash", tokenHash ? [token, tokenHash] : [token])
         .maybeSingle();
 
       if (error || !unit) {
@@ -76,12 +80,24 @@ Deno.serve(async (req) => {
         card_designs: {
           title: string | null;
           image_front_url: string | null;
+          language_code: string | null;
           countries: {
             name_pl: string | null;
             iso2: string | null;
           } | null;
         } | null;
       }
+
+      const { data: countriesData } = await supabase
+        .from("countries")
+        .select("iso2, name_pl")
+        .eq("active", true)
+        .order("name_pl", { ascending: true });
+
+      const availableCountries = (countriesData || []).map((c) => ({
+        iso2: c.iso2,
+        name_pl: c.name_pl,
+      }));
 
       const design = (unit as unknown as InventoryUnitWithDesign).card_designs;
       return new Response(JSON.stringify({
@@ -90,18 +106,20 @@ Deno.serve(async (req) => {
         registered_at: unit.registered_at,
         traveler_name: travelerName,
         recipient_name: recipientName,
+        available_countries: availableCountries,
         design: {
           title: design?.title,
           image_front_url: design?.image_front_url,
           country_name: design?.countries?.name_pl,
           country_iso2: design?.countries?.iso2,
+          language_code: design?.language_code || "en",
         },
       }), { status: 200, headers: jsonHeaders });
     }
 
     if (req.method === "POST") {
       const body = await req.json();
-      const { token, recipient_name, recipient_message, recipient_email, contact_opt_in, latitude, longitude } = body;
+      const { token, recipient_name, recipient_message, recipient_email, contact_opt_in, latitude, longitude, registered_country_iso2 } = body;
 
       // Coordinate validation
       let lat: number | null = null;
@@ -135,12 +153,12 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: "Wiadomość zbyt długa (max 500)" }), { status: 400, headers: jsonHeaders });
       }
 
-      const tokenHash = await hashToken(token);
+      const tokenHash = globalThis.crypto?.subtle ? await hashToken(token) : null;
 
       const { data: unit, error: fetchError } = await supabase
         .from("inventory_units")
         .select("id")
-        .eq("public_claim_token_hash", tokenHash)
+        .in("public_claim_token_hash", tokenHash ? [token, tokenHash] : [token])
         .maybeSingle();
 
       if (fetchError || !unit) {
@@ -157,6 +175,7 @@ Deno.serve(async (req) => {
         _contact_opt_in: contact_opt_in === true,
         _latitude: lat,
         _longitude: lon,
+        _registered_country_iso2: registered_country_iso2 ? String(registered_country_iso2).trim() : null,
       });
 
       if (rpcError) {

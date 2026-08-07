@@ -18,6 +18,7 @@ export type Database = {
         Row: {
           card_design_id: string
           created_at: string
+          flag_url: string | null
           id: string
           sort_order: number
           url: string
@@ -25,6 +26,7 @@ export type Database = {
         Insert: {
           card_design_id: string
           created_at?: string
+          flag_url?: string | null
           id?: string
           sort_order?: number
           url: string
@@ -32,6 +34,7 @@ export type Database = {
         Update: {
           card_design_id?: string
           created_at?: string
+          flag_url?: string | null
           id?: string
           sort_order?: number
           url?: string
@@ -49,14 +52,17 @@ export type Database = {
       card_designs: {
         Row: {
           active: boolean
+          back_qr_label: string | null
           category_id: string | null
           country_id: string
           created_at: string
+          crop_settings: Json | null
           currency: string
           description: string | null
           id: string
           image_front_url: string | null
           language_code: string
+          photo_author: string | null
           price_grosze: number
           thank_you_text: string | null
           title: string | null
@@ -65,14 +71,17 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          back_qr_label?: string | null
           category_id?: string | null
           country_id: string
           created_at?: string
+          crop_settings?: Json | null
           currency?: string
           description?: string | null
           id?: string
           image_front_url?: string | null
           language_code?: string
+          photo_author?: string | null
           price_grosze?: number
           thank_you_text?: string | null
           title?: string | null
@@ -81,14 +90,17 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          back_qr_label?: string | null
           category_id?: string | null
           country_id?: string
           created_at?: string
+          crop_settings?: Json | null
           currency?: string
           description?: string | null
           id?: string
           image_front_url?: string | null
           language_code?: string
+          photo_author?: string | null
           price_grosze?: number
           thank_you_text?: string | null
           title?: string | null
@@ -105,6 +117,47 @@ export type Database = {
           },
           {
             foreignKeyName: "designs_country_id_fkey"
+            columns: ["country_id"]
+            isOneToOne: false
+            referencedRelation: "countries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      card_language_templates: {
+        Row: {
+          back_qr_label: string
+          country_id: string
+          created_at: string
+          front_thank_you_text: string
+          id: string
+          language_code: string
+          language_name: string
+          updated_at: string
+        }
+        Insert: {
+          back_qr_label: string
+          country_id: string
+          created_at?: string
+          front_thank_you_text: string
+          id?: string
+          language_code: string
+          language_name: string
+          updated_at?: string
+        }
+        Update: {
+          back_qr_label?: string
+          country_id?: string
+          created_at?: string
+          front_thank_you_text?: string
+          id?: string
+          language_code?: string
+          language_name?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "card_language_templates_country_id_fkey"
             columns: ["country_id"]
             isOneToOne: false
             referencedRelation: "countries"
@@ -459,6 +512,7 @@ export type Database = {
           company_name: string | null
           company_nip: string | null
           created_at: string
+          customer_email: string | null
           currency: string
           fiscal_document_error: string | null
           fiscal_document_external_id: string | null
@@ -496,6 +550,7 @@ export type Database = {
           company_name?: string | null
           company_nip?: string | null
           created_at?: string
+          customer_email?: string | null
           currency?: string
           fiscal_document_error?: string | null
           fiscal_document_external_id?: string | null
@@ -533,6 +588,7 @@ export type Database = {
           company_name?: string | null
           company_nip?: string | null
           created_at?: string
+          customer_email?: string | null
           currency?: string
           fiscal_document_error?: string | null
           fiscal_document_external_id?: string | null

@@ -95,9 +95,9 @@ Deno.serve(async (req) => {
     });
 
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsErr } = await supabase.auth.getClaims(token);
-    if (claimsErr || !claimsData?.claims) return jsonResp({ error: "unauthorized" }, 401);
-    const userEmail = String(claimsData.claims.email || "");
+    const { data: { user }, error: userErr } = await supabase.auth.getUser(token);
+    if (userErr || !user) return jsonResp({ error: "unauthorized" }, 401);
+    const userEmail = String(user.email || "");
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") return jsonResp({ error: "invalid_body" }, 400);
@@ -108,10 +108,15 @@ Deno.serve(async (req) => {
     if (!items || items.length === 0 || items.length > 100) {
       return jsonResp({ error: "invalid_items" }, 400);
     }
+    let totalQty = 0;
     for (const it of items) {
       if (!it || !isUuid(it.card_design_id) || !Number.isInteger(it.quantity) || it.quantity < 1 || it.quantity > 1000) {
         return jsonResp({ error: "invalid_items" }, 400);
       }
+      totalQty += it.quantity;
+    }
+    if (totalQty < 10) {
+      return jsonResp({ error: "Minimalne zamówienie to 10 podróżówek" }, 400);
     }
 
     // Shipping method: 'inpost' (paczkomat) or 'courier' (home address)

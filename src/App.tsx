@@ -20,6 +20,8 @@ import ShopProduct from "./pages/ShopProduct";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
 import CheckoutConfirmation from "./pages/CheckoutConfirmation";
+import ResetPassword from "./pages/ResetPassword";
+import QrRegistrationTest from "./pages/QrRegistrationTest";
 
 const queryClient = new QueryClient();
 
@@ -37,11 +39,15 @@ const App = () => (
                 <Route path="/auth" element={<Auth mode="login" />} />
                 <Route path="/logowanie" element={<Auth mode="login" />} />
                 <Route path="/rejestracja" element={<Auth mode="signup" />} />
+                <Route path="/odzyskiwanie-hasla" element={<Auth mode="forgot" />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="/resetuj-haslo" element={<ResetPassword />} />
                 <Route path="/checkout" element={<Checkout />} />
                 <Route path="/checkout/potwierdzenie" element={<CheckoutConfirmation />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/r/:qrToken" element={<RegisterPostcard />} />
+                <Route path="/test/rejestracja-qr" element={<QrRegistrationTest />} />
                 <Route path="/admin" element={<AdminPanel />} />
                 <Route path="/polityka-prywatnosci" element={<PrivacyPolicy />} />
                 <Route path="/regulamin" element={<Terms />} />

@@ -1,17 +1,25 @@
-import { Package, Truck } from "lucide-react";
+import { Package, Truck, Building2, Mail } from "lucide-react";
 import type { ShippingMethod } from "@/lib/constants";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
 interface Props {
   value: ShippingMethod;
   onChange: (v: ShippingMethod) => void;
 }
 
-const options: { value: ShippingMethod; label: string; description: string; icon: typeof Package }[] = [
+const allOptions: {
+  value: ShippingMethod;
+  label: string;
+  description: string;
+  icon: typeof Package;
+  flagKey?: "inpost_shipping_enabled" | "orlen_paczka_enabled" | "pocztex_shipping_enabled";
+}[] = [
   {
     value: "inpost",
     label: "Paczkomat InPost",
     description: "Odbiór w wybranym paczkomacie.",
     icon: Package,
+    flagKey: "inpost_shipping_enabled",
   },
   {
     value: "courier",
@@ -19,9 +27,30 @@ const options: { value: ShippingMethod; label: string; description: string; icon
     description: "Dostawa na wskazany adres.",
     icon: Truck,
   },
+  {
+    value: "orlen",
+    label: "ORLEN Paczka",
+    description: "Odbiór w automacie paczkowym lub stacji ORLEN.",
+    icon: Building2,
+    flagKey: "orlen_paczka_enabled",
+  },
+  {
+    value: "pocztex",
+    label: "Pocztex / Punkt Odbioru",
+    description: "Odbiór na Poczcie, w Żabce lub Biedronce.",
+    icon: Mail,
+    flagKey: "pocztex_shipping_enabled",
+  },
 ];
 
 const ShippingMethodPicker = ({ value, onChange }: Props) => {
+  const { flags } = useFeatureFlags();
+
+  const options = allOptions.filter((opt) => {
+    if (!opt.flagKey) return true;
+    return flags[opt.flagKey] ?? true;
+  });
+
   return (
     <div className="grid gap-3 sm:grid-cols-2">
       {options.map((opt) => {

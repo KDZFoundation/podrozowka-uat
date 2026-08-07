@@ -9,10 +9,14 @@ const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
 
 const CartSheetContent = () => {
-  const { setQuantity, removeItem } = useCart();
+  const { setQuantity, removeItem, items: savedCartItems } = useCart();
   const { items, subtotalGrosze, isLoading } = useCartItems();
 
-  const empty = items.length === 0 && !isLoading;
+  const isResolvingItems = savedCartItems.length > 0 && items.length === 0;
+  const empty = savedCartItems.length === 0 && !isLoading;
+
+  const totalCount = items.reduce((s, i) => s + (i.unavailable ? 0 : i.quantity), 0);
+  const isBelowMin = totalCount < 10;
 
   return (
     <>
@@ -22,14 +26,14 @@ const CartSheetContent = () => {
           Twój koszyk
           {items.length > 0 && (
             <span className="text-sm font-normal text-muted-foreground">
-              ({items.reduce((s, i) => s + i.quantity, 0)})
+              ({totalCount} szt.)
             </span>
           )}
         </SheetTitle>
       </SheetHeader>
 
       <div className="flex-1 overflow-y-auto py-4">
-        {isLoading && items.length === 0 ? (
+        {(isLoading || isResolvingItems) && items.length === 0 ? (
           <div className="space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="animate-pulse flex gap-3">
@@ -68,7 +72,7 @@ const CartSheetContent = () => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <Link to={`/sklep/${it.id}`} className="text-sm font-medium line-clamp-2 hover:text-primary">
-                      {it.title || "Bez tytułu"}
+                      {it.title || "Podróżówka"}
                     </Link>
                     <button
                       onClick={() => removeItem(it.id)}
@@ -97,8 +101,7 @@ const CartSheetContent = () => {
                         <span className="px-2 text-sm min-w-6 text-center">{it.quantity}</span>
                         <button
                           onClick={() => setQuantity(it.id, it.quantity + 1)}
-                          disabled={it.quantity >= it.stock}
-                          className="px-1.5 py-0.5 hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="px-1.5 py-0.5 hover:bg-muted"
                           aria-label="Zwiększ"
                         >
                           <Plus className="w-3 h-3" />
@@ -117,6 +120,11 @@ const CartSheetContent = () => {
       {items.length > 0 && (
         <SheetFooter className="border-t border-border pt-4">
           <div className="w-full space-y-3">
+            {isBelowMin && (
+              <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-800 dark:text-amber-200">
+                ⚠️ Minimalne zamówienie: <strong>10 szt.</strong> (masz {totalCount} szt.)
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Suma częściowa</span>
               <span className="font-display text-lg font-bold">{formatPln(subtotalGrosze)}</span>

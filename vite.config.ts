@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
@@ -16,5 +17,24 @@ export default defineConfig(({ mode }) => ({
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+  },
+  test: {
+    // Dopóki nie ma jeszcze testów w repo (Etap 3 wg dokumentu CI/CD),
+    // Vitest domyślnie kończy się błędem przy braku plików testowych.
+    // Bez tego Quality Gate blokowałby się jeszcze przed dojściem do builda.
+    // Gdy pojawi się pierwszy realny test, ta flaga przestaje mieć znaczenie
+    // (Vitest zacznie faktycznie egzekwować testy).
+    passWithNoTests: true,
+
+    // Komponenty React (@testing-library/react) potrzebują DOM-u.
+    // Domyślne środowisko Vitest to "node" - bez tego każdy test dotykający
+    // document/window wyleci z błędem niezależnie od poprawności testu.
+    environment: "jsdom",
+
+    // Rejestruje matchery @testing-library/jest-dom (np. toBeInTheDocument)
+    // przed uruchomieniem testów. Wymaga pliku src/test/setup.ts (patrz niżej).
+    setupFiles: ["./src/test/setup.ts"],
+
+    globals: true,
   },
 }));

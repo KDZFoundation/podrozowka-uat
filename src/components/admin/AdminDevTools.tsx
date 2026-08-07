@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Database, Globe, Loader2 } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { Database, Globe, Loader2, QrCode, ExternalLink, Copy, Check, ShoppingBag } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -11,6 +11,15 @@ const MOCK_COUNTRIES = [
   { name_pl: "Japonia", iso2: "JP", iso3: "JPN", slug: "japonia" },
   { name_pl: "Włochy", iso2: "IT", iso3: "ITA", slug: "wlochy" },
 ];
+
+async function hashToken(token: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(token);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
 
 const MOCK_BUYERS = [
   { name: "Jan Kowalski", address: "ul. Kwiatowa 12", city: "Warszawa", postal: "00-001", country: "PL" },
@@ -51,8 +60,249 @@ const GLOBAL_LOCATIONS = [
 const AdminDevTools = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isCreatingTestCard, setIsCreatingTestCard] = useState(false);
+  const [isCreatingFranceOrder, setIsCreatingFranceOrder] = useState(false);
+  const [createdTestToken, setCreatedTestToken] = useState<string | null>(null);
+
+  const createFrancePaidOrder = async () => {
+    setIsCreatingFranceOrder(true);
+    try {
+      // 1. Get or create France country
+      let countryId: string;
+      const { data: country } = await supabase
+        .from("countries")
+        .select("id")
+        .eq("iso2", "FR")
+        .maybeSingle();
+
+      if (country) {
+        countryId = country.id;
+      } else {
+        const { data: newCountry, error: cErr } = await supabase
+          .from("countries")
+          .insert({ name_pl: "Francja", iso2: "FR", iso3: "FRA", slug: "francja", active: true })
+          .select("id")
+          .single();
+        if (cErr) throw cErr;
+        countryId = newCountry.id;
+      }
+
+      // 2. Get or create France V1 design
+      let designId: string;
+      const { data: design } = await supabase
+        .from("card_designs")
+        .select("id")
+        .eq("country_id", countryId)
+        .eq("view_no", 1)
+        .maybeSingle();
+
+      if (design) {
+        designId = design.id;
+      } else {
+        const { data: newDesign, error: dErr } = await supabase
+          .from("card_designs")
+          .insert({ country_id: countryId, view_no: 1, title: "Francja — V1 Francja", language_code: "pl", active: true, price_grosze: 499 })
+          .select("id")
+          .single();
+        if (dErr) throw dErr;
+        designId = newDesign.id;
+      }
+
+      // 3. Get or create stock batch
+      let batchId: string;
+      const { data: batch } = await supabase
+        .from("stock_batches")
+        .select("id")
+        .eq("card_design_id", designId)
+        .limit(1)
+        .maybeSingle();
+
+      if (batch) {
+        batchId = batch.id;
+      } else {
+        const { data: newBatch, error: bErr } = await supabase
+          .from("stock_batches")
+          .insert({ card_design_id: designId, name: "Partia Francja V1", quantity: 50 })
+          .select("id")
+          .single();
+        if (bErr) throw bErr;
+        batchId = newBatch.id;
+      }
+
+      // 4. Create paid order
+      const dateStr = new Date().toISOString().slice(2, 10).replace(/-/g, "");
+      const customOrderNumber = `PDZ-${dateStr}-FR10${randomHex(4).toUpperCase()}`;
+
+      const { data: order, error: oErr } = await supabase
+        .from("orders")
+        .insert({
+          user_id: user?.id || null,
+          order_number: customOrderNumber,
+          status: "paid" as const,
+          payment_status: "paid" as const,
+          total_amount: 49.90,
+          paid_at: new Date().toISOString(),
+          shipping_name: "Zamówienie 10x Francja V1",
+          shipping_address: "ul. Francuska 10/2",
+          shipping_city: "Warszawa",
+          shipping_postal_code: "00-001",
+          shipping_country: "PL",
+        })
+        .select("id")
+        .single();
+
+      if (oErr) throw oErr;
+
+      // 5. Order Item
+      const { error: itemErr } = await supabase.from("order_items").insert({
+        order_id: order.id,
+        card_design_id: designId,
+        quantity: 10,
+        unit_price: 4.99,
+        total_price: 49.90,
+      });
+      if (itemErr) throw itemErr;
+
+      // 6. 10 Inventory units
+      const unitsToInsert = [];
+      for (let i = 1; i <= 10; i++) {
+        const token = `test-francja-v1-${i}-${Date.now().toString(36)}`;
+        const tokenHash = await hashToken(token);
+        unitsToInsert.push({
+          stock_batch_id: batchId,
+          card_design_id: designId,
+          internal_inventory_code: `INV-FR-V01-${String(i).padStart(3, "0")}-${randomHex(4).toUpperCase()}`,
+          fulfillment_status: "shipped" as const,
+          business_status: "purchased" as const,
+          traveler_user_id: user?.id || null,
+          order_id: order.id,
+          shipped_at: new Date().toISOString(),
+          public_claim_code: `PDZ-FR-${randomHex(4).toUpperCase()}-${randomHex(4).toUpperCase()}`,
+          public_claim_token_hash: tokenHash,
+        });
+      }
+
+      const { error: unitsErr } = await supabase.from("inventory_units").insert(unitsToInsert);
+      if (unitsErr) throw unitsErr;
+
+      toast.success("Dodano opłacone zamówienie na 10 podróżówek Francja — V1 Francja!");
+      queryClient.invalidateQueries();
+    } catch (err) {
+      console.error("Error creating France order:", err);
+      toast.error("Błąd tworzenia zamówienia: " + (err instanceof Error ? err.message : "Nieznany błąd"));
+    } finally {
+      setIsCreatingFranceOrder(false);
+    }
+  };
+  const [copied, setCopied] = useState(false);
   const queryClient = useQueryClient();
-  const { user, isDbAdmin } = useAuth();
+  const { user } = useAuth();
+
+  const createTestCardForObdarowany = async () => {
+    if (!user) return;
+    setIsCreatingTestCard(true);
+
+    try {
+      // 1. Get or create a country
+      let countryId: string;
+      const { data: country } = await supabase
+        .from("countries")
+        .select("id")
+        .eq("iso2", "JP")
+        .maybeSingle();
+
+      if (country) {
+        countryId = country.id;
+      } else {
+        const { data: newCountry, error: cErr } = await supabase
+          .from("countries")
+          .insert({ name_pl: "Japonia", iso2: "JP", iso3: "JPN", slug: "japonia", active: true })
+          .select("id")
+          .single();
+        if (cErr) throw cErr;
+        countryId = newCountry.id;
+      }
+
+      // 2. Get or create a card design
+      let designId: string;
+      const { data: design } = await supabase
+        .from("card_designs")
+        .select("id")
+        .eq("country_id", countryId)
+        .eq("language_code", "ja")
+        .limit(1)
+        .maybeSingle();
+
+      if (design) {
+        designId = design.id;
+      } else {
+        const { data: newDesign, error: dErr } = await supabase
+          .from("card_designs")
+          .insert({ country_id: countryId, view_no: 999, title: "テスト用ポストカード：日本", language_code: "ja", active: true })
+          .select("id")
+          .single();
+        if (dErr) throw dErr;
+        designId = newDesign.id;
+      }
+
+      // 3. Create stock batch if needed
+      let batchId: string;
+      const { data: batch } = await supabase
+        .from("stock_batches")
+        .select("id")
+        .eq("card_design_id", designId)
+        .limit(1)
+        .maybeSingle();
+
+      if (batch) {
+        batchId = batch.id;
+      } else {
+        const { data: newBatch, error: bErr } = await supabase
+          .from("stock_batches")
+          .insert({ card_design_id: designId, name: `Batch Test ${Date.now()}`, quantity: 10 })
+          .select("id")
+          .single();
+        if (bErr) throw bErr;
+        batchId = newBatch.id;
+      }
+
+      // 4. Generate test token and its SHA256 hash
+      const token = `test-card-${Date.now().toString(36)}`;
+      const tokenHash = await hashToken(token);
+
+      // 5. Insert inventory_unit in 'purchased' state
+      const { error: unitErr } = await supabase.from("inventory_units").insert({
+        stock_batch_id: batchId,
+        card_design_id: designId,
+        internal_inventory_code: `TEST-${Date.now().toString(36).toUpperCase()}`,
+        fulfillment_status: "shipped",
+        business_status: "purchased",
+        traveler_user_id: user.id,
+        shipped_at: new Date().toISOString(),
+        public_claim_code: `PDZ-TEST-${Date.now().toString(36).toUpperCase()}`,
+        public_claim_token_hash: tokenHash,
+      });
+
+      if (unitErr) throw unitErr;
+
+      setCreatedTestToken(token);
+      toast.success("Utworzono kartkę testową gotową do rejestracji!");
+      queryClient.invalidateQueries();
+    } catch (err) {
+      console.error("Test card creation error:", err);
+      toast.error("Błąd tworzenia kartki testowej: " + (err instanceof Error ? err.message : "Nieznany błąd"));
+    } finally {
+      setIsCreatingTestCard(false);
+    }
+  };
+
+  const handleCopyLink = (token: string) => {
+    const url = `${window.location.origin}/r/${token}`;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    toast.success("Skopiowano link do schowka!");
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const generateMockData = async () => {
     if (!user) return;
@@ -170,12 +420,19 @@ const AdminDevTools = () => {
 
       // --- 6. Inventory Units (10 total, 5 purchased + 5 registered) ---
       const unitIds: string[] = [];
+      const purchasedTokens: string[] = [];
       for (let i = 0; i < 10; i++) {
         const orderIdx = i < 3 ? 0 : i < 6 ? 1 : 2;
         const designIdx = i % designIds.length;
         const batchIdx = designIdx;
         const isRegistered = i >= 5;
         const code = `INV-${MOCK_COUNTRIES[designIdx].iso2}-V01-${String(i + 1).padStart(3, "0")}T`;
+
+        const token = isRegistered ? randomHex(16) : `test-kartka-${i + 1}`;
+        if (!isRegistered) {
+          purchasedTokens.push(token);
+        }
+        const tokenHash = await hashToken(token);
 
         const { data, error } = await supabase
           .from("inventory_units")
@@ -189,7 +446,7 @@ const AdminDevTools = () => {
             order_id: orderIds[orderIdx],
             shipped_at: new Date().toISOString(),
             public_claim_code: `PDZ-${randomHex(4).toUpperCase()}-${randomHex(4).toUpperCase()}`,
-            public_claim_token_hash: randomHex(32),
+            public_claim_token_hash: tokenHash,
             registered_at: isRegistered ? new Date().toISOString() : null,
           })
           .select("id")
@@ -341,6 +598,79 @@ const AdminDevTools = () => {
   return (
     <div className="space-y-6">
       <h2 className="font-display text-2xl font-bold text-foreground">Narzędzia Dev</h2>
+
+      <Card className="max-w-lg border-emerald-500/30 shadow-md">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+            <ShoppingBag className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            Zamówienie Francja — V1 Francja (10 szt.)
+          </CardTitle>
+          <CardDescription>
+            Dodaj gotowe, opłacone zamówienie na 10 podróżówek Francja — V1 Francja z wygenerowanymi jednostkami magazynowymi.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={createFrancePaidOrder} disabled={isCreatingFranceOrder} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white">
+            {isCreatingFranceOrder ? (
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            ) : (
+              <ShoppingBag className="w-4 h-4 mr-2" />
+            )}
+            {isCreatingFranceOrder ? "Tworzenie zamówienia…" : "Dodaj opłacone zamówienie (10 szt. Francja V1)"}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="max-w-lg border-primary/30 shadow-md">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-primary">
+            <QrCode className="w-5 h-5 text-primary" />
+            Test Rejestracji jako Obdarowany
+          </CardTitle>
+          <CardDescription>
+            Wygeneruj nową testową kartkę pocztową w stanie "kupiona" (gotową do aktywowania/rejestracji przez obdarowanego po zeskanowaniu QR).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button onClick={createTestCardForObdarowany} disabled={isCreatingTestCard} className="w-full">
+            {isCreatingTestCard ? (
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            ) : (
+              <QrCode className="w-4 h-4 mr-2" />
+            )}
+            {isCreatingTestCard ? "Tworzenie kartki testowej…" : "Wygeneruj nową kartkę do testów"}
+          </Button>
+
+          {createdTestToken && (
+            <div className="p-4 bg-muted/60 rounded-lg border space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Wygenerowana kartka testowa
+              </p>
+              <p className="text-sm font-mono bg-background p-2 rounded border break-all text-foreground">
+                {window.location.origin}/r/{createdTestToken}
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => window.open(`/r/${createdTestToken}`, "_blank")}
+                >
+                  <ExternalLink className="w-4 h-4 mr-1" />
+                  Przejdź do rejestracji
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleCopyLink(createdTestToken)}
+                >
+                  {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <Card className="max-w-lg">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

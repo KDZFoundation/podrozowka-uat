@@ -35,9 +35,9 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const token = authHeader.replace("Bearer ", "");
-    const { data: claims, error: claimsErr } = await userClient.auth.getClaims(token);
-    if (claimsErr || !claims?.claims) return jsonResp({ error: "unauthorized" }, 401);
-    const userId = claims.claims.sub as string;
+    const { data: { user }, error: userErr } = await userClient.auth.getUser(token);
+    if (userErr || !user) return jsonResp({ error: "unauthorized" }, 401);
+    const userId = user.id;
 
     // Admin check via has_role (SECURITY DEFINER function respects our roles table)
     const { data: isAdmin, error: roleErr } = await userClient.rpc("has_role", {

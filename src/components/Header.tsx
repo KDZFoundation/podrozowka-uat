@@ -14,10 +14,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/useAuth";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import NotificationsBell from "@/components/NotificationsBell";
+import podrozowkaLogo from "@/assets/podrozowka-logo.png";
 
 const languages = [
   { code: "pl", name: "Polski" },
@@ -31,6 +32,7 @@ const Header = () => {
   const [currentLang, setCurrentLang] = useState("pl");
   const { user, signOut, isLoading, isAdmin } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { totalCount } = useCart();
 
   const { data: profile } = useQuery({
@@ -64,28 +66,35 @@ const Header = () => {
     "";
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border">
+    <header className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/95 shadow-sm backdrop-blur-md">
+      <a href="#main-content" className="sr-only z-[60] rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground focus:not-sr-only focus:absolute focus:left-4 focus:top-4">
+        Przejdź do treści
+      </a>
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 md:h-20">
           {/* Logo */}
-          <a href="/" className="flex items-center gap-2">
-            <span className="font-display text-xl md:text-2xl font-semibold text-foreground">
-              Podróżówka
+          <a href="/" className="rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+            <span className="relative block h-14 w-36 overflow-hidden md:h-16 md:w-44">
+              <img
+                src={podrozowkaLogo}
+                alt="Podróżówka — odwrócona pocztówka"
+                className="h-full max-w-none origin-center scale-[1.85] translate-y-[7%]"
+              />
             </span>
           </a>
 
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center gap-8">
-            <a href="/#about" className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">
+          <nav className="hidden items-center gap-1 rounded-xl bg-muted/50 p-1 md:flex">
+            <a href="/#about" className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
               O projekcie
             </a>
-            <a href="/#distribution-map" className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">
+            <a href="/#distribution-map" className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
               Mapa
             </a>
-            <Link to="/sklep" className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">
+            <Link to="/sklep" className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${pathname.startsWith("/sklep") || pathname === "/koszyk" || pathname.startsWith("/checkout") ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}>
               Sklep
             </Link>
-            <a href="/#community-gallery" className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">
+            <a href="/#community-gallery" className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
               Społeczność
             </a>
           </nav>
@@ -113,9 +122,10 @@ const Header = () => {
               <SheetTrigger asChild>
                 <button
                   aria-label={`Koszyk${totalCount > 0 ? ` (${totalCount})` : ""}`}
-                  className="relative p-2 rounded-full hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  className="relative inline-flex items-center gap-2 rounded-lg px-2 py-2 text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <ShoppingCart className="w-5 h-5 text-foreground" />
+                  <span className="hidden text-sm font-semibold md:inline">Koszyk</span>
                   {totalCount > 0 && (
                     <span className="absolute -top-0.5 -right-0.5 min-w-5 h-5 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center">
                       {totalCount > 99 ? "99+" : totalCount}

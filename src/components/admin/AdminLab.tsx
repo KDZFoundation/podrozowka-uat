@@ -16,7 +16,7 @@ const KNOWN_FLAGS = [
   { key: "travel_stats", name: "Statystyki Kilometrów", description: "Liczenie dystansu kartek od Warszawy", is_enabled: false },
   { key: "wall_of_connections", name: "Ściana Relacji", description: "Galeria zdjęć z rejestracji", is_enabled: false },
   { key: "travelers_journal", name: "Dziennik Ambasadora", description: "Oś czasu relacji", is_enabled: false },
-  { key: "cultural_missions", name: "Misje Kulturowe", description: "Wyzwania dla podróżników", is_enabled: false }
+  { key: "cultural_missions", name: "Misje Kulturowe", description: "Wyzwania dla podróżników", is_enabled: false },
 ];
 
 const AdminLab = () => {
@@ -51,7 +51,9 @@ const AdminLab = () => {
         }
       }
 
-      return data as FeatureFlag[];
+      const knownKeys = new Set(KNOWN_FLAGS.map((kf) => kf.key));
+      const filteredData = (data || []).filter((f) => knownKeys.has(f.key));
+      return filteredData as FeatureFlag[];
     },
   });
 

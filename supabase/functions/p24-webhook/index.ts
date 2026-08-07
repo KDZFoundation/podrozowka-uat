@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
     // Mark paid + reserve inventory
     const { error: updateErr } = await supabase
       .from("orders")
-      .update({ payment_status: "paid", paid_at: new Date().toISOString() })
+      .update({ payment_status: "paid", status: "paid", paid_at: new Date().toISOString() })
       .eq("id", sessionId)
       .eq("payment_status", "unpaid");
 
@@ -139,15 +139,8 @@ Deno.serve(async (req) => {
       return new Response("update failed", { status: 500 });
     }
 
-    const { data: reserveData, error: reserveErr } = await supabase.rpc(
-      "reserve_inventory_for_order",
-      { _order_id: sessionId },
-    );
-    if (reserveErr) {
-      console.error("webhook: reserve rpc error", reserveErr.message);
-    } else if (reserveData && (reserveData as { success?: boolean }).success === false) {
-      console.error("webhook: reserve failed", JSON.stringify(reserveData));
-    }
+    // POD: payment confirms a print request. Do not reserve pre-existing inventory;
+    // physical units and QR codes are generated later for this paid order.
 
     // Fire-and-forget: issue fiscal document. Never blocks the webhook ACK.
     supabase.functions
