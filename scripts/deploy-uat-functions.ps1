@@ -20,7 +20,15 @@ $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureTok
 
 try {
   $plainToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($tokenPointer)
+  # Copying from a browser can occasionally add an invisible line-break or
+  # Unicode formatting character. Keep only printable token characters.
+  $plainToken = [System.Text.RegularExpressions.Regex]::Replace($plainToken, '[^\x21-\x7E]', '').Trim()
+  if ($plainToken -notmatch '^sbp_[A-Za-z0-9_-]{20,}$') {
+    throw 'The supplied token is not a valid Supabase personal access token format. Copy the full value that starts with sbp_.'
+  }
+
   $env:SUPABASE_ACCESS_TOKEN = $plainToken
+  Write-Output "Using a validated Supabase personal access token (length: $($plainToken.Length))."
 
   $functionsWithoutJwt = @(
     'register-postcard',
