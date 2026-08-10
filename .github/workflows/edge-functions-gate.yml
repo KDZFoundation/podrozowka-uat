@@ -1,0 +1,141 @@
+name: Edge Functions Gate
+
+on:
+  push:
+    branches:
+      - main
+      - uat
+      - production
+    paths:
+      - 'supabase/functions/**'
+  pull_request:
+    branches:
+      - main
+      - uat
+      - production
+    paths:
+      - 'supabase/functions/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-functions-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect-changes:
+    name: Detekcja zmian
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+      has_changes: ${{ steps.diff.outputs.has_changes }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Wymagane do porównania diff
+
+      - name: Wykryj zmienione funkcje
+        id: diff
+        run: |
+          # Ustalenie bazy do porównania
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+
+          # The first push has an all-zero before SHA; compare it with the
+          # repository's initial commit instead of failing the workflow.
+          if [[ "$BASE" =~ ^0+$ ]]; then
+            BASE="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          
+          # Pobranie listy zmienionych katalogów funkcji
+          # Ignorujemy katalog _shared oraz pliki bezpośrednio w funkcji
+          CHANGED=$(git diff --name-only "$BASE" HEAD -- 'supabase/functions/' | \
+            grep -v '^supabase/functions/_shared/' | \
+            sed 's|supabase/functions/\([^/]*\)/.*|\1|' | \
+            sort -u | \
+            jq -R -s -c 'split("\n") | map(select(length > 0))')
+          
+          echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "has_changes=$([ "$CHANGED" != '[]' ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          
+          echo "Zmienione funkcje: $CHANGED"
+
+  deploy-functions:
+    name: Wdrożenie i testowanie funkcji
+    needs: detect-changes
+    # Pull requests only validate the change; deployment happens after merge.
+    if: needs.detect-changes.outputs.has_changes == 'true' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ github.event_name == 'push' && github.ref_name == 'production' && 'production' || '' }}
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Konfiguracja Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Ustalenie środowiska docelowego
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            TARGET_BRANCH="${{ github.base_ref }}"
+          else
+            TARGET_BRANCH="${{ github.ref_name }}"
+          fi
+          
+          case "$TARGET_BRANCH" in
+            uat)
+              echo "PROJECT_REF=nqqephusxnxzzkfulfae" >> $GITHUB_ENV
+              echo "SUPABASE_ACCESS_TOKEN=${{ secrets.SUPABASE_ACCESS_TOKEN_UAT }}" >> $GITHUB_ENV
+              ;;
+            production)
+              echo "PROJECT_REF=iyxbgyfuudwcrirlbmhb" >> $GITHUB_ENV
+              echo "SUPABASE_ACCESS_TOKEN=${{ secrets.SUPABASE_ACCESS_TOKEN_PROD }}" >> $GITHUB_ENV
+              ;;
+            *)
+              echo "Pominięcie wdrożenia dla gałęzi: $TARGET_BRANCH"
+              echo "SKIP_DEPLOY=true" >> $GITHUB_ENV
+              ;;
+          esac
+
+      - name: Wdrażanie zmienionych funkcji
+        if: env.SKIP_DEPLOY != 'true'
+        run: |
+          # Funkcje które nie wymagają autoryzacji JWT
+          NO_JWT_FUNCTIONS="register-postcard generate-qr generate-qr-pdf p24-webhook issue-fiscal-document fiscal-document-pdf create-payment"
+          
+          for func in $(echo '${{ needs.detect-changes.outputs.changed }}' | jq -r '.[]'); do
+            JWT_FLAG=""
+            if echo "$NO_JWT_FUNCTIONS" | grep -qw "$func"; then
+              JWT_FLAG="--no-verify-jwt"
+            fi
+            
+            echo "Wdrażanie: $func $JWT_FLAG"
+            supabase functions deploy "$func" --project-ref "$PROJECT_REF" $JWT_FLAG
+          done
+
+      - name: Sprawdzenie stanu zdrowia (Health Check)
+        if: env.SKIP_DEPLOY != 'true'
+        run: |
+          SUPABASE_URL="https://${PROJECT_REF}.supabase.co"
+          
+          for func in $(echo '${{ needs.detect-changes.outputs.changed }}' | jq -r '.[]'); do
+            # Wykonanie requestu OPTIONS by sprawdzić czy funkcja odpowiada
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
+              -X OPTIONS "${SUPABASE_URL}/functions/v1/${func}")
+            
+            if [ "$STATUS" != "200" ] && [ "$STATUS" != "204" ]; then
+              echo "::error::Health check nie powiódł się dla funkcji $func (HTTP $STATUS)"
+              exit 1
+            fi
+            echo "Health check pomyślny: $func (HTTP $STATUS)"
+          done
