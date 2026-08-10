@@ -1,7 +1,7 @@
 # Plan wdrożenia CI/CD — Podróżówka
 
 **Data aktualizacji:** 07.08.2026 20:57
-**Status:** etapy A–F zaimplementowane, oczekuje na konfigurację GitHub i push
+**Status:** etapy A–F zaimplementowane i wypchnięte na `main` (DEV) oraz `uat`; pozostała konfiguracja zabezpieczeń GitHub i przygotowanie PROD.
 **Cel:** powtarzalne, bezpieczne przejście kodu i zmian bazy przez DEV → UAT → PROD.
 
 ## 1. Docelowa architektura środowisk
@@ -59,7 +59,8 @@
 
 - [x] Skrypt `scripts/database-gate.sh` naprawiony: połączenie przez socket UNIX `/var/run/postgresql` z fallbackiem na TCP po 30 próbach; `POSTGRES_HOST_AUTH_METHOD=trust`; diagnostyka `docker logs` przy awarii.
 - [x] Workflow `.github/workflows/database-gate.yml` ulepszony: path filter (`supabase/migrations/**`, `supabase/seed.sql`, `scripts/database-gate.sh`), krok diagnostyczny na failure, timeout 10 min.
-- [ ] **MANUAL:** push na `main`, zweryfikować pierwszy zielony przebieg w GitHub Actions.
+- [x] Zmiany Database Gate wypchnięto na `main` i `uat`.
+- [ ] **MANUAL:** zweryfikować pierwszy zielony przebieg w GitHub Actions.
 - [ ] **MANUAL:** oznaczyć Database Gate jako wymagany check po potwierdzeniu zielonego przebiegu.
 
 ### Etap B — Edge Functions Gate (ukończony)
@@ -97,7 +98,7 @@
 ### Etap E — smoke test UAT (ukończony)
 
 - [x] Utworzono skrypt `scripts/uat-smoke-test.sh` — sprawdza 5 tras frontendowych (HTTP 200) i 10 Edge Functions (OPTIONS preflight), drukuje sformatowane podsumowanie.
-- [ ] **MANUAL:** uruchomić skrypt po konfiguracji UAT: `bash scripts/uat-smoke-test.sh`.
+- [x] Smoke test uruchomiono na UAT: 15/15 punktów zaliczonych (5 tras frontendowych + 10 Edge Functions).
 
 ### Etap F — przygotowanie produkcji (ukończony)
 
