@@ -27,7 +27,7 @@ const About = () => (
             <h2 className="mb-6 font-display text-3xl font-bold leading-tight text-foreground md:text-4xl lg:text-5xl">Odwrócona pocztówka — <span className="text-primary">nowy sposób</span> na podziękowanie</h2>
             <p className="mb-6 text-lg leading-relaxed text-muted-foreground">Podróżówka to wyjątkowa koncepcja „odwróconej pocztówki”. Zamiast wysyłać pocztówki do domu, zabierasz je ze sobą i wręczasz jako podziękowanie za życzliwość, pomoc lub po prostu jako miły gest dla osób spotkanych w podróży.</p>
             <p className="mb-4 text-muted-foreground">Każda karta prezentuje piękno Polski — krajobrazy, architekturę i dzieła polskich artystów — oraz zawiera podziękowania w języku odbiorcy.</p>
-            <p className="mb-8 text-sm italic text-muted-foreground">Na odwrocie każdej Podróżówki znajdziesz miejsce na wiadomość oraz kod QR, dzięki któremu obdarowana osoba może przypisać kartkę do swojej historii podróży.</p>
+            <p className="mb-8 text-sm italic text-muted-foreground">Na odwrocie każdej Podróżówki znajdziesz miejsce na wiadomość oraz kod QR, dzięki któremu obdarowana osoba może przypisać kartkę do Twojej historii podróży.</p>
             <div className="grid gap-4 sm:grid-cols-2">
               {features.map((feature, index) => (
                 <motion.div key={feature.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: index * 0.1 }} viewport={{ once: true }} className="flex gap-3 rounded-xl bg-secondary p-4">

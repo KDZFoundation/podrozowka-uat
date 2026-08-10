@@ -1,12 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { RotateCcw } from "lucide-react";
+import QRCode from "qrcode";
 import krakowImage from "@/assets/krakow-square.jpg";
 import { PostcardFront } from "@/components/postcard/PostcardFront";
 import { PostcardBack } from "@/components/postcard/PostcardBack";
 
 const PostcardPreview = () => {
   const [isFlipped, setIsFlipped] = useState(false);
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    QRCode.toDataURL(`${window.location.origin}/r/demo-thailand`, { margin: 1, width: 180 })
+      .then(setQrCodeUrl)
+      .catch(() => setQrCodeUrl(null));
+  }, []);
 
   return (
     <section id="jak-to-dziala" className="bg-secondary/30 py-16 md:py-24">
@@ -39,13 +47,13 @@ const PostcardPreview = () => {
                 <PostcardFront
                   imageUrl={krakowImage}
                   photoAuthor="@Podrozowka"
-                  contentText="DZIĘKUJĘ, ŻE JESTEŚ Z NAMI!"
+                  contentText="ขอบคุณที่อยู่กับเรา!"
                   showCropMarks={false}
                   className="h-full w-full"
                 />
               </div>
               <div className="absolute inset-0 overflow-hidden rounded-xl bg-white shadow-elevated" style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}>
-                <PostcardBack showCropMarks={false} backQrLabel="ZESKANUJ" countryIso2="PL" className="h-full w-full" />
+                <PostcardBack showCropMarks={false} backQrLabel="สแกน QR เพื่อเดินทางไปกับฉัน" countryIso2="TH" qrCodeUrl={qrCodeUrl} className="h-full w-full" />
               </div>
             </motion.div>
             <span className="absolute -bottom-8 left-1/2 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap text-sm text-muted-foreground">
