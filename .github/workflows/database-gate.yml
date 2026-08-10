@@ -1,0 +1,39 @@
+name: Database Gate
+
+on:
+  push:
+    branches: [main, uat, production]
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/seed.sql'
+      - 'scripts/database-gate.sh'
+  pull_request:
+    branches: [main, uat, production]
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/seed.sql'
+      - 'scripts/database-gate.sh'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: database-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  database-gate:
+    name: Database Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Apply migrations to an isolated database
+        run: bash scripts/database-gate.sh
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs $(docker ps -aq --filter 'name=podrozowka-database-gate') 2>/dev/null || echo 'No container logs available'
