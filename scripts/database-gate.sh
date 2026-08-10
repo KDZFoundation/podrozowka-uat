@@ -14,7 +14,7 @@ trap cleanup EXIT
 PG_HOST="/var/run/postgresql"
 
 run_psql() {
-  docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$CONTAINER_NAME" \
+  MSYS_NO_PATHCONV=1 docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$CONTAINER_NAME" \
     psql -h "$PG_HOST" -v ON_ERROR_STOP=1 -U postgres -d "$DB_NAME" "$@"
 }
 
