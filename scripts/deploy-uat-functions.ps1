@@ -35,6 +35,7 @@ try {
     'generate-qr',
     'generate-qr-pdf',
     'p24-webhook',
+    'inpost-shipx-webhook',
     'issue-fiscal-document',
     'fiscal-document-pdf',
     'create-payment'
@@ -43,6 +44,8 @@ try {
   $functionsWithJwt = @(
     'confirm-cod-payment',
     'create-inpost-shipment',
+    'buy-inpost-shipment',
+    'get-inpost-label',
     'admin-payment-status'
   )
 

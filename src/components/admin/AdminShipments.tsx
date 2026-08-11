@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Search, ArrowLeft, Plus, Truck } from "lucide-react";
+import { Loader2, Search, ArrowLeft, Plus, Truck, Download, CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 
@@ -28,6 +28,8 @@ interface ShipmentRow {
   delivered_at: string | null;
   created_at: string;
   inpost_shipment_id?: string | null;
+  inpost_status?: string | null;
+  inpost_offer_id?: string | null;
   size?: string | null;
 }
 
@@ -61,12 +63,14 @@ const AdminShipments = () => {
   const [selectedShipment, setSelectedShipment] = useState<ShipmentRow | null>(null);
   const [selectedParcelSize, setSelectedParcelSize] = useState<"small" | "medium" | "large">("small");
   const [isGeneratingInpost, setIsGeneratingInpost] = useState(false);
+  const [isBuyingInpost, setIsBuyingInpost] = useState(false);
+  const [isDownloadingLabel, setIsDownloadingLabel] = useState(false);
 
   const fetchShipments = useCallback(async () => {
     setIsLoading(true);
     let query = supabase
       .from("shipments")
-      .select("id, order_id, user_id, status, tracking_number, carrier, shipped_at, delivered_at, created_at, inpost_shipment_id, size")
+      .select("id, order_id, user_id, status, tracking_number, carrier, shipped_at, delivered_at, created_at, inpost_shipment_id, inpost_status, inpost_offer_id, size")
       .order("created_at", { ascending: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
@@ -182,6 +186,7 @@ const AdminShipments = () => {
             tracking_number: data.shipment?.tracking_number || data.tracking_number,
             carrier: "InPost",
             inpost_shipment_id: data.shipment?.inpost_shipment_id || data.shipx_response?.id,
+            inpost_status: data.shipment?.inpost_status || data.shipx_status || "created",
           });
         }
       }
@@ -193,6 +198,52 @@ const AdminShipments = () => {
       });
     } finally {
       setIsGeneratingInpost(false);
+    }
+  };
+
+  const buyInpostShipment = async () => {
+    if (!selectedShipment) return;
+    setIsBuyingInpost(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("buy-inpost-shipment", {
+        body: { shipment_id: selectedShipment.id },
+      });
+      if (error || data?.error) {
+        toast({ title: "Nie udało się kupić przesyłki InPost", description: data?.error || error?.message, variant: "destructive" });
+      } else {
+        toast({ title: "Zakup zlecony w InPost", description: data?.message });
+        setSelectedShipment({ ...selectedShipment, inpost_status: "purchase_requested" });
+        fetchShipments();
+      }
+    } finally {
+      setIsBuyingInpost(false);
+    }
+  };
+
+  const downloadInpostLabel = async () => {
+    if (!selectedShipment) return;
+    setIsDownloadingLabel(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-inpost-label?shipment_id=${encodeURIComponent(selectedShipment.id)}`,
+        { headers: { Authorization: `Bearer ${session?.access_token || ""}` } },
+      );
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || "Etykieta nie jest jeszcze dostępna w ShipX.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `inpost-${selectedShipment.inpost_shipment_id || selectedShipment.id}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast({ title: "Nie udało się pobrać etykiety", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setIsDownloadingLabel(false);
     }
   };
 
@@ -309,10 +360,10 @@ const AdminShipments = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="pt-5">
+              <div className="pt-5 flex flex-wrap gap-2">
                 <Button
                   onClick={() => generateInpostShipment(selectedShipment.order_id, selectedParcelSize)}
-                  disabled={isGeneratingInpost}
+                  disabled={isGeneratingInpost || Boolean(selectedShipment.inpost_shipment_id)}
                   className="gap-2"
                 >
                   {isGeneratingInpost ? (
@@ -320,14 +371,27 @@ const AdminShipments = () => {
                   ) : (
                     <Truck className="w-4 h-4" />
                   )}
-                  Zgłoś w InPost ShipX
+                  {selectedShipment.inpost_shipment_id ? "Przesyłka utworzona" : "Utwórz w InPost ShipX"}
                 </Button>
+                {selectedShipment.inpost_shipment_id && (
+                  <Button variant="outline" onClick={buyInpostShipment} disabled={isBuyingInpost} className="gap-2">
+                    {isBuyingInpost ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
+                    Kup przesyłkę
+                  </Button>
+                )}
+                {selectedShipment.inpost_shipment_id && (
+                  <Button variant="outline" onClick={downloadInpostLabel} disabled={isDownloadingLabel} className="gap-2">
+                    {isDownloadingLabel ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    Pobierz etykietę PDF
+                  </Button>
+                )}
               </div>
             </div>
             {selectedShipment.inpost_shipment_id && (
-              <p className="text-xs text-muted-foreground mt-2 font-mono">
-                ID przesyłki InPost: {selectedShipment.inpost_shipment_id}
-              </p>
+              <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                <p className="font-mono">ID przesyłki InPost: {selectedShipment.inpost_shipment_id}</p>
+                <p>Stan ShipX: <span className="font-medium text-foreground">{selectedShipment.inpost_status || "oczekuje na ofertę"}</span>. Etykieta będzie dostępna po potwierdzeniu zakupu przez ShipX.</p>
+              </div>
             )}
           </div>
         </div>
