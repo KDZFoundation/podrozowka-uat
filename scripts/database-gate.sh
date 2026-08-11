@@ -56,6 +56,25 @@ for attempt in {1..60}; do
   sleep 1
 done
 
+# The Supabase image opens PostgreSQL before its bundled database migrations
+# (including pg_graphql) finish.  Applying our baseline in that small window
+# can make pg_graphql's schema-version trigger reference a stale relation OID.
+# Wait for the image entrypoint to finish completely, not merely for `select 1`.
+for attempt in {1..60}; do
+  if docker logs "$CONTAINER_NAME" 2>&1 | grep -Fq 'PostgreSQL init process complete; ready for start up.'; then
+    echo 'Verified: Supabase PostgreSQL initialization completed'
+    break
+  fi
+
+  if [[ "$attempt" == "60" ]]; then
+    echo 'Database Gate failed: Supabase PostgreSQL initialization did not complete in time.' >&2
+    docker logs "$CONTAINER_NAME"
+    exit 1
+  fi
+
+  sleep 1
+done
+
 mapfile -t migrations < <(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -print | sort)
 if [[ "${#migrations[@]}" -eq 0 ]]; then
   echo 'Database Gate failed: no active SQL migrations found.' >&2
