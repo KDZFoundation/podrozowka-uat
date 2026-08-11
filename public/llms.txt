@@ -1,11 +1,13 @@
 # Podróżówka
 
-> Odwrócona pocztówka z Polski — fizyczne podziękowanie, które polscy podróżnicy zabierają ze sobą i wręczają osobom spotkanym po drodze, pokazując im piękno Polski.
+> Odwrócona pocztówka z Polski — fizyczne podziękowanie, które polscy podróżnicy wręczają osobom spotkanym po drodze.
 
-Podróżówka to projekt łączący tradycyjną pocztówkę z gestem wdzięczności. Każda kartka ma kod QR, który pozwala odbiorcy zarejestrować, gdzie i od kogo ją otrzymał — tworząc globalną mapę podróży i spotkań.
+Podróżówka łączy tradycyjną pocztówkę z gestem wdzięczności. Każda kartka ma kod QR,
+który pozwala Obdarowanemu połączyć ją z historią podróży.
 
 ## Pages
 
 - [Strona główna](/): O projekcie, wzory pocztówek, statystyki i mapa świata.
 - [Polityka prywatności](/polityka-prywatnosci): Zasady przetwarzania danych zgodne z RODO.
 - [Regulamin](/regulamin): Warunki korzystania z platformy.
+- [Zwroty i reklamacje](/zwroty): Odstąpienie od umowy, zwroty i reklamacje.

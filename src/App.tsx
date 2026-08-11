@@ -15,6 +15,7 @@ import AdminPanel from "./pages/AdminPanel";
 import Settings from "./pages/Settings";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import Terms from "./pages/Terms";
+import Returns from "./pages/Returns";
 import Shop from "./pages/Shop";
 import ShopProduct from "./pages/ShopProduct";
 import Cart from "./pages/Cart";
@@ -55,6 +56,7 @@ const App = () => (
                 <Route path="/admin" element={<AdminPanel />} />
                 <Route path="/polityka-prywatnosci" element={<PrivacyPolicy />} />
                 <Route path="/regulamin" element={<Terms />} />
+                <Route path="/zwroty" element={<Returns />} />
                 <Route path="/sklep" element={<Shop />} />
                 <Route path="/sklep/:id" element={<ShopProduct />} />
                 <Route path="/koszyk" element={<Cart />} />
