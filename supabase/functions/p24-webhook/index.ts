@@ -4,20 +4,47 @@ import { buildCorsHeaders } from "../_shared/cors.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const P24_MERCHANT_ID = Number(Deno.env.get("P24_MERCHANT_ID"));
-const P24_POS_ID = Number(Deno.env.get("P24_POS_ID") || Deno.env.get("P24_MERCHANT_ID"));
-const P24_CRC_KEY = Deno.env.get("P24_CRC_KEY")!;
-const P24_API_KEY = Deno.env.get("P24_API_KEY")!;
+const P24_MERCHANT_ID = Deno.env.get("P24_MERCHANT_ID") || "";
+const P24_POS_ID = Deno.env.get("P24_POS_ID") || P24_MERCHANT_ID;
+const P24_CRC_KEY = Deno.env.get("P24_CRC_KEY") || "";
+const P24_API_KEY = Deno.env.get("P24_API_KEY") || "";
 const P24_SANDBOX = (Deno.env.get("P24_SANDBOX") || "true").toLowerCase() === "true";
 
-const P24_API_BASE = P24_SANDBOX
-  ? "https://sandbox.przelewy24.pl/api/v1"
-  : "https://secure.przelewy24.pl/api/v1";
+type P24Credentials = {
+  merchantId: number;
+  posId: number;
+  crcKey: string;
+  apiKey: string;
+  sandbox: boolean;
+};
 
 async function sha384Hex(input: string): Promise<string> {
   const buf = new TextEncoder().encode(input);
   const digest = await crypto.subtle.digest("SHA-384", buf);
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function resolveP24Credentials(serviceClient: any): Promise<P24Credentials | null> {
+  const { data } = await serviceClient
+    .from("payment_settings")
+    .select("p24_mode, p24_merchant_id, p24_pos_id, p24_crc_key, p24_api_key")
+    .limit(1)
+    .maybeSingle();
+  const settings = (data ?? {}) as Record<string, string | null | undefined>;
+  const merchantRaw = settings.p24_merchant_id || P24_MERCHANT_ID;
+  const posRaw = settings.p24_pos_id || P24_POS_ID || merchantRaw;
+  const crcKey = settings.p24_crc_key || P24_CRC_KEY;
+  const apiKey = settings.p24_api_key || P24_API_KEY;
+  const merchantId = Number(merchantRaw);
+  const posId = Number(posRaw);
+  if (!Number.isInteger(merchantId) || merchantId <= 0 || !Number.isInteger(posId) || posId <= 0 || !crcKey || !apiKey) return null;
+  return {
+    merchantId,
+    posId,
+    crcKey,
+    apiKey,
+    sandbox: settings.p24_mode ? settings.p24_mode === "sandbox" : P24_SANDBOX,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -49,6 +76,15 @@ Deno.serve(async (req) => {
       return new Response("bad request", { status: 400 });
     }
 
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const credentials = await resolveP24Credentials(supabase);
+    if (!credentials) {
+      console.error("webhook: P24 credentials are not configured");
+      return new Response("gateway not configured", { status: 503 });
+    }
+
     // Verify incoming notification signature
     const expectedNotifySign = await sha384Hex(JSON.stringify({
       merchantId,
@@ -60,17 +96,13 @@ Deno.serve(async (req) => {
       orderId,
       methodId,
       statement,
-      crc: P24_CRC_KEY,
+      crc: credentials.crcKey,
     }));
 
     if (expectedNotifySign !== incomingSign) {
       console.error("webhook: signature mismatch", sessionId);
       return new Response("invalid signature", { status: 400 });
     }
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
 
     const { data: order, error: orderErr } = await supabase
       .from("orders")
@@ -100,19 +132,22 @@ Deno.serve(async (req) => {
       orderId,
       amount,
       currency,
-      crc: P24_CRC_KEY,
+      crc: credentials.crcKey,
     }));
 
-    const basicAuth = btoa(`${P24_POS_ID}:${P24_API_KEY}`);
-    const verifyRes = await fetch(`${P24_API_BASE}/transaction/verify`, {
+    const p24ApiBase = credentials.sandbox
+      ? "https://sandbox.przelewy24.pl/api/v1"
+      : "https://secure.przelewy24.pl/api/v1";
+    const basicAuth = btoa(`${credentials.posId}:${credentials.apiKey}`);
+    const verifyRes = await fetch(`${p24ApiBase}/transaction/verify`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Basic ${basicAuth}`,
       },
       body: JSON.stringify({
-        merchantId: P24_MERCHANT_ID,
-        posId: P24_POS_ID,
+        merchantId: credentials.merchantId,
+        posId: credentials.posId,
         sessionId,
         amount,
         currency,

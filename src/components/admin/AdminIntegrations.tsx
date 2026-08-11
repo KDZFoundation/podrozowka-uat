@@ -64,6 +64,18 @@ const AdminIntegrations = () => {
         set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_API_KEY")?.set ?? false,
       },
       {
+        name: "P24_CRC_KEY",
+        label: "Przelewy24 Klucz CRC",
+        category: "p24",
+        set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_CRC_KEY")?.set ?? false,
+      },
+      {
+        name: "P24_REPORT_KEY",
+        label: "Przelewy24 Klucz raportów",
+        category: "p24",
+        set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_REPORT_KEY")?.set ?? false,
+      },
+      {
         name: "VITE_INPOST_GEOWIDGET_TOKEN",
         label: "InPost Geowidget Token (Frontend)",
         category: "inpost",

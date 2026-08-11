@@ -692,21 +692,36 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          p24_api_key: string | null
+          p24_crc_key: string | null
+          p24_merchant_id: string | null
           p24_mode: string
+          p24_pos_id: string | null
+          p24_report_key: string | null
           singleton: boolean
           updated_at: string
         }
         Insert: {
           created_at?: string
           id?: string
+          p24_api_key?: string | null
+          p24_crc_key?: string | null
+          p24_merchant_id?: string | null
           p24_mode?: string
+          p24_pos_id?: string | null
+          p24_report_key?: string | null
           singleton?: boolean
           updated_at?: string
         }
         Update: {
           created_at?: string
           id?: string
+          p24_api_key?: string | null
+          p24_crc_key?: string | null
+          p24_merchant_id?: string | null
           p24_mode?: string
+          p24_pos_id?: string | null
+          p24_report_key?: string | null
           singleton?: boolean
           updated_at?: string
         }

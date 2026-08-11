@@ -5,18 +5,18 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const P24_MERCHANT_ID = Number(Deno.env.get("P24_MERCHANT_ID"));
-const P24_POS_ID = Number(Deno.env.get("P24_POS_ID") || Deno.env.get("P24_MERCHANT_ID"));
-const P24_CRC_KEY = Deno.env.get("P24_CRC_KEY")!;
-const P24_API_KEY = Deno.env.get("P24_API_KEY")!;
 const P24_SANDBOX_ENV = (Deno.env.get("P24_SANDBOX") || "true").toLowerCase() === "true";
 
-async function resolveP24Mode(): Promise<boolean> {
+type P24Credentials = {
+  merchantId: number;
+  posId: number;
+  crcKey: string;
+  apiKey: string;
+};
+
+async function resolveP24Mode(serviceClient: SupabaseClient): Promise<boolean> {
   try {
-    const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-    const { data } = await admin
+    const { data } = await serviceClient
       .from("payment_settings")
       .select("p24_mode")
       .limit(1)
@@ -24,6 +24,28 @@ async function resolveP24Mode(): Promise<boolean> {
     if (data?.p24_mode) return data.p24_mode === "sandbox";
   } catch (_) { /* fall through to env */ }
   return P24_SANDBOX_ENV;
+}
+
+async function resolveP24Credentials(serviceClient: SupabaseClient): Promise<P24Credentials | null> {
+  try {
+    const { data } = await serviceClient
+      .from("payment_settings")
+      .select("p24_merchant_id, p24_pos_id, p24_crc_key, p24_api_key")
+      .limit(1)
+      .maybeSingle();
+    const merchantRaw = data?.p24_merchant_id || Deno.env.get("P24_MERCHANT_ID") || "";
+    const posRaw = data?.p24_pos_id || Deno.env.get("P24_POS_ID") || merchantRaw;
+    const crcKey = data?.p24_crc_key || Deno.env.get("P24_CRC_KEY") || "";
+    const apiKey = data?.p24_api_key || Deno.env.get("P24_API_KEY") || "";
+    const merchantId = Number(merchantRaw);
+    const posId = Number(posRaw);
+    if (!Number.isInteger(merchantId) || merchantId <= 0 || !Number.isInteger(posId) || posId <= 0 || !crcKey || !apiKey) {
+      return null;
+    }
+    return { merchantId, posId, crcKey, apiKey };
+  } catch (_) {
+    return null;
+  }
 }
 
 const SHIPPING_COST_GROSZE = 1399;
@@ -175,10 +197,11 @@ Deno.serve(async (req) => {
     }
     const paymentMethod: "online" | "cod" = paymentMethodRaw;
 
+    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
     if (paymentMethod === "cod") {
-      const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
       const codEnabled = await ensureAndGetCodFlag(serviceClient);
       if (!codEnabled) {
         return jsonResp({ error: "cod_payment_disabled" }, 400);
@@ -274,21 +297,26 @@ Deno.serve(async (req) => {
       });
     }
 
+    const p24Credentials = await resolveP24Credentials(serviceClient);
+    if (!p24Credentials) {
+      return jsonResp({ error: "payment_gateway_not_configured" }, 503);
+    }
+
     // Sign P24 register request
     const origin = req.headers.get("Origin") || req.headers.get("origin") || "https://podrozowka.lovable.app";
     const sessionId = order.id;
     const signPayload = JSON.stringify({
       sessionId,
-      merchantId: P24_MERCHANT_ID,
+      merchantId: p24Credentials.merchantId,
       amount: totalGrosze,
       currency: "PLN",
-      crc: P24_CRC_KEY,
+      crc: p24Credentials.crcKey,
     });
     const sign = await sha384Hex(signPayload);
 
     const registerBody = {
-      merchantId: P24_MERCHANT_ID,
-      posId: P24_POS_ID,
+      merchantId: p24Credentials.merchantId,
+      posId: p24Credentials.posId,
       sessionId,
       amount: totalGrosze,
       currency: "PLN",
@@ -302,7 +330,7 @@ Deno.serve(async (req) => {
       encoding: "UTF-8",
     };
 
-    const isSandbox = await resolveP24Mode();
+    const isSandbox = await resolveP24Mode(serviceClient);
     const p24ApiBase = isSandbox
       ? "https://sandbox.przelewy24.pl/api/v1"
       : "https://secure.przelewy24.pl/api/v1";
@@ -310,7 +338,7 @@ Deno.serve(async (req) => {
       ? "https://sandbox.przelewy24.pl/trnRequest"
       : "https://secure.przelewy24.pl/trnRequest";
 
-    const basicAuth = btoa(`${P24_POS_ID}:${P24_API_KEY}`);
+    const basicAuth = btoa(`${p24Credentials.posId}:${p24Credentials.apiKey}`);
     const registerRes = await fetch(`${p24ApiBase}/transaction/register`, {
       method: "POST",
       headers: {

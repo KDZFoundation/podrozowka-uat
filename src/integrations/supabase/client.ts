@@ -731,19 +731,32 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
     if (method === "POST") {
       const body = options?.body || {};
       const mode = body.p24_mode;
-      if (mode !== "sandbox" && mode !== "production") {
+      const credentials = body.credentials;
+      if (mode !== undefined && mode !== "sandbox" && mode !== "production") {
         return { data: null, error: { message: "invalid_mode" } };
       }
+      if (mode === undefined && credentials === undefined) {
+        return { data: null, error: { message: "missing_update" } };
+      }
 
-      if (typeof localStorage !== "undefined") {
+      if (mode !== undefined && typeof localStorage !== "undefined") {
         localStorage.setItem("p24_mode", mode);
       }
 
       try {
+        const payload: Record<string, unknown> = { singleton: true, updated_at: new Date().toISOString() };
+        if (mode !== undefined) payload.p24_mode = mode;
+        if (credentials && typeof credentials === "object") {
+          if (credentials.merchant_id) payload.p24_merchant_id = credentials.merchant_id;
+          if (credentials.pos_id) payload.p24_pos_id = credentials.pos_id;
+          if (credentials.api_key) payload.p24_api_key = credentials.api_key;
+          if (credentials.crc_key) payload.p24_crc_key = credentials.crc_key;
+          if (credentials.report_key) payload.p24_report_key = credentials.report_key;
+        }
         const { error: upsertErr } = await supabase
           .from("payment_settings")
           .upsert(
-            { singleton: true, p24_mode: mode, updated_at: new Date().toISOString() },
+            payload,
             { onConflict: "singleton" }
           );
 
@@ -751,7 +764,7 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
           console.warn("[Fallback admin-payment-status] upsert failed, trying update:", upsertErr);
           const { error: updateErr } = await supabase
             .from("payment_settings")
-            .update({ p24_mode: mode, updated_at: new Date().toISOString() })
+            .update(payload)
             .eq("singleton", true);
 
           if (updateErr) {
@@ -767,7 +780,7 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
     try {
       const { data, error: selectErr } = await supabase
         .from("payment_settings")
-        .select("p24_mode, updated_at")
+        .select("p24_mode, updated_at, p24_merchant_id, p24_pos_id, p24_crc_key, p24_api_key, p24_report_key")
         .limit(1)
         .maybeSingle();
       if (selectErr) {
