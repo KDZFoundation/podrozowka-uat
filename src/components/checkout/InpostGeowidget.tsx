@@ -37,6 +37,8 @@ const geowidgetAssets = (environment: GeowidgetEnvironment) => environment === "
       css: "https://sandbox-easy-geowidget-sdk.easypack24.net/inpost-geowidget.css",
     };
 
+const waitForGeowidgetDefinition = () => customElements.whenDefined("inpost-geowidget");
+
 const loadGeowidgetSdk = (environment: GeowidgetEnvironment): Promise<void> => {
   if (typeof window === "undefined") return Promise.reject(new Error("No window"));
   if (customElements.get("inpost-geowidget")) return Promise.resolve();
@@ -55,15 +57,22 @@ const loadGeowidgetSdk = (environment: GeowidgetEnvironment): Promise<void> => {
     // JS
     const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
     if (existing) {
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("Script error")));
+      existing.addEventListener("load", () => {
+        void waitForGeowidgetDefinition().then(resolve, reject);
+      }, { once: true });
+      existing.addEventListener("error", () => reject(new Error("Script error")), { once: true });
       return;
     }
     const script = document.createElement("script");
     script.id = SCRIPT_ID;
     script.src = assets.js;
-    script.async = true;
-    script.onload = () => resolve();
+    // The InPost integration examples load this classic script with `defer`.
+    // Waiting for the custom element is essential: `load` alone may fire before
+    // the SDK has registered <inpost-geowidget>.
+    script.defer = true;
+    script.onload = () => {
+      void waitForGeowidgetDefinition().then(resolve, reject);
+    };
     script.onerror = () => {
       scriptLoadPromise = null;
       reject(new Error("Failed to load InPost SDK"));
@@ -207,7 +216,7 @@ const InpostGeowidget = ({ onSelect }: Props) => {
         <inpost-geowidget
           token={token}
           language="pl"
-          config="parcelcollect"
+          config="parcelCollect"
           onpoint="onpoint"
           style={{ width: "100%", height: "100%", display: "block" }}
         />
