@@ -27,7 +27,7 @@ try {
 
   $env:SUPABASE_ACCESS_TOKEN = $plainToken
 
-  foreach ($functionName in @('p24-webhook', 'hotpay-webhook', 'create-payment')) {
+  foreach ($functionName in @('p24-webhook', 'hotpay-webhook', 'create-payment', 'inpost-shipx-webhook')) {
     Write-Output "Deploying DEV Edge Function: $functionName (JWT verification disabled)..."
     & $cliPath functions deploy $functionName --project-ref $ProjectRef --no-verify-jwt
     if ($LASTEXITCODE -ne 0) {
@@ -39,6 +39,14 @@ try {
   & $cliPath functions deploy admin-payment-status --project-ref $ProjectRef
   if ($LASTEXITCODE -ne 0) {
     throw "Deployment failed for admin-payment-status with exit code $LASTEXITCODE"
+  }
+
+  foreach ($functionName in @('create-inpost-shipment', 'buy-inpost-shipment', 'get-inpost-label')) {
+    Write-Output "Deploying DEV Edge Function: $functionName..."
+    & $cliPath functions deploy $functionName --project-ref $ProjectRef
+    if ($LASTEXITCODE -ne 0) {
+      throw "Deployment failed for $functionName with exit code $LASTEXITCODE"
+    }
   }
 
   Write-Output 'DEV payment Edge Functions deployment completed.'
