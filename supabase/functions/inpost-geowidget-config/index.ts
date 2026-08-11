@@ -6,6 +6,13 @@ Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const { data } = await admin.from("shipping_settings").select("inpost_geowidget_token").eq("singleton", true).maybeSingle();
-  return new Response(JSON.stringify({ token: data?.inpost_geowidget_token || null }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  const { data } = await admin
+    .from("shipping_settings")
+    .select("inpost_geowidget_token, inpost_environment")
+    .eq("singleton", true)
+    .maybeSingle();
+  return new Response(JSON.stringify({
+    token: data?.inpost_geowidget_token || null,
+    environment: data?.inpost_environment === "production" ? "production" : "sandbox",
+  }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 });

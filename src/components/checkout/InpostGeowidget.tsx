@@ -20,17 +20,28 @@ declare global {
   }
 }
 
-const SDK_JS = "https://geowidget.easypack24.net/js/sdk-for-javascript.js";
-const SDK_CSS = "https://geowidget.easypack24.net/css/inpost-geowidget.css";
 const SCRIPT_ID = "inpost-geowidget-sdk";
 const CSS_ID = "inpost-geowidget-css";
 
 let scriptLoadPromise: Promise<void> | null = null;
 
-const loadGeowidgetSdk = (): Promise<void> => {
+type GeowidgetEnvironment = "sandbox" | "production";
+
+const geowidgetAssets = (environment: GeowidgetEnvironment) => environment === "production"
+  ? {
+      js: "https://geowidget.inpost.pl/inpost-geowidget.js",
+      css: "https://geowidget.inpost.pl/inpost-geowidget.css",
+    }
+  : {
+      js: "https://sandbox-easy-geowidget-sdk.easypack24.net/inpost-geowidget.js",
+      css: "https://sandbox-easy-geowidget-sdk.easypack24.net/inpost-geowidget.css",
+    };
+
+const loadGeowidgetSdk = (environment: GeowidgetEnvironment): Promise<void> => {
   if (typeof window === "undefined") return Promise.reject(new Error("No window"));
   if (customElements.get("inpost-geowidget")) return Promise.resolve();
   if (scriptLoadPromise) return scriptLoadPromise;
+  const assets = geowidgetAssets(environment);
 
   scriptLoadPromise = new Promise((resolve, reject) => {
     // CSS
@@ -38,7 +49,7 @@ const loadGeowidgetSdk = (): Promise<void> => {
       const link = document.createElement("link");
       link.id = CSS_ID;
       link.rel = "stylesheet";
-      link.href = SDK_CSS;
+      link.href = assets.css;
       document.head.appendChild(link);
     }
     // JS
@@ -50,7 +61,7 @@ const loadGeowidgetSdk = (): Promise<void> => {
     }
     const script = document.createElement("script");
     script.id = SCRIPT_ID;
-    script.src = SDK_JS;
+    script.src = assets.js;
     script.async = true;
     script.onload = () => resolve();
     script.onerror = () => {
@@ -86,6 +97,7 @@ interface Props {
 const InpostGeowidget = ({ onSelect }: Props) => {
   const configuredToken = import.meta.env.VITE_INPOST_GEOWIDGET_TOKEN as string | undefined;
   const [token, setToken] = useState<string | undefined>(configuredToken);
+  const [environment, setEnvironment] = useState<GeowidgetEnvironment>("sandbox");
   const [status, setStatus] = useState<"loading" | "ready" | "error" | "no-token">(
     configuredToken ? "loading" : "no-token",
   );
@@ -99,11 +111,12 @@ const InpostGeowidget = ({ onSelect }: Props) => {
   useEffect(() => {
     if (configuredToken) return;
     let cancelled = false;
-    supabase.functions.invoke<{ token: string | null }>("inpost-geowidget-config", { method: "GET" })
+    supabase.functions.invoke<{ token: string | null; environment?: GeowidgetEnvironment }>("inpost-geowidget-config", { method: "GET" })
       .then(({ data, error }) => {
         if (cancelled) return;
         if (error || !data?.token) { setStatus("no-token"); return; }
         setToken(data.token);
+        setEnvironment(data.environment === "production" ? "production" : "sandbox");
         setStatus("loading");
       })
       .catch(() => { if (!cancelled) setStatus("no-token"); });
@@ -119,7 +132,7 @@ const InpostGeowidget = ({ onSelect }: Props) => {
       }
     }, 10000);
 
-    loadGeowidgetSdk()
+    loadGeowidgetSdk(environment)
       .then(() => {
         if (!cancelled) setStatus("ready");
       })
@@ -132,7 +145,7 @@ const InpostGeowidget = ({ onSelect }: Props) => {
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [token]);
+  }, [token, environment]);
 
   useEffect(() => {
     if (status !== "ready") return;
