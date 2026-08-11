@@ -47,7 +47,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setRoleLoading(false);
   }, []);
 
+  const adoptOAuthCallbackSession = useCallback(async (): Promise<Session | null> => {
+    if (typeof window === "undefined" || !window.location.hash) return null;
+
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const accessToken = params.get("access_token");
+    const refreshToken = params.get("refresh_token");
+    if (!accessToken || !refreshToken) return null;
+
+    const { data, error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error) throw error;
+
+    // Never leave bearer tokens in browser history, copy/paste, or screenshots.
+    window.history.replaceState(
+      null,
+      document.title,
+      `${window.location.pathname}${window.location.search}`,
+    );
+    return data.session;
+  }, []);
+
   useEffect(() => {
+    let isMounted = true;
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         setSession(session);
@@ -64,7 +89,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     );
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    const initializeSession = async () => {
+      let session: Session | null = null;
+      try {
+        const current = await supabase.auth.getSession();
+        session = current.data.session;
+        if (!session) session = await adoptOAuthCallbackSession();
+      } catch (error) {
+        console.error("OAuth callback session error:", error);
+      }
+
+      if (!isMounted) return;
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
@@ -73,10 +108,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setRoleLoading(false);
       }
       setIsLoading(false);
-    });
+    };
 
-    return () => subscription.unsubscribe();
-  }, [fetchRole]);
+    void initializeSession();
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [adoptOAuthCallbackSession, fetchRole]);
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
