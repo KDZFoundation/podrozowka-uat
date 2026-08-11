@@ -8,6 +8,11 @@ import { toast } from "sonner";
 type MaskedValue = { set: boolean; preview: string };
 type InpostSettings = { environment: "sandbox" | "production"; updated_at: string | null; organization: MaskedValue; api_token: MaskedValue; geowidget_token: MaskedValue };
 
+const errorMessage = (error: unknown, fallback: string) => {
+  const message = typeof error === "object" && error && "message" in error ? String(error.message || "") : "";
+  return message && message !== "Edge Function returned a non-2xx status code" ? `${fallback}: ${message}` : fallback;
+};
+
 const CredentialStatus = ({ label, value }: { label: string; value: MaskedValue }) => (
   <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background p-3">
     <span className="text-sm text-foreground">{label}</span>
@@ -27,7 +32,7 @@ const AdminInpostSettings = () => {
   const load = useCallback(async () => {
     setLoading(true);
     const { data: result, error } = await supabase.functions.invoke<InpostSettings>("admin-inpost-settings", { method: "GET" });
-    if (error || !result) toast.error("Nie udało się pobrać konfiguracji InPost");
+    if (error || !result) toast.error(errorMessage(error, "Nie udało się pobrać konfiguracji InPost"));
     else setData(result);
     setLoading(false);
   }, []);
@@ -53,7 +58,7 @@ const AdminInpostSettings = () => {
       body: { environment: "sandbox", organization_id: organizationId, api_token: apiToken, geowidget_token: geowidgetToken },
     });
     setSaving(false);
-    if (error || !result) { toast.error("Nie udało się zapisać konfiguracji InPost"); return; }
+    if (error || !result) { toast.error(errorMessage(error, "Nie udało się zapisać konfiguracji InPost")); return; }
     setData(result);
     setForm({ organizationId: "", apiToken: "", geowidgetToken: "" });
     toast.success("Dane InPost zapisane w Supabase");
