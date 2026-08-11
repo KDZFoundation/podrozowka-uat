@@ -38,6 +38,7 @@ try {
     'hotpay-webhook',
     'inpost-shipx-webhook',
     'inpost-geowidget-config',
+    'orlen-widget-config',
     'issue-fiscal-document',
     'fiscal-document-pdf',
     'create-payment'
@@ -49,7 +50,8 @@ try {
     'buy-inpost-shipment',
     'get-inpost-label',
     'admin-payment-status',
-    'admin-inpost-settings'
+    'admin-inpost-settings',
+    'admin-orlen-settings'
   )
 
   foreach ($functionName in $functionsWithoutJwt) {

@@ -24,6 +24,7 @@ import {
   isCourierAddressValid,
 } from "@/lib/constants";
 import InpostGeowidget from "@/components/checkout/InpostGeowidget";
+import OrlenPaczkaWidget from "@/components/checkout/OrlenPaczkaWidget";
 import PaymentMethodPicker from "@/components/checkout/PaymentMethodPicker";
 import ShippingMethodPicker from "@/components/checkout/ShippingMethodPicker";
 import CourierAddressForm from "@/components/checkout/CourierAddressForm";
@@ -96,7 +97,7 @@ const Checkout = () => {
 
   const invoiceValid = !invoiceRequested || Object.keys(invoiceErrors).length === 0;
   const shippingValid =
-    shippingMethod === "inpost" ? !!pickupPoint : isCourierAddressValid(courierAddress);
+    shippingMethod === "inpost" || shippingMethod === "orlen" ? !!pickupPoint && pickupPoint.provider === shippingMethod : isCourierAddressValid(courierAddress);
   const canProceed = shippingValid && !hasUnavailable && !isLoading && invoiceValid && !isBelowMin;
 
   const handleProceed = async () => {
@@ -116,11 +117,12 @@ const Checkout = () => {
           })),
         shipping_method: shippingMethod,
         pickup_point:
-          shippingMethod === "inpost" && pickupPoint
+          (shippingMethod === "inpost" || shippingMethod === "orlen") && pickupPoint
             ? {
                 name: pickupPoint.name,
                 address: pickupPoint.address,
                 city: pickupPoint.city,
+                code: pickupPoint.code || null,
               }
             : null,
         shipping_address:
@@ -243,14 +245,14 @@ const Checkout = () => {
                     Metoda dostawy
                   </h2>
                   <p className="text-sm text-muted-foreground">
-                    Wybierz paczkomat InPost lub dostawę kurierem pod wskazany adres.
+                    Wybierz punkt InPost, ORLEN Paczka lub dostawę kurierem pod wskazany adres.
                   </p>
                 </div>
               </div>
 
               <ShippingMethodPicker value={shippingMethod} onChange={setShippingMethod} />
 
-              {shippingMethod === "inpost" ? (
+              {shippingMethod === "inpost" || shippingMethod === "orlen" ? (
                 pickupPoint ? (
                   <div className="border border-border rounded-xl p-4 flex items-start gap-3">
                     <MapPin className="w-5 h-5 text-primary shrink-0 mt-0.5" />
@@ -270,7 +272,7 @@ const Checkout = () => {
                 ) : (
                   <Button className="w-full sm:w-auto" onClick={() => setDialogOpen(true)}>
                     <MapPin className="w-4 h-4 mr-2" />
-                    Wybierz paczkomat
+                    {shippingMethod === "orlen" ? "Wybierz punkt ORLEN Paczka" : "Wybierz paczkomat"}
                   </Button>
                 )
               ) : (
@@ -434,7 +436,7 @@ const Checkout = () => {
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">
-                    Dostawa ({shippingMethod === "courier" ? "kurier" : "InPost"}
+                    Dostawa ({shippingMethod === "courier" ? "kurier" : shippingMethod === "orlen" ? "ORLEN Paczka" : "InPost"}
                     {paymentMethod === "cod" ? ", za pobraniem" : ""})
                   </span>
                   <span className="font-medium">{formatPln(shippingCostGrosze)}</span>
@@ -468,8 +470,8 @@ const Checkout = () => {
               </Button>
               {!shippingValid && (
                 <p className="text-xs text-muted-foreground mt-2 text-center">
-                  {shippingMethod === "inpost"
-                    ? "Wybierz paczkomat, aby przejść dalej."
+                  {shippingMethod === "inpost" || shippingMethod === "orlen"
+                    ? `Wybierz ${shippingMethod === "orlen" ? "punkt ORLEN Paczka" : "paczkomat"}, aby przejść dalej.`
                     : "Uzupełnij dane adresowe, aby przejść dalej."}
                 </p>
               )}
@@ -481,11 +483,9 @@ const Checkout = () => {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-4xl w-[95vw] p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>Wybierz paczkomat InPost</DialogTitle>
+            <DialogTitle>{shippingMethod === "orlen" ? "Wybierz punkt ORLEN Paczka" : "Wybierz paczkomat InPost"}</DialogTitle>
           </DialogHeader>
-          <InpostGeowidget
-            onSelect={handleSelectPickupPoint}
-          />
+          {shippingMethod === "orlen" ? <OrlenPaczkaWidget onSelect={handleSelectPickupPoint} /> : <InpostGeowidget onSelect={handleSelectPickupPoint} />}
         </DialogContent>
       </Dialog>
 

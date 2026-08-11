@@ -189,25 +189,30 @@ Deno.serve(async (req) => {
       return jsonResp({ error: "Minimalne zamówienie to 10 podróżówek" }, 400);
     }
 
-    // Shipping method: 'inpost' (paczkomat) or 'courier' (home address)
+    // Pickup delivery: InPost or ORLEN Paczka, or courier at a home address.
     const shippingMethodRaw = typeof body.shipping_method === "string" ? body.shipping_method : "inpost";
-    if (shippingMethodRaw !== "inpost" && shippingMethodRaw !== "courier") {
+    if (shippingMethodRaw !== "inpost" && shippingMethodRaw !== "orlen" && shippingMethodRaw !== "courier") {
       return jsonResp({ error: "invalid_shipping_method" }, 400);
     }
-    const shippingMethod: "inpost" | "courier" = shippingMethodRaw;
+    const shippingMethod: "inpost" | "orlen" | "courier" = shippingMethodRaw;
 
     // Pickup point (only for inpost)
     const pickup = body.pickup_point;
     let pickupName = "";
     let pickupAddress = "";
     let pickupCity = "";
-    if (shippingMethod === "inpost") {
+    let pickupCode: string | null = null;
+    if (shippingMethod === "inpost" || shippingMethod === "orlen") {
       if (!pickup || typeof pickup.name !== "string" || pickup.name.trim().length === 0) {
         return jsonResp({ error: "invalid_pickup_point" }, 400);
       }
       pickupName = String(pickup.name).slice(0, 200);
       pickupAddress = String(pickup.address || "").slice(0, 300);
       pickupCity = String(pickup.city || "").slice(0, 100);
+      if (shippingMethod === "orlen") {
+        pickupCode = String(pickup.code || "").trim().slice(0, 100);
+        if (!pickupCode) return jsonResp({ error: "invalid_pickup_point" }, 400);
+      }
     }
 
     // Courier address (only for courier)
@@ -298,6 +303,7 @@ Deno.serve(async (req) => {
       _shipping_postal_code: shipPostal,
       _shipping_city: shipCity,
       _shipping_phone: shipPhone,
+      _pickup_point_code: pickupCode,
     });
 
     if (rpcError) {

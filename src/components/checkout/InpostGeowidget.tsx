@@ -173,6 +173,7 @@ const InpostGeowidget = ({ onSelect }: Props) => {
         point?.address?.line2?.split(",")?.[0] ??
         "";
       onSelectRef.current({
+        provider: "inpost",
         name,
         address: [line1, line2].filter(Boolean).join(", ").trim(),
         city,

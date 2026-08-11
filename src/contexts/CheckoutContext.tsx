@@ -4,6 +4,8 @@ export interface PickupPoint {
   name: string;
   address: string;
   city: string;
+  provider?: "inpost" | "orlen";
+  code?: string;
 }
 
 interface CheckoutContextType {

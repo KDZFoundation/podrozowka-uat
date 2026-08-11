@@ -31,5 +31,8 @@ verify_jwt = false
 [functions.inpost-geowidget-config]
 verify_jwt = false
 
+[functions.orlen-widget-config]
+verify_jwt = false
+
 [functions.confirm-cod-payment]
 verify_jwt = true
