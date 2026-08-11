@@ -29,8 +29,11 @@ Deno.serve(async (req) => {
       const values: Record<string, unknown> = { inpost_organization_id: body.organization_id, inpost_api_token: body.api_token, inpost_geowidget_token: body.geowidget_token };
       for (const [key, value] of Object.entries(values)) {
         if (value === undefined || value === "") continue;
-        if (typeof value !== "string" || value.trim().length < 3 || value.trim().length > 500) return json({ error: "invalid_inpost_credentials" }, 400);
-        updates[key] = value.trim();
+        if (typeof value !== "string") return json({ error: "invalid_inpost_credentials" }, 400);
+        const normalized = value.trim();
+        const maxLength = key === "inpost_organization_id" ? 100 : 4096;
+        if (normalized.length < 3 || normalized.length > maxLength) return json({ error: `invalid_${key}` }, 400);
+        updates[key] = normalized;
       }
       if (Object.keys(updates).length === 2) return json({ error: "missing_update" }, 400);
       const { error } = await admin.from("shipping_settings").upsert(updates, { onConflict: "singleton" });
