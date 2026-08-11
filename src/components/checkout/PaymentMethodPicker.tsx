@@ -25,7 +25,7 @@ const options: {
   {
     value: "online",
     title: "Płatność online (BLIK / karta)",
-    description: "Szybko i wygodnie — Przelewy24.",
+    description: "Szybko i wygodnie — HotPay.",
     cost: SHIPPING_COST_GROSZE,
     icon: CreditCard,
   },

@@ -35,6 +35,7 @@ try {
     'generate-qr',
     'generate-qr-pdf',
     'p24-webhook',
+    'hotpay-webhook',
     'issue-fiscal-document',
     'fiscal-document-pdf',
     'create-payment'

@@ -43,7 +43,7 @@ const PrivacyPolicy = () => (
       <li>Supabase – baza danych, autoryzacja i pliki;</li>
       <li>Vercel – hosting aplikacji;</li>
       <li>Google – jeżeli Klient wybierze logowanie Google;</li>
-      <li>Przelewy24 – przy płatności online;</li>
+      <li>HotPay albo Przelewy24 – przy płatności online, zależnie od bramki pokazanej w checkout;</li>
       <li>operator dostawy i drukarnia POD – w zakresie niezbędnym do realizacji zamówienia;</li>
       <li>uprawnione organy publiczne oraz doradcy – gdy wymaga tego prawo.</li>
     </ul>
