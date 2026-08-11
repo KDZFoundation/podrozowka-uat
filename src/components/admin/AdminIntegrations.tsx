@@ -25,7 +25,7 @@ interface IntegrationSecretStatus {
   name: string;
   set: boolean;
   label: string;
-  category: "p24" | "inpost" | "orlen" | "pocztex";
+  category: "payments" | "inpost" | "orlen" | "pocztex";
 }
 
 const AdminIntegrations = () => {
@@ -47,33 +47,45 @@ const AdminIntegrations = () => {
     // List of monitored keys
     const statuses: IntegrationSecretStatus[] = [
       {
+        name: "HOTPAY_SECRET",
+        label: "HotPay sekret usługi",
+        category: "payments",
+        set: p24Data?.hotpay?.secrets?.find((s: { name: string; set: boolean }) => s.name === "HOTPAY_SECRET")?.set ?? false,
+      },
+      {
+        name: "HOTPAY_NOTIFICATION_PASSWORD",
+        label: "HotPay hasło notyfikacji",
+        category: "payments",
+        set: p24Data?.hotpay?.secrets?.find((s: { name: string; set: boolean }) => s.name === "HOTPAY_NOTIFICATION_PASSWORD")?.set ?? false,
+      },
+      {
         name: "P24_MERCHANT_ID",
         label: "Przelewy24 Merchant ID",
-        category: "p24",
+        category: "payments",
         set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_MERCHANT_ID")?.set ?? false,
       },
       {
         name: "P24_POS_ID",
         label: "Przelewy24 POS ID",
-        category: "p24",
+        category: "payments",
         set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_POS_ID")?.set ?? false,
       },
       {
         name: "P24_API_KEY",
         label: "Przelewy24 Klucz API",
-        category: "p24",
+        category: "payments",
         set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_API_KEY")?.set ?? false,
       },
       {
         name: "P24_CRC_KEY",
         label: "Przelewy24 Klucz CRC",
-        category: "p24",
+        category: "payments",
         set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_CRC_KEY")?.set ?? false,
       },
       {
         name: "P24_REPORT_KEY",
         label: "Przelewy24 Klucz raportów",
-        category: "p24",
+        category: "payments",
         set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_REPORT_KEY")?.set ?? false,
       },
       {
@@ -149,7 +161,7 @@ const AdminIntegrations = () => {
     }
   };
 
-  const getCategorySecrets = (cat: "p24" | "inpost" | "orlen" | "pocztex") => {
+  const getCategorySecrets = (cat: "payments" | "inpost" | "orlen" | "pocztex") => {
     return secretStatuses.filter((s) => s.category === cat);
   };
 
@@ -165,7 +177,7 @@ const AdminIntegrations = () => {
               Integracje Płatności i Dostaw
             </h2>
             <p className="text-sm text-muted-foreground">
-              Zarządzanie dostawcami usług płatności (Przelewy24, COD) oraz dostawcami kurierskimi (InPost, ORLEN Paczka, Pocztex).
+              Zarządzanie usługami płatności (HotPay, Przelewy24, COD) oraz dostawcami kurierskimi (InPost, ORLEN Paczka, Pocztex).
             </p>
           </div>
         </div>
@@ -228,7 +240,7 @@ const AdminIntegrations = () => {
       {/* Grid of integrations */}
       <div className="space-y-6">
 
-        {/* 1. PRZELEWY24 & PŁATNOŚCI */}
+        {/* 1. PŁATNOŚCI */}
         {(activeSubTab === "all" || activeSubTab === "payments") && (
           <div className="bg-card rounded-2xl p-6 border border-border shadow-soft space-y-6">
             <div className="flex items-start justify-between gap-4 border-b border-border pb-4">
@@ -238,7 +250,7 @@ const AdminIntegrations = () => {
                 </div>
                 <div>
                   <h3 className="font-display text-lg font-semibold text-foreground flex items-center gap-2">
-                    Bramka Płatności Przelewy24 & COD
+                    Bramka płatności HotPay, Przelewy24 & COD
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     Obsługa płatności online (BLIK, przelewy, karty) oraz płatności przy odbiorze.

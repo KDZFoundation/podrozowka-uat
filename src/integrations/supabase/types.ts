@@ -262,7 +262,10 @@ export type Database = {
         Row: {
           active: boolean
           created_at: string
+          hotpay_notification_password: string | null
+          hotpay_secret: string | null
           id: string
+          payment_gateway: string
           iso2: string
           iso3: string | null
           name_pl: string
@@ -271,7 +274,10 @@ export type Database = {
         Insert: {
           active?: boolean
           created_at?: string
+          hotpay_notification_password?: string | null
+          hotpay_secret?: string | null
           id?: string
+          payment_gateway?: string
           iso2: string
           iso3?: string | null
           name_pl: string
@@ -280,7 +286,10 @@ export type Database = {
         Update: {
           active?: boolean
           created_at?: string
+          hotpay_notification_password?: string | null
+          hotpay_secret?: string | null
           id?: string
+          payment_gateway?: string
           iso2?: string
           iso3?: string | null
           name_pl?: string

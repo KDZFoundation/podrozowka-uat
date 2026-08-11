@@ -14,6 +14,42 @@ type P24Credentials = {
   apiKey: string;
 };
 
+type HotPayCredentials = {
+  secret: string;
+  notificationPassword: string;
+};
+
+type PaymentGateway = "hotpay" | "p24";
+
+async function resolvePaymentGateway(serviceClient: SupabaseClient): Promise<PaymentGateway> {
+  try {
+    const { data } = await serviceClient
+      .from("payment_settings")
+      .select("payment_gateway")
+      .limit(1)
+      .maybeSingle();
+    return data?.payment_gateway === "p24" ? "p24" : "hotpay";
+  } catch (_) {
+    return "hotpay";
+  }
+}
+
+async function resolveHotPayCredentials(serviceClient: SupabaseClient): Promise<HotPayCredentials | null> {
+  try {
+    const { data } = await serviceClient
+      .from("payment_settings")
+      .select("hotpay_secret, hotpay_notification_password")
+      .limit(1)
+      .maybeSingle();
+    const secret = data?.hotpay_secret || Deno.env.get("HOTPAY_SECRET") || "";
+    const notificationPassword = data?.hotpay_notification_password || Deno.env.get("HOTPAY_NOTIFICATION_PASSWORD") || "";
+    if (!secret || !notificationPassword) return null;
+    return { secret, notificationPassword };
+  } catch (_) {
+    return null;
+  }
+}
+
 async function resolveP24Mode(serviceClient: SupabaseClient): Promise<boolean> {
   try {
     const { data } = await serviceClient
@@ -72,6 +108,12 @@ async function ensureAndGetCodFlag(serviceClient: SupabaseClient): Promise<boole
 async function sha384Hex(input: string): Promise<string> {
   const buf = new TextEncoder().encode(input);
   const digest = await crypto.subtle.digest("SHA-384", buf);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  const buf = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", buf);
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -297,13 +339,50 @@ Deno.serve(async (req) => {
       });
     }
 
+    const origin = req.headers.get("Origin") || req.headers.get("origin") || "https://podrozowka.lovable.app";
+
+    const gateway = await resolvePaymentGateway(serviceClient);
+    if (gateway === "hotpay") {
+      const hotpayCredentials = await resolveHotPayCredentials(serviceClient);
+      if (!hotpayCredentials) return jsonResp({ error: "payment_gateway_not_configured" }, 503);
+
+      const amount = Number(order.total_amount).toFixed(2);
+      const serviceName = `Podróżówka - zamówienie ${order.order_number}`;
+      const returnUrl = `${origin}/checkout/potwierdzenie?order=${encodeURIComponent(order.order_number)}`;
+      const hash = await sha256Hex(
+        `${hotpayCredentials.notificationPassword};${amount};${serviceName};${returnUrl};${order.order_number};${hotpayCredentials.secret}`,
+      );
+      const form = new FormData();
+      form.set("SEKRET", hotpayCredentials.secret);
+      form.set("KWOTA", amount);
+      form.set("NAZWA_USLUGI", serviceName);
+      form.set("ADRES_WWW", returnUrl);
+      form.set("ID_ZAMOWIENIA", order.order_number);
+      form.set("EMAIL", userEmail || "");
+      form.set("DANE_OSOBOWE", shipName || "");
+      form.set("TYP", "INIT");
+      form.set("HASH", hash);
+
+      const hotpayResponse = await fetch("https://platnosc.hotpay.pl/", { method: "POST", body: form });
+      const hotpayJson = await hotpayResponse.json().catch(() => null) as { STATUS?: boolean; URL?: string; WIADOMOSC?: string } | null;
+      if (!hotpayResponse.ok || !hotpayJson?.STATUS || !hotpayJson.URL) {
+        console.error("HotPay INIT failed", hotpayResponse.status, hotpayJson?.WIADOMOSC || "invalid response");
+        return jsonResp({ error: "payment_gateway_error" }, 502);
+      }
+      return jsonResp({
+        order_id: order.id,
+        order_number: order.order_number,
+        payment_gateway: "hotpay",
+        redirect_url: hotpayJson.URL,
+      });
+    }
+
     const p24Credentials = await resolveP24Credentials(serviceClient);
     if (!p24Credentials) {
       return jsonResp({ error: "payment_gateway_not_configured" }, 503);
     }
 
     // Sign P24 register request
-    const origin = req.headers.get("Origin") || req.headers.get("origin") || "https://podrozowka.lovable.app";
     const sessionId = order.id;
     const signPayload = JSON.stringify({
       sessionId,

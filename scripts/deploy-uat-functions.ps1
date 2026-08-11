@@ -37,6 +37,7 @@ try {
     'p24-webhook',
     'inpost-shipx-webhook',
     'inpost-geowidget-config',
+    'hotpay-webhook',
     'issue-fiscal-document',
     'fiscal-document-pdf',
     'create-payment'

@@ -61,7 +61,7 @@ const Terms = () => (
     <h2>6. Ceny i płatności</h2>
     <ol>
       <li>Ceny są podawane w złotych polskich, a Sklep przed płatnością pokazuje całkowitą kwotę wraz z dostawą.</li>
-      <li>Dostępne metody płatności są prezentowane w checkout. Płatności online obsługuje Przelewy24, gdy integracja jest aktywna.</li>
+      <li>Dostępne metody płatności są prezentowane w checkout. Płatności online obsługuje HotPay albo Przelewy24 — zależnie od aktywnej bramki wskazanej przed finalizacją zamówienia.</li>
       <li>Druk w formule print on demand jest uruchamiany po potwierdzeniu opłacenia zamówienia.</li>
       <li>Na żądanie Klienta Sprzedawca przekazuje dokument sprzedaży zgodnie z obowiązującymi przepisami i zakresem podanych danych.</li>
     </ol>

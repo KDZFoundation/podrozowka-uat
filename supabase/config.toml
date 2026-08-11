@@ -13,6 +13,9 @@ verify_jwt = false
 [functions.p24-webhook]
 verify_jwt = false
 
+[functions.hotpay-webhook]
+verify_jwt = false
+
 [functions.issue-fiscal-document]
 verify_jwt = false
 
