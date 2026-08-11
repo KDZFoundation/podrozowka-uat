@@ -44,6 +44,7 @@ import AdminFiscalFailures from "@/components/admin/AdminFiscalFailures";
 import AdminCategories from "@/components/admin/AdminCategories";
 import AdminIntegrations from "@/components/admin/AdminIntegrations";
 import AdminAuthors from "@/components/admin/AdminAuthors";
+import { isDevelopmentRuntime } from "@/lib/runtimeEnvironment";
 import { Blocks } from "lucide-react";
 
 type TabId =
@@ -80,6 +81,7 @@ interface AdminStats {
 const AdminPanel = () => {
   const { user, isLoading: authLoading, isAdmin, isDbAdmin } = useAuth();
   const navigate = useNavigate();
+  const devToolsEnabled = isDevelopmentRuntime();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [stats, setStats] = useState<AdminStats>({
     totalUnits: 0,
@@ -139,6 +141,12 @@ const AdminPanel = () => {
     fetchStats();
   }, [isAdmin, fetchStats]);
 
+  useEffect(() => {
+    if (!devToolsEnabled && (activeTab === "dev-tools" || activeTab === "lab")) {
+      setActiveTab("overview");
+    }
+  }, [activeTab, devToolsEnabled]);
+
   if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -181,7 +189,7 @@ const AdminPanel = () => {
     supportTabs[2],
     ...primaryTabs.slice(4),
     ...supportTabs.slice(3),
-  ];
+  ].filter((tab) => devToolsEnabled || (tab.id !== "dev-tools" && tab.id !== "lab"));
 
   const workflowCards: { id: TabId; step: string; title: string; description: string; icon: typeof Package }[] = [
     { id: "card-designs", step: "01", title: "Wzory", description: "Przygotuj przód, tył i język kartki.", icon: Image },
@@ -240,7 +248,7 @@ const AdminPanel = () => {
       </div>
 
       <main className="container mx-auto px-4 py-8">
-        {!isDbAdmin && user && (
+        {devToolsEnabled && !isDbAdmin && user && (
           <div className="mb-6 p-5 border border-amber-200 bg-amber-50/60 rounded-xl space-y-4 shadow-sm max-w-4xl">
             <div className="flex items-start gap-3">
               <span className="text-xl">⚠️</span>
@@ -462,11 +470,11 @@ CREATE POLICY "Admins manage categories"
         {activeTab === "qr-jobs" && <AdminQrJobs />}
         {activeTab === "registrations" && <AdminRegistrations />}
         {activeTab === "event-log" && <AdminEventLog />}
-        {activeTab === "dev-tools" && <AdminDevTools />}
+        {activeTab === "dev-tools" && devToolsEnabled && <AdminDevTools />}
         {activeTab === "gamification" && <AdminGamification />}
         {activeTab === "fiscal" && <AdminFiscalFailures />}
         {activeTab === "integrations" && <AdminIntegrations />}
-        {activeTab === "lab" && <AdminLab />}
+        {activeTab === "lab" && devToolsEnabled && <AdminLab />}
       </main>
     </div>
   );
