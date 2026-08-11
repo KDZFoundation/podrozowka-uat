@@ -15,7 +15,13 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
     const body = await req.json();
-    const expectedOrganization = Deno.env.get("INPOST_SHIPX_ORGANIZATION_ID");
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const { data: settings } = await supabase
+      .from("shipping_settings")
+      .select("inpost_organization_id")
+      .eq("singleton", true)
+      .maybeSingle();
+    const expectedOrganization = settings?.inpost_organization_id || Deno.env.get("INPOST_SHIPX_ORGANIZATION_ID");
     if (expectedOrganization && String(body.organization_id) !== expectedOrganization) {
       return new Response(JSON.stringify({ error: "Nieprawidłowa organizacja ShipX" }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
@@ -23,7 +29,6 @@ Deno.serve(async (req) => {
     if (!remoteId) return new Response(JSON.stringify({ error: "Brak ID przesyłki" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     const event = String(body.event || "shipment_status_changed");
     const trackingNumber = body.payload?.tracking_number ?? body.tracking_number ?? null;
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const update: Record<string, unknown> = { inpost_status: event, status: shipmentStatus(event) };
     if (trackingNumber) update.tracking_number = trackingNumber;
     if (event === "shipment_delivered") update.delivered_at = new Date().toISOString();

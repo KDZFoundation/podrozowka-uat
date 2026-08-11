@@ -25,5 +25,8 @@ verify_jwt = false
 [functions.inpost-shipx-webhook]
 verify_jwt = false
 
+[functions.inpost-geowidget-config]
+verify_jwt = false
+
 [functions.confirm-cod-payment]
 verify_jwt = true

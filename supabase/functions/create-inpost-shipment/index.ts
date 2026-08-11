@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
       return json({ success: true, already_created: true, shipment: existing }, 200, corsHeaders);
     }
 
-    const { organizationId, token: shipxToken } = shipxCredentials();
+    const { organizationId, token: shipxToken, environment } = await shipxCredentials(supabase);
     const templates: Record<string, string> = { A: "small", B: "medium", C: "large", small: "small", medium: "medium", large: "large" };
     const parcelTemplate = templates[size] || "small";
     const [firstName = "Klient", ...lastNameParts] = (order.shipping_name || "Klient Podróżówka").trim().split(/\s+/);
@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
     };
     if (isLocker) payload.custom_attributes = { target_point: order.pickup_point_name };
 
-    const response = await fetch(`${shipxBaseUrl()}/organizations/${organizationId}/shipments`, {
+    const response = await fetch(`${shipxBaseUrl(environment)}/organizations/${organizationId}/shipments`, {
       method: "POST", headers: shipxHeaders(shipxToken), body: JSON.stringify(payload),
     });
     if (!response.ok) return json({ error: "Błąd tworzenia przesyłki InPost ShipX", details: await shipxError(response) }, response.status, corsHeaders);

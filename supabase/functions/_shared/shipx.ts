@@ -1,15 +1,22 @@
-export const shipxBaseUrl = () =>
-  Deno.env.get("INPOST_SHIPX_ENV") === "production"
+import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+
+export const shipxBaseUrl = (environment = Deno.env.get("INPOST_SHIPX_ENV")) =>
+  environment === "production"
     ? "https://api-shipx-pl.easypack24.net/v1"
     : "https://sandbox-api-shipx-pl.easypack24.net/v1";
 
-export const shipxCredentials = () => {
-  const organizationId = Deno.env.get("INPOST_SHIPX_ORGANIZATION_ID");
-  const token = Deno.env.get("INPOST_SHIPX_TOKEN");
+export const shipxCredentials = async (supabase: SupabaseClient) => {
+  const { data } = await supabase
+    .from("shipping_settings")
+    .select("inpost_environment, inpost_organization_id, inpost_api_token")
+    .eq("singleton", true)
+    .maybeSingle();
+  const organizationId = data?.inpost_organization_id || Deno.env.get("INPOST_SHIPX_ORGANIZATION_ID");
+  const token = data?.inpost_api_token || Deno.env.get("INPOST_SHIPX_TOKEN");
   if (!organizationId || !token) {
     throw new Error("Brak konfiguracji INPOST_SHIPX_ORGANIZATION_ID lub INPOST_SHIPX_TOKEN.");
   }
-  return { organizationId, token };
+  return { organizationId, token, environment: data?.inpost_environment || Deno.env.get("INPOST_SHIPX_ENV") || "sandbox" };
 };
 
 export const shipxHeaders = (token: string) => ({
