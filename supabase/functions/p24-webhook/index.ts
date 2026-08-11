@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -24,7 +24,7 @@ async function sha384Hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function resolveP24Credentials(serviceClient: any): Promise<P24Credentials | null> {
+async function resolveP24Credentials(serviceClient: SupabaseClient): Promise<P24Credentials | null> {
   const { data } = await serviceClient
     .from("payment_settings")
     .select("p24_mode, p24_merchant_id, p24_pos_id, p24_crc_key, p24_api_key")
