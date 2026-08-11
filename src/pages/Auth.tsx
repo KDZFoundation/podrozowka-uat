@@ -182,7 +182,13 @@ const Auth = ({ mode = "login" }: AuthProps) => {
     }
   };
 
-  const oauthRedirectUri = `${window.location.origin}${redirect ?? "/"}`;
+  // Google/Apple must return to the login route.  This route observes the
+  // Supabase session and then applies the intended destination (or the role
+  // default).  Returning straight to `/` left an authenticated visitor on the
+  // landing page and made the OAuth flow appear not to have completed.
+  const oauthRedirectUri = `${window.location.origin}/auth${
+    redirect ? `?redirect=${encodeURIComponent(redirect)}` : ""
+  }`;
   const switchTo = isLogin ? "/rejestracja" : "/logowanie";
   const switchLink = redirect ? `${switchTo}?redirect=${encodeURIComponent(redirect)}` : switchTo;
 
