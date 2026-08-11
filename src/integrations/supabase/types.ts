@@ -14,6 +14,62 @@ export type Database = {
   }
   public: {
     Tables: {
+      authors: {
+        Row: {
+          id: string
+          display_name: string
+          legal_name: string | null
+          email: string | null
+          website_url: string | null
+          social_handle: string | null
+          bio: string | null
+          avatar_url: string | null
+          agreement_status: string
+          agreement_signed_at: string | null
+          agreement_expires_at: string | null
+          agreement_file_url: string | null
+          notes: string | null
+          active: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          display_name: string
+          legal_name?: string | null
+          email?: string | null
+          website_url?: string | null
+          social_handle?: string | null
+          bio?: string | null
+          avatar_url?: string | null
+          agreement_status?: string
+          agreement_signed_at?: string | null
+          agreement_expires_at?: string | null
+          agreement_file_url?: string | null
+          notes?: string | null
+          active?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          display_name?: string
+          legal_name?: string | null
+          email?: string | null
+          website_url?: string | null
+          social_handle?: string | null
+          bio?: string | null
+          avatar_url?: string | null
+          agreement_status?: string
+          agreement_signed_at?: string | null
+          agreement_expires_at?: string | null
+          agreement_file_url?: string | null
+          notes?: string | null
+          active?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
       card_design_images: {
         Row: {
           card_design_id: string
@@ -51,6 +107,7 @@ export type Database = {
       }
       card_designs: {
         Row: {
+          author_id: string | null
           active: boolean
           back_qr_label: string | null
           category_id: string | null
@@ -70,6 +127,7 @@ export type Database = {
           view_no: number
         }
         Insert: {
+          author_id?: string | null
           active?: boolean
           back_qr_label?: string | null
           category_id?: string | null
@@ -89,6 +147,7 @@ export type Database = {
           view_no: number
         }
         Update: {
+          author_id?: string | null
           active?: boolean
           back_qr_label?: string | null
           category_id?: string | null
@@ -108,6 +167,13 @@ export type Database = {
           view_no?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "card_designs_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "authors"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "card_designs_category_id_fkey"
             columns: ["category_id"]

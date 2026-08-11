@@ -52,6 +52,23 @@ describe('CartContext', () => {
     expect(result.current.totalCount).toBe(3);
   });
 
+  it('stores a product snapshot for a cart item', () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+    const snapshot = {
+      title: 'Podróżówka Tajlandia, A V01 TH',
+      image_front_url: 'https://example.com/tajlandia.jpg',
+      price_grosze: 499,
+      currency: 'PLN',
+      country_name: 'Tajlandia',
+    };
+    act(() => {
+      result.current.addItem('prod-1', 1, undefined, snapshot);
+    });
+    expect(result.current.items).toEqual([
+      { card_design_id: 'prod-1', quantity: 1, product: snapshot },
+    ]);
+  });
+
   it('addItem respects maxQuantity', () => {
     const { result } = renderHook(() => useCart(), { wrapper });
     act(() => {
@@ -150,6 +167,47 @@ describe('CartContext', () => {
     expect(result.current.items).toHaveLength(2);
     expect(result.current.items).toContainEqual({ card_design_id: 'prod-1', quantity: 1 });
     expect(result.current.items).toContainEqual({ card_design_id: 'prod-2', quantity: 2 });
+  });
+
+  it('keeps language variants of the same postcard as separate cart lines', () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+    const catalan = { code: 'ca', name: 'Kataloński', front_text: 'GRÀCIES PER FORMAR PART DEL MEU VIATGE' };
+    act(() => {
+      result.current.addItem('prod-es', 2);
+      result.current.addItem('prod-es', 3, undefined, undefined, catalan);
+    });
+
+    expect(result.current.items).toHaveLength(2);
+    expect(result.current.getQuantity('prod-es')).toBe(2);
+    expect(result.current.getQuantity('prod-es', 'ca')).toBe(3);
+  });
+
+  it('adds a secondary language to a cart line without changing its quantity', () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+    const basque = { code: 'eu', name: 'Baskijski', front_text: 'ESKERRIK ASKO NIRE BIDAIAREN PARTE IZATEAGATIK' };
+    act(() => {
+      result.current.addItem('prod-es', 4);
+      result.current.setSecondaryLanguage('prod-es', basque);
+    });
+
+    expect(result.current.items).toEqual([
+      { card_design_id: 'prod-es', quantity: 4, secondary_language: basque },
+    ]);
+    expect(result.current.getQuantity('prod-es', 'eu')).toBe(4);
+  });
+
+  it('merges quantities when a cart language change matches an existing variant', () => {
+    const { result } = renderHook(() => useCart(), { wrapper });
+    const catalan = { code: 'ca', name: 'KataloĹ„ski', front_text: 'GRĂ€CIES' };
+    act(() => {
+      result.current.addItem('prod-es', 2);
+      result.current.addItem('prod-es', 3, undefined, undefined, catalan);
+      result.current.setSecondaryLanguage('prod-es', catalan);
+    });
+
+    expect(result.current.items).toEqual([
+      { card_design_id: 'prod-es', quantity: 5, secondary_language: catalan },
+    ]);
   });
 
   it('localStorage persistence (mock localStorage)', () => {

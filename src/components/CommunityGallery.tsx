@@ -99,7 +99,7 @@ const CommunityGallery = () => {
             <span className="inline-block px-3 py-1 bg-accent/10 text-accent rounded-full text-sm font-medium mb-4">Galeria Społeczności</span>
             <h2 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">Bądź pierwszym, który zarejestruje kartkę!</h2>
             <p className="text-muted-foreground max-w-xl mx-auto mb-8">Po otrzymaniu Podróżówki zeskanuj QR kod i zarejestruj ją — Twoja kartka pojawi się tutaj.</p>
-            <a href="#auth" className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 transition-all">
+            <a href="/logowanie" className="inline-flex items-center gap-2 px-6 py-3 bg-primary text-primary-foreground rounded-lg font-semibold hover:bg-primary/90 transition-all">
               <Heart className="w-5 h-5" />
               Dołącz do społeczności
             </a>

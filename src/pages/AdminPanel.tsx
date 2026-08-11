@@ -43,6 +43,7 @@ import AdminProducts from "@/components/admin/AdminProducts";
 import AdminFiscalFailures from "@/components/admin/AdminFiscalFailures";
 import AdminCategories from "@/components/admin/AdminCategories";
 import AdminIntegrations from "@/components/admin/AdminIntegrations";
+import AdminAuthors from "@/components/admin/AdminAuthors";
 import { Blocks } from "lucide-react";
 
 type TabId =
@@ -62,7 +63,8 @@ type TabId =
   | "lab"
   | "gamification"
   | "fiscal"
-  | "integrations";
+  | "integrations"
+  | "authors";
 
 interface AdminStats {
   totalUnits: number;
@@ -152,6 +154,7 @@ const AdminPanel = () => {
     { id: "countries", label: "Kraje", icon: Globe2 },
     { id: "card-designs", label: "Kreator wzorów", icon: Image },
     { id: "products", label: "Produkty", icon: ShoppingBag },
+    { id: "authors", label: "Autorzy", icon: UserCheck },
     { id: "orders", label: "Zamówienia (Drukarnia)", icon: ShoppingCart },
     { id: "shipments", label: "Wysyłki", icon: Truck },
     { id: "dev-tools", label: "Narzędzia Dev", icon: Wrench },
@@ -450,6 +453,7 @@ CREATE POLICY "Admins manage categories"
         {activeTab === "map" && <AdminGlobalMap />}
         {activeTab === "countries" && <AdminCountries />}
         {activeTab === "card-designs" && <AdminCardDesigns />}
+        {activeTab === "authors" && <AdminAuthors />}
         {activeTab === "products" && <AdminProducts />}
         {activeTab === "categories" && <AdminCategories />}
         {activeTab === "inventory" && <AdminInventory />}

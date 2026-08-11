@@ -9,6 +9,7 @@ import { supabase, supabaseAnonKey, supabaseUrl } from "@/integrations/supabase/
 import RegisterPostcardForm from "@/components/register/RegisterPostcardForm";
 import RegisterPostcardSuccess from "@/components/register/RegisterPostcardSuccess";
 import RegisterPostcardAlreadyRegistered from "@/components/register/RegisterPostcardAlreadyRegistered";
+import { trackEvent } from "@/lib/analytics";
 
 export interface PostcardInfo {
   business_status: string | null;
@@ -93,6 +94,7 @@ const RegisterPostcard = () => {
     });
 
     setIsSuccess(true);
+    trackEvent("postcard_registered");
     toast({ title: "Kartka zarejestrowana! 🎉" });
 
     // Invalidate related queries so dashboard/stats refresh automatically

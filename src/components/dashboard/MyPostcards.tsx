@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Package, Calendar, CheckCircle, ChevronDown, ChevronUp, ShoppingBag, Mail, MessageSquare, User } from "lucide-react";
+import { Package, Calendar, CheckCircle, ChevronDown, ChevronUp, ShoppingBag, Mail, MessageSquare, User, QrCode } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { trackEvent } from "@/lib/analytics";
 
 interface InventoryCard {
   id: string;
@@ -22,8 +23,8 @@ interface MyPostcardsProps {
 }
 
 const statusLabels: Record<string, { label: string; color: string; icon: typeof Package }> = {
-  purchased: { label: "Zakupiona", color: "text-[hsl(var(--gold))]", icon: ShoppingBag },
-  registered: { label: "Zarejestrowana", color: "text-accent", icon: CheckCircle },
+  purchased: { label: "Kupiona — czeka na rejestrację", color: "text-[hsl(var(--gold))]", icon: ShoppingBag },
+  registered: { label: "Wręczona — zarejestrowana", color: "text-accent", icon: CheckCircle },
 };
 
 interface MyPostcardsUnitJoin {
@@ -107,12 +108,16 @@ const MyPostcards = ({ userId }: MyPostcardsProps) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'purchased' | 'registered'>('all');
 
+  useEffect(() => trackEvent("dashboard_qr_instruction_view"), []);
+
   const { data: cards = [], isLoading } = useQuery({
     queryKey: ['postcards', userId],
     queryFn: () => fetchPostcards(userId),
   });
 
   const filteredCards = cards.filter(c => filter === 'all' || c.business_status === filter);
+  const purchasedCount = cards.filter((card) => card.business_status === 'purchased').length;
+  const registeredCount = cards.filter((card) => card.business_status === 'registered').length;
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return "";
@@ -137,12 +142,32 @@ const MyPostcards = ({ userId }: MyPostcardsProps) => {
 
   return (
     <div className="space-y-6">
+      {purchasedCount > 0 && (
+        <div className="rounded-2xl border border-primary/20 bg-primary/[0.06] p-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground"><QrCode className="h-5 w-5" /></div>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-display text-lg font-semibold text-foreground">Twoje kartki czekają na rejestrację</h3>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">Po zakupie zabierz kartkę w podróż i wręcz ją wybranej osobie. Gdy obdarowany zeskanuje kod QR, wybierze język i wpisze swoje dane, kartka zostanie oznaczona jako wręczona.</p>
+              <p className="mt-2 text-xs font-medium text-primary">{purchasedCount} {purchasedCount === 1 ? 'kartka czeka' : 'kartek czeka'} na rejestrację obdarowanego</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {registeredCount > 0 && (
+        <div className="flex items-center gap-3 rounded-xl border border-accent/20 bg-accent/5 px-4 py-3 text-sm text-foreground">
+          <CheckCircle className="h-5 w-5 shrink-0 text-accent" />
+          <span><strong>{registeredCount}</strong> {registeredCount === 1 ? 'relacja jest już zarejestrowana' : 'relacje są już zarejestrowane'} — każda wzmacnia Twój Wpływ Kulturowy.</span>
+        </div>
+      )}
+
       <div className="flex gap-2 flex-wrap">
         <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
           Wszystkie ({cards.length})
         </button>
         <button onClick={() => setFilter('purchased')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'purchased' ? 'bg-[hsl(var(--gold))] text-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
-          Zakupione ({cards.filter(c => c.business_status === 'purchased').length})
+          Oczekujące na rejestrację ({purchasedCount})
         </button>
         <button onClick={() => setFilter('registered')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'registered' ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
           Zarejestrowane ({cards.filter(c => c.business_status === 'registered').length})

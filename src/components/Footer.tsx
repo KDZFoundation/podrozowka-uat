@@ -43,9 +43,9 @@ const Footer = () => {
             <h4 className="mb-3 text-sm font-semibold">Nawigacja</h4>
             <ul className="space-y-1.5 text-sm text-primary-foreground/70">
               <li><a href="/#about" className="hover:text-primary-foreground transition-colors">O projekcie</a></li>
-              <li><a href="/#distribution-map" className="hover:text-primary-foreground transition-colors">Mapa</a></li>
+              <li><Link to="/mapa" className="hover:text-primary-foreground transition-colors">Mapa</Link></li>
               <li><Link to="/sklep" className="hover:text-primary-foreground transition-colors">Sklep</Link></li>
-              <li><a href="/#community-gallery" className="hover:text-primary-foreground transition-colors">Społeczność</a></li>
+              <li><Link to="/spolecznosc" className="hover:text-primary-foreground transition-colors">Społeczność</Link></li>
               <li><Link to="/polityka-prywatnosci" className="hover:text-primary-foreground transition-colors">Polityka prywatności</Link></li>
               <li><Link to="/regulamin" className="hover:text-primary-foreground transition-colors">Regulamin</Link></li>
             </ul>

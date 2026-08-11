@@ -198,6 +198,11 @@
     animation: float 6s ease-in-out infinite;
   }
 
+  .animate-traveler-walk {
+    animation: travelerWalk 4.8s ease-in-out infinite;
+    transform-origin: 50% 86%;
+  }
+
   .animate-pulse-soft {
     animation: pulseSoft 2s ease-in-out infinite;
   }
@@ -232,6 +237,13 @@
   @keyframes float {
     0%, 100% { transform: translateY(0px); }
     50% { transform: translateY(-10px); }
+  }
+
+  @keyframes travelerWalk {
+    0%, 100% { transform: translate3d(0, 0, 0) rotate(-1.5deg); }
+    25% { transform: translate3d(-8px, -9px, 0) rotate(1deg); }
+    50% { transform: translate3d(4px, -2px, 0) rotate(-1deg); }
+    75% { transform: translate3d(10px, -10px, 0) rotate(1.5deg); }
   }
 
   @keyframes pulseSoft {

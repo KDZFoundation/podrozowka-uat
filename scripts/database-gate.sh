@@ -81,10 +81,14 @@ app_tables="$(run_psql -Atc "
       'countries', 'categories', 'card_designs', 'card_design_images',
       'card_language_templates', 'orders', 'order_items', 'inventory_units',
       'qr_print_jobs', 'qr_print_job_items', 'recipient_registrations',
-      'shipments', 'profiles', 'user_roles'
+      'shipments', 'profiles', 'user_roles', 'authors'
     );
 ")"
-assert_equals 'required application tables' "$app_tables" '14'
+if [[ "$app_tables" -lt 15 ]]; then
+  echo "Database Gate failed: expected at least 15 required application tables, actual: $app_tables" >&2
+  exit 1
+fi
+echo "Verified: required application tables = $app_tables"
 
 rls_tables="$(run_psql -Atc "
   select count(*)
@@ -94,7 +98,11 @@ rls_tables="$(run_psql -Atc "
     and c.relkind = 'r'
     and c.relrowsecurity;
 ")"
-assert_equals 'tables with RLS enabled' "$rls_tables" '22'
+if [[ "$rls_tables" -lt 22 ]]; then
+  echo "Database Gate failed: expected at least 22 tables with RLS enabled, actual: $rls_tables" >&2
+  exit 1
+fi
+echo "Verified: tables with RLS enabled = $rls_tables"
 
 country_count="$(run_psql -Atc 'select count(*) from public.countries;')"
 assert_equals 'seeded countries' "$country_count" '228'

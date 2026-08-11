@@ -1,128 +1,55 @@
 import { motion } from "framer-motion";
 import { Heart, Globe, Users, Sparkles } from "lucide-react";
 import polishArtImage from "@/assets/polish-art.jpg";
+import krakowImage from "@/assets/krakow-square.jpg";
+import eventImage from "@/assets/event-wianki.jpg";
 
 const features = [
-  {
-    icon: Heart,
-    title: "Osobiste podziękowanie",
-    description: "Wręcz coś wyjątkowego zamiast zwykłej wizytówki czy napiwku."
-  },
-  {
-    icon: Globe,
-    title: "Ambasador Polski",
-    description: "Pokaż światu piękno naszego kraju poprzez sztukę i fotografię."
-  },
-  {
-    icon: Users,
-    title: "Budowanie relacji",
-    description: "Twórz autentyczne więzi międzykulturowe podczas swoich podróży."
-  },
-  {
-    icon: Sparkles,
-    title: "Unikalna pamiątka",
-    description: "Każda Podróżówka to dzieło sztuki, które zostanie zapamiętane."
-  }
+  { icon: Heart, title: "Osobiste podziękowanie", description: "Wręcz coś wyjątkowego zamiast zwykłej wizytówki czy napiwku." },
+  { icon: Globe, title: "Ambasador Polski", description: "Pokaż światu piękno naszego kraju poprzez sztukę i fotografię." },
+  { icon: Users, title: "Budowanie relacji", description: "Twórz autentyczne więzi międzykulturowe podczas swoich podróży." },
+  { icon: Sparkles, title: "Unikalna pamiątka", description: "Każda Podróżówka to dzieło sztuki, które zostanie zapamiętane." },
 ];
 
-const About = () => {
-  return (
-    <section id="about" className="py-20 md:py-32 bg-background">
-      <div className="container mx-auto px-4">
-        <div className="grid lg:grid-cols-2 gap-12 items-center">
-          {/* Content */}
-          <div>
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              viewport={{ once: true }}
-            >
-              <span className="inline-block px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium mb-4">
-                O projekcie
-              </span>
-              <h2 className="font-display text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-6 leading-tight">
-                Odwrócona pocztówka – 
-                <span className="text-primary"> nowy sposób</span> na podziękowanie
-              </h2>
-              <p className="text-muted-foreground text-lg mb-6 leading-relaxed">
-                Podróżówka to wyjątkowa koncepcja "odwróconej pocztówki". Zamiast wysyłać 
-                pocztówki do domu, zabierasz je ze sobą i wręczasz jako podziękowanie za życzliwość, 
-                pomoc, lub po prostu jako miły gest dla osób spotkanych w podróży.
-              </p>
-              <p className="text-muted-foreground mb-4">
-                Każda karta prezentuje piękno Polski – krajobrazy, architekturę, dzieła polskich artystów 
-                – i zawiera napis "Dziękuję" lub "Pozdrowienia" w języku odbiorcy.
-              </p>
-              <p className="text-muted-foreground mb-8 italic text-sm">
-                Na odwrocie każdej Podróżówki znajdziesz mapę Europy z zaznaczoną Polską, 
-                miejsce na wiadomość i informację o autorze fotografii.
-              </p>
+const projectImages = [
+  { src: polishArtImage, alt: "Polska wycinanka ludowa" },
+  { src: krakowImage, alt: "Krakowski rynek" },
+  { src: eventImage, alt: "Tradycyjne wianki na Wiśle" },
+];
 
-              {/* Features grid */}
-              <div className="grid sm:grid-cols-2 gap-4">
-                {features.map((feature, index) => (
-                  <motion.div
-                    key={feature.title}
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: index * 0.1 }}
-                    viewport={{ once: true }}
-                    className="flex gap-3 p-4 bg-secondary rounded-xl"
-                  >
-                    <div className="flex-shrink-0 w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-                      <feature.icon className="w-5 h-5 text-primary" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground text-sm mb-1">
-                        {feature.title}
-                      </h3>
-                      <p className="text-xs text-muted-foreground">
-                        {feature.description}
-                      </p>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          </div>
-
-          {/* Image */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.6 }}
-            viewport={{ once: true }}
-            className="relative"
-          >
-            <div className="relative rounded-2xl overflow-hidden shadow-elevated">
-              <img
-                src={polishArtImage}
-                alt="Polska sztuka ludowa - wycinanka"
-                className="w-full aspect-square object-cover"
-                referrerPolicy="no-referrer"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-foreground/30 to-transparent" />
+const About = () => (
+  <section id="about" className="bg-background py-20 md:py-32">
+    <div className="container mx-auto px-4">
+      <div className="grid items-center gap-12 lg:grid-cols-2">
+        <div>
+          <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} viewport={{ once: true }}>
+            <span className="mb-4 inline-block rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary">O projekcie</span>
+            <h2 className="mb-6 font-display text-3xl font-bold leading-tight text-foreground md:text-4xl lg:text-5xl">Odwrócona pocztówka — <span className="text-primary">nowy sposób</span> na podziękowanie</h2>
+            <p className="mb-6 text-lg leading-relaxed text-muted-foreground">Podróżówka to wyjątkowa koncepcja „odwróconej pocztówki”. Zamiast wysyłać pocztówki do domu, zabierasz je ze sobą i wręczasz jako podziękowanie za życzliwość, pomoc lub po prostu jako miły gest dla osób spotkanych w podróży.</p>
+            <p className="mb-4 text-muted-foreground">Każda karta prezentuje piękno Polski — krajobrazy, architekturę i dzieła polskich artystów — oraz zawiera podziękowania w języku odbiorcy.</p>
+            <p className="mb-8 text-sm italic text-muted-foreground">Na odwrocie każdej Podróżówki znajdziesz miejsce na wiadomość oraz kod QR, dzięki któremu obdarowana osoba może przypisać kartkę do Twojej historii podróży.</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {features.map((feature, index) => (
+                <motion.div key={feature.title} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: index * 0.1 }} viewport={{ once: true }} className="flex gap-3 rounded-xl bg-secondary p-4">
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10"><feature.icon className="h-5 w-5 text-primary" /></div>
+                  <div><h3 className="mb-1 text-sm font-semibold text-foreground">{feature.title}</h3><p className="text-xs text-muted-foreground">{feature.description}</p></div>
+                </motion.div>
+              ))}
             </div>
-
-            {/* Floating card */}
-            <div className="absolute -bottom-6 -left-6 bg-card p-6 rounded-xl shadow-card max-w-xs">
-              <p className="font-display text-sm text-muted-foreground mb-2">
-                Inspirowane tradycją
-              </p>
-              <p className="text-foreground font-medium">
-                Wzory czerpią z polskiej sztuki ludowej, wycinanek i tradycyjnych motywów.
-              </p>
-            </div>
-
-            {/* Decorative elements */}
-            <div className="absolute -top-4 -right-4 w-24 h-24 bg-primary/10 rounded-full blur-2xl" />
-            <div className="absolute bottom-1/4 -right-8 w-16 h-16 bg-accent/20 rounded-full blur-xl" />
           </motion.div>
         </div>
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6 }} viewport={{ once: true }} className="relative">
+          <div className="grid grid-cols-2 gap-3">
+            {projectImages.map((image, index) => (
+              <div key={image.src} className={`overflow-hidden rounded-2xl shadow-elevated ${index === 0 ? "col-span-2" : ""}`}><img src={image.src} alt={image.alt} className={`w-full object-cover ${index === 0 ? "aspect-[2/1]" : "aspect-square"}`} referrerPolicy="no-referrer" /></div>
+            ))}
+          </div>
+          <div className="absolute -bottom-6 -left-6 max-w-xs rounded-xl bg-card p-6 shadow-card"><p className="mb-2 font-display text-sm text-muted-foreground">Inspirowane tradycją</p><p className="font-medium text-foreground">Wzory czerpią z polskiej sztuki ludowej, wycinanek i tradycyjnych motywów.</p></div>
+          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
+        </motion.div>
       </div>
-    </section>
-  );
-};
+    </div>
+  </section>
+);
 
 export default About;

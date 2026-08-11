@@ -17,6 +17,7 @@ interface Country {
 interface CardDesign {
   id: string;
   country_id: string;
+  author_id?: string | null;
   category_id?: string | null;
   language_code: string;
   view_no: number;
@@ -34,6 +35,7 @@ interface CardDesign {
 interface AdminCardDesignJoin {
   id: string;
   country_id: string;
+  author_id?: string | null;
   category_id?: string | null;
   language_code: string;
   view_no: number;

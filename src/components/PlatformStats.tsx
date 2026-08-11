@@ -68,8 +68,8 @@ const PlatformStats = () => {
     <section className="py-16 bg-secondary">
       <div className="container mx-auto px-4">
         <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} viewport={{ once: true }} className="text-center mb-10">
-          <span className="inline-block px-3 py-1 bg-accent/10 text-accent rounded-full text-sm font-medium mb-4">Społeczność Podróżówka</span>
-          <h2 className="font-display text-3xl md:text-4xl font-bold text-foreground">Statystyki platformy</h2>
+          <span className="inline-block px-3 py-1 bg-accent/10 text-accent rounded-full text-sm font-medium mb-4">Społeczność Podróżnika</span>
+          <h2 className="font-display text-3xl md:text-4xl font-bold text-foreground">Podróżujemy razem</h2>
         </motion.div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">

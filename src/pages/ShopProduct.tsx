@@ -42,6 +42,12 @@ interface ExtraImage {
   sort_order: number;
 }
 
+interface LanguageTemplate {
+  language_code: string;
+  language_name: string;
+  front_thank_you_text: string;
+}
+
 const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
 
@@ -54,6 +60,8 @@ const ShopProduct = () => {
   const [images, setImages] = useState<ExtraImage[]>([]);
   const [activeImage, setActiveImage] = useState<string | null>(null);
   const [quantityToAdd, setQuantityToAdd] = useState<number>(1);
+  const [languageTemplates, setLanguageTemplates] = useState<LanguageTemplate[]>([]);
+  const [secondaryLanguageCode, setSecondaryLanguageCode] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -81,6 +89,13 @@ const ShopProduct = () => {
         return;
       }
       setProduct(p as unknown as Product);
+      const { data: templates } = await supabase
+        .from("card_language_templates")
+        .select("language_code, language_name, front_thank_you_text")
+        .eq("country_id", (p as Product).country_id)
+        .neq("language_code", (p as Product).language_code)
+        .order("language_name");
+      setLanguageTemplates((templates as LanguageTemplate[] | null) || []);
       setImages((imgs as ExtraImage[]) || []);
       setActiveImage((p as unknown as Product).image_front_url || (imgs && imgs[0]?.url) || null);
       setIsLoading(false);
@@ -110,7 +125,18 @@ const ShopProduct = () => {
   const handleAddToCart = () => {
     if (!product) return;
     const quantity = Math.max(1, Math.floor(quantityToAdd) || 1);
-    addItem(product.id, quantity);
+    const secondaryLanguage = languageTemplates.find((template) => template.language_code === secondaryLanguageCode);
+    addItem(product.id, quantity, undefined, {
+      title: getProductTitle(product),
+      image_front_url: product.image_front_url,
+      price_grosze: product.price_grosze,
+      currency: "PLN",
+      country_name: product.countries?.name_pl ?? null,
+    }, secondaryLanguage ? {
+      code: secondaryLanguage.language_code,
+      name: secondaryLanguage.language_name,
+      front_text: secondaryLanguage.front_thank_you_text,
+    } : undefined);
     const noun = quantity === 1 ? "pocztówkę" : quantity >= 2 && quantity <= 4 ? "pocztówki" : "pocztówek";
     toast.success(`Dodano ${quantity} ${noun} do koszyka`);
   };
@@ -205,6 +231,30 @@ const ShopProduct = () => {
             {product.description && (
               <div className="prose prose-sm max-w-none mb-6">
                 <p className="text-foreground whitespace-pre-line leading-relaxed">{product.description}</p>
+              </div>
+            )}
+
+            {languageTemplates.length > 0 && (
+              <div className="mb-5 rounded-xl border border-border bg-muted/30 p-4">
+                <label htmlFor="secondary-language" className="block text-sm font-semibold text-foreground">
+                  Dodatkowy język na przodzie kartki <span className="font-normal text-muted-foreground">(opcjonalnie)</span>
+                </label>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  Podziękowanie zostanie wydrukowane w dwóch językach, rozdzielonych ukośnikiem. Tył z kodem QR pozostanie w języku podstawowym wzoru.
+                </p>
+                <select
+                  id="secondary-language"
+                  value={secondaryLanguageCode}
+                  onChange={(event) => setSecondaryLanguageCode(event.target.value)}
+                  className="mt-3 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Bez dodatkowego języka</option>
+                  {languageTemplates.map((template) => (
+                    <option key={template.language_code} value={template.language_code}>
+                      {template.language_name}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 

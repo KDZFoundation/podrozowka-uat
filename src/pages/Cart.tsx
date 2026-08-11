@@ -5,7 +5,9 @@ import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/contexts/CartContext";
 import { useCartItems } from "@/hooks/useCartItems";
+import { useCartLanguageOptions } from "@/hooks/useCartLanguageOptions";
 import { useAuth } from "@/hooks/useAuth";
+import CartLanguagePicker from "@/components/cart/CartLanguagePicker";
 import { useEffect } from "react";
 import OrderSteps from "@/components/checkout/OrderSteps";
 
@@ -13,8 +15,9 @@ const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
 
 const Cart = () => {
-  const { setQuantity, removeItem, items: savedCartItems } = useCart();
-  const { items, subtotalGrosze, isLoading } = useCartItems();
+  const { setQuantity, setSecondaryLanguage, removeItem, items: savedCartItems } = useCart();
+  const { items, subtotalGrosze, isLoading, isError, error, refetch } = useCartItems();
+  const { optionsByLineId } = useCartLanguageOptions(items);
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -32,7 +35,7 @@ const Cart = () => {
 
   // Product data is read asynchronously. Keep the loading state visible while
   // saved cart entries are being resolved, instead of briefly showing 0 items.
-  const isResolvingItems = savedCartItems.length > 0 && items.length === 0;
+  const isResolvingItems = savedCartItems.length > 0 && items.length === 0 && !isError;
   const empty = savedCartItems.length === 0 && !isLoading;
   const totalCount = items.reduce((s, i) => s + (i.unavailable ? 0 : i.quantity), 0);
   const isBelowMin = totalCount < 10;
@@ -78,6 +81,21 @@ const Cart = () => {
             </div>
             <div className="h-40 bg-card rounded-xl" />
           </div>
+        ) : isError ? (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-6 text-center">
+            <AlertCircle className="mx-auto mb-3 h-10 w-10 text-destructive" />
+            <h2 className="font-display text-xl font-bold">Nie udało się wczytać produktów w koszyku</h2>
+            <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">
+              Produkty nie zostały oznaczone jako niedostępne — wystąpił problem z pobraniem ich aktualnych danych.
+              Spróbuj ponownie. Jeżeli problem wróci, nie przechodź do płatności.
+            </p>
+            <Button className="mt-4" variant="outline" onClick={() => refetch()}>
+              Spróbuj ponownie
+            </Button>
+            {import.meta.env.DEV && error instanceof Error && (
+              <p className="mt-3 break-words text-xs text-muted-foreground">DEV: {error.message}</p>
+            )}
+          </div>
         ) : empty ? (
           <div className="text-center py-16 bg-card rounded-xl shadow-soft">
             <ShoppingBag className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
@@ -92,7 +110,7 @@ const Cart = () => {
               {items.map((it) => {
                 return (
                   <div key={it.id} className="bg-card rounded-xl shadow-soft p-4 flex gap-4">
-                    <Link to={`/sklep/${it.id}`} className="shrink-0">
+                    <Link to={`/sklep/${it.card_design_id}`} className="shrink-0">
                       {it.image ? (
                         <img src={it.image} alt="" className="w-24 h-24 object-cover rounded" referrerPolicy="no-referrer" />
                       ) : (
@@ -106,7 +124,7 @@ const Cart = () => {
                             <p className="text-xs text-muted-foreground mb-0.5">{it.country_name}</p>
                           )}
                           <Link
-                            to={`/sklep/${it.id}`}
+                            to={`/sklep/${it.card_design_id}`}
                             className="font-display font-semibold hover:text-primary line-clamp-2"
                           >
                             {it.title || "Bez tytułu"}
@@ -114,6 +132,11 @@ const Cart = () => {
                           {!it.unavailable && (
                             <p className="text-sm text-muted-foreground mt-1">
                               {formatPln(it.price_grosze)} / szt.
+                            </p>
+                          )}
+                          {it.secondary_language && (
+                            <p className="mt-1 text-xs font-medium text-primary">
+                              Przód: język podstawowy / {it.secondary_language.name}
                             </p>
                           )}
                         </div>
@@ -132,7 +155,14 @@ const Cart = () => {
                           <span>Produkt niedostępny — usuń pozycję, aby przejść dalej.</span>
                         </div>
                       ) : (
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                        <>
+                          <CartLanguagePicker
+                            lineId={it.id}
+                            value={it.secondary_language}
+                            options={optionsByLineId.get(it.id) || []}
+                            onChange={(language) => setSecondaryLanguage(it.id, language)}
+                          />
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                           <div className="flex items-center border border-border rounded-lg">
                             <button
                               onClick={() =>
@@ -153,7 +183,8 @@ const Cart = () => {
                             </button>
                           </div>
                           <p className="font-display font-bold">{formatPln(it.price_grosze * it.quantity)}</p>
-                        </div>
+                          </div>
+                        </>
                       )}
 
                     </div>

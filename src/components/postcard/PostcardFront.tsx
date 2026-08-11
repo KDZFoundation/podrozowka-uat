@@ -53,6 +53,17 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
     .trim();
   const author = cleanAuthor ? `fot. by @${cleanAuthor}` : null;
   const content = contentText?.trim() || null;
+  // A second language can make the front message significantly longer. Keep
+  // every translation inside the fixed, print-safe message area instead of
+  // letting it extend below the hikers or beyond the postcard trim.
+  const contentLength = content?.length ?? 0;
+  const messageFontSize =
+    contentLength > 140 ? "1.15cqw" :
+    contentLength > 110 ? "1.35cqw" :
+    contentLength > 85 ? "1.65cqw" :
+    contentLength > 60 ? "2.05cqw" :
+    contentLength > 44 ? "2.45cqw" :
+    "2.9cqw";
   const replacesTemplateText = Boolean(content && content !== "PODZIĘKOWANIA");
 
   return (
@@ -70,7 +81,10 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
         />
 
         {imageUrl && (
-          <div className="absolute left-[2%] top-[2%] h-[74%] w-[94%] overflow-hidden">
+          <div
+            className="absolute left-[4%] top-[4%] h-[74%] w-[92%] overflow-hidden"
+            aria-label="Obszar zdjęcia z bezpiecznym odstępem od linii cięcia"
+          >
             <img
               src={imageUrl}
               alt="Zdjęcie pocztówki"
@@ -100,8 +114,11 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
         )}
 
         {replacesTemplateText && (
-          <div className="absolute left-[22%] top-[80.5%] z-10 flex h-[11.5%] w-[56%] items-center justify-center bg-white px-2 text-center">
-            <p className="font-sans text-[2.9cqw] font-normal uppercase leading-tight tracking-[0.04em] text-[#999]">
+          <div className="absolute left-[22%] top-[80.5%] z-10 flex h-[11.5%] w-[56%] items-center justify-center overflow-hidden bg-white px-2 text-center">
+            <p
+              className="w-full break-words font-sans font-normal uppercase tracking-[0.04em] text-[#999]"
+              style={{ fontSize: messageFontSize, lineHeight: 1.12 }}
+            >
               {content}
             </p>
           </div>

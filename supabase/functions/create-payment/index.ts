@@ -113,6 +113,12 @@ Deno.serve(async (req) => {
       if (!it || !isUuid(it.card_design_id) || !Number.isInteger(it.quantity) || it.quantity < 1 || it.quantity > 1000) {
         return jsonResp({ error: "invalid_items" }, 400);
       }
+      if (it.secondary_language_code !== undefined && (
+        typeof it.secondary_language_code !== "string" ||
+        !/^[a-z]{2,3}(?:-[a-z]{2})?$/i.test(it.secondary_language_code)
+      )) {
+        return jsonResp({ error: "invalid_secondary_language" }, 400);
+      }
       totalQty += it.quantity;
     }
     if (totalQty < 10) {
@@ -207,7 +213,11 @@ Deno.serve(async (req) => {
 
     // Create order via RPC (runs with user's identity, RLS enforced)
     const { data: rpcData, error: rpcError } = await supabase.rpc("create_order", {
-      _items: items.map((i: { card_design_id: string; quantity: number }) => ({ card_design_id: i.card_design_id, quantity: i.quantity })),
+      _items: items.map((i: { card_design_id: string; quantity: number; secondary_language_code?: string }) => ({
+        card_design_id: i.card_design_id,
+        quantity: i.quantity,
+        ...(i.secondary_language_code ? { secondary_language_code: i.secondary_language_code } : {}),
+      })),
       _pickup_point_name: pickupName,
       _pickup_point_address: pickupAddress,
       _pickup_point_city: pickupCity,

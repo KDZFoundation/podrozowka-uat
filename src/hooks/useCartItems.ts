@@ -1,17 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useCart } from "@/contexts/CartContext";
+import { cartLineId, type CartSecondaryLanguage, useCart } from "@/contexts/CartContext";
 import { getProductTitle } from "@/lib/productTitle";
 
 export interface EnrichedCartItem {
   id: string;
+  card_design_id: string;
   title: string | null;
   image: string | null;
   price_grosze: number;
   currency: string;
   quantity: number;
   unavailable: boolean;
+  country_id: string | null;
+  language_code: string | null;
   country_name: string | null;
+  secondary_language?: CartSecondaryLanguage;
 }
 
 interface CardDesignRow {
@@ -21,6 +25,7 @@ interface CardDesignRow {
   price_grosze: number;
   currency: string;
   active: boolean;
+  country_id: string;
   language_code: string;
   view_no: number;
   countries: { name_pl: string | null } | null;
@@ -39,7 +44,7 @@ export const useCartItems = () => {
     queryFn: async () => {
       const { data: designs, error } = await supabase
         .from("card_designs")
-        .select("id, title, image_front_url, price_grosze, currency, active, language_code, view_no, countries(name_pl), categories(name)")
+        .select("id, title, image_front_url, price_grosze, currency, active, country_id, language_code, view_no, countries(name_pl), categories(name)")
         .in("id", ids);
       if (error) throw error;
       return (designs as unknown as CardDesignRow[]) || [];
@@ -53,16 +58,23 @@ export const useCartItems = () => {
   (query.data || []).forEach((d) => designMap.set(d.id, d));
   const enriched: EnrichedCartItem[] = items.map((item) => {
     const d = designMap.get(item.card_design_id);
-    const unavailable = !d || !d.active || d.price_grosze === 0;
+    const snapshot = item.product;
+    // A fresh database row is authoritative. The local snapshot is a display
+    // fallback only; checkout still validates the design server-side.
+    const unavailable = d ? !d.active || d.price_grosze === 0 : !snapshot;
     return {
-      id: item.card_design_id,
-      title: d ? getProductTitle(d) : null,
-      image: d?.image_front_url ?? null,
-      price_grosze: d?.price_grosze ?? 0,
-      currency: d?.currency ?? "PLN",
+      id: cartLineId(item.card_design_id, item.secondary_language?.code),
+      card_design_id: item.card_design_id,
+      title: d ? getProductTitle(d) : snapshot?.title ?? null,
+      image: d?.image_front_url ?? snapshot?.image_front_url ?? null,
+      price_grosze: d?.price_grosze ?? snapshot?.price_grosze ?? 0,
+      currency: d?.currency ?? snapshot?.currency ?? "PLN",
       quantity: item.quantity,
       unavailable,
-      country_name: d?.countries?.name_pl ?? null,
+      country_id: d?.country_id ?? null,
+      language_code: d?.language_code ?? null,
+      country_name: d?.countries?.name_pl ?? snapshot?.country_name ?? null,
+      ...(item.secondary_language ? { secondary_language: item.secondary_language } : {}),
     };
   });
   const subtotalGrosze = enriched
@@ -73,6 +85,8 @@ export const useCartItems = () => {
     items: enriched,
     subtotalGrosze,
     isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
     refetch: query.refetch,
   };
 };

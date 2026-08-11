@@ -2,6 +2,7 @@ const ALLOWED_ORIGIN_PATTERNS = [
   /^https:\/\/podrozowka\.lovable\.app$/,
   /^https:\/\/podrozowka\.pl$/,
   /^https:\/\/www\.podrozowka\.pl$/,
+  /^https:\/\/podrozowka-uat-one\.vercel\.app$/,
   /^http:\/\/localhost(:\d+)?$/,
   /^http:\/\/127\.0\.0\.1(:\d+)?$/,
   // Private LAN ranges are used only for local development and QR tests on a phone.
