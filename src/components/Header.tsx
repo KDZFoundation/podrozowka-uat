@@ -88,15 +88,15 @@ const Header = () => {
             <a href="/#about" className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
               O projekcie
             </a>
-            <a href="/#distribution-map" className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
+            <Link to="/mapa" className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${pathname === "/mapa" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}>
               Mapa
-            </a>
+            </Link>
             <Link to="/sklep" className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${pathname.startsWith("/sklep") || pathname === "/koszyk" || pathname.startsWith("/checkout") ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}>
               Sklep
             </Link>
-            <a href="/#community-gallery" className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground">
+            <Link to="/spolecznosc" className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${pathname === "/spolecznosc" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}>
               Społeczność
-            </a>
+            </Link>
           </nav>
 
           {/* Right side */}
@@ -110,7 +110,7 @@ const Header = () => {
                 className="bg-transparent border-none text-sm focus:outline-none cursor-pointer"
               >
                 {languages.map((lang) => (
-                  <option key={lang.code} value={lang.code}>
+                  <option key={lang.code} value={lang.code} disabled={lang.code !== "pl"}>
                     {lang.name}
                   </option>
                 ))}
@@ -239,9 +239,9 @@ const Header = () => {
               )}
 
               <a href="/#about" className="text-foreground py-2 text-lg" onClick={() => setIsMenuOpen(false)}>O projekcie</a>
-              <a href="/#distribution-map" className="text-foreground py-2 text-lg" onClick={() => setIsMenuOpen(false)}>Mapa</a>
+              <Link to="/mapa" className="text-foreground py-2 text-lg" onClick={() => setIsMenuOpen(false)}>Mapa</Link>
               <Link to="/sklep" className="text-foreground py-2 text-lg" onClick={() => setIsMenuOpen(false)}>Sklep</Link>
-              <a href="/#community-gallery" className="text-foreground py-2 text-lg" onClick={() => setIsMenuOpen(false)}>Społeczność</a>
+              <Link to="/spolecznosc" className="text-foreground py-2 text-lg" onClick={() => setIsMenuOpen(false)}>Społeczność</Link>
 
               {user && (
                 <>

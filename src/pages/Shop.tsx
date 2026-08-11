@@ -47,6 +47,7 @@ const Shop = () => {
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [countryFilter, setCountryFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [quantitiesToAdd, setQuantitiesToAdd] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -183,7 +184,7 @@ const Shop = () => {
                       }`}
                     >
                       {c.icon_url && (
-                        <img src={c.icon_url} alt="" className="h-5 w-5 rounded-full object-cover" referrerPolicy="no-referrer" />
+                        <img src={c.icon_url} alt="" className="h-5 w-5 rounded-full object-cover" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />
                       )}
                       {c.name}
                     </button>
@@ -264,7 +265,7 @@ const Shop = () => {
                         {p.categories && (
                           <span className="inline-flex items-center gap-1 rounded-full border border-white/40 bg-background/90 px-2.5 py-1 text-xs font-medium text-foreground shadow-sm backdrop-blur-sm">
                             {p.categories.icon_url && (
-                              <img src={p.categories.icon_url} alt="" className="w-4 h-4 rounded-full object-cover" referrerPolicy="no-referrer" />
+                              <img src={p.categories.icon_url} alt="" className="w-4 h-4 rounded-full object-cover" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />
                             )}
                             {p.categories.name}
                           </span>
@@ -277,17 +278,54 @@ const Shop = () => {
                   </Link>
                   <div className="mt-4 flex items-center justify-between gap-3 px-1 pb-1">
                     <p className="font-display text-xl font-bold text-primary">{formatPln(p.price_grosze)}</p>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <div className="flex items-center rounded-lg border border-border bg-background">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuantitiesToAdd((current) => ({
+                              ...current,
+                              [p.id]: Math.max(1, (current[p.id] ?? 1) - 1),
+                            }));
+                          }}
+                          disabled={(quantitiesToAdd[p.id] ?? 1) <= 1}
+                          className="min-h-10 min-w-10 rounded-l-lg text-lg text-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-35"
+                          aria-label={`Usuń jedną sztukę: ${productTitle}`}
+                        >
+                          −
+                        </button>
+                        <span className="min-w-7 text-center text-sm font-semibold" aria-live="polite">
+                          {quantitiesToAdd[p.id] ?? 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setQuantitiesToAdd((current) => ({
+                            ...current,
+                            [p.id]: (current[p.id] ?? 1) + 1,
+                          }))}
+                          className="min-h-10 min-w-10 rounded-r-lg text-lg text-foreground transition-colors hover:bg-muted"
+                          aria-label={`Dodaj jedną sztukę: ${productTitle}`}
+                        >
+                          +
+                        </button>
+                      </div>
                       <button
                         type="button"
                         onClick={() => {
-                          addItem(p.id, 1);
-                          toast.success("Dodano 1 Podróżówkę do koszyka");
+                          const quantity = quantitiesToAdd[p.id] ?? 1;
+                          addItem(p.id, quantity, undefined, {
+                            title: getProductTitle(p),
+                            image_front_url: p.image_front_url,
+                            price_grosze: p.price_grosze,
+                            currency: "PLN",
+                            country_name: p.countries?.name_pl ?? null,
+                          });
+                          toast.success(`Dodano ${quantity} szt. do koszyka`);
+                          setQuantitiesToAdd((current) => ({ ...current, [p.id]: 1 }));
                         }}
-                        className="rounded-lg border border-primary/30 px-3 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary/10"
-                        aria-label={`Dodaj 1 sztukę: ${productTitle}`}
+                        className="min-h-10 rounded-lg border border-primary/30 px-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/10"
                       >
-                        Dodaj 1
+                        Dodaj do koszyka
                       </button>
                       <Link to={`/sklep/${p.id}`} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90">
                         Wybierz

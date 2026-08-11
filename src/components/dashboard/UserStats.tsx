@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { ShoppingBag, Package, Globe2, Trophy, MapPin, Percent, Star, Award } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { DEFAULT_GAMIFICATION_TIERS, useGamificationTiers } from "@/hooks/useGamificationTiers";
 
 interface Profile {
   id: string;
@@ -28,11 +29,12 @@ interface CountryStat {
   registered: number;
 }
 
-const RANK_CONFIG: Record<string, { color: string; bgColor: string; next: string | null; nextThreshold: number }> = {
-  'Zwiadowca': { color: 'text-muted-foreground', bgColor: 'bg-muted', next: 'Ambasador', nextThreshold: 500 },
-  'Ambasador': { color: 'text-[hsl(var(--gold))]', bgColor: 'bg-[hsl(var(--gold))]/10', next: 'Misjonarz Kultury', nextThreshold: 2500 },
-  'Misjonarz Kultury': { color: 'text-accent', bgColor: 'bg-accent/10', next: 'Legenda Podróżówki', nextThreshold: 7500 },
-  'Legenda Podróżówki': { color: 'text-primary', bgColor: 'bg-primary/10', next: null, nextThreshold: 0 },
+const rankStyle = (name: string) => {
+  if (name === "Zwiadowca") return { color: "text-muted-foreground", bgColor: "bg-muted" };
+  if (name === "Odkrywca") return { color: "text-primary", bgColor: "bg-primary/10" };
+  if (name === "Ambasador") return { color: "text-[hsl(var(--gold))]", bgColor: "bg-[hsl(var(--gold))]/10" };
+  if (name === "Misjonarz Kultury") return { color: "text-accent", bgColor: "bg-accent/10" };
+  return { color: "text-primary", bgColor: "bg-primary/10" };
 };
 
 interface StatsUnitJoin {
@@ -80,6 +82,7 @@ const UserStats = ({ profile, userId }: UserStatsProps) => {
     queryKey: ['user-stats', userId],
     queryFn: () => fetchUserStats(userId),
   });
+  const { data: configuredTiers = DEFAULT_GAMIFICATION_TIERS } = useGamificationTiers();
 
   const totalUnits = data?.totalUnits ?? 0;
   const purchasedCount = data?.purchasedCount ?? 0;
@@ -89,9 +92,12 @@ const UserStats = ({ profile, userId }: UserStatsProps) => {
 
   const totalPoints = profile?.total_points ?? 0;
   const currentRank = profile?.current_rank ?? 'Zwiadowca';
-  const rankInfo = RANK_CONFIG[currentRank] ?? RANK_CONFIG['Zwiadowca'];
-  const progressToNext = rankInfo.next
-    ? Math.min(100, Math.round((totalPoints / rankInfo.nextThreshold) * 100))
+  const rankIndex = configuredTiers.findIndex((tier) => tier.name === currentRank);
+  const currentTier = configuredTiers[rankIndex >= 0 ? rankIndex : 0];
+  const nextTier = rankIndex >= 0 ? configuredTiers[rankIndex + 1] : configuredTiers[1];
+  const rankInfo = { ...rankStyle(currentRank), next: nextTier?.name ?? null, nextThreshold: nextTier?.min_points ?? 0 };
+  const progressToNext = nextTier
+    ? Math.min(100, Math.round(((totalPoints - currentTier.min_points) / (nextTier.min_points - currentTier.min_points)) * 100))
     : 100;
 
   const statsCards = [

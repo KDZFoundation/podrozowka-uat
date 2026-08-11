@@ -38,6 +38,12 @@ interface CardDesignData {
 interface PodUnitRow {
   id: string;
   card_design_id: string;
+  order_item_id: string | null;
+}
+
+interface OrderItemLanguageRow {
+  id: string;
+  secondary_front_thank_you_text: string | null;
 }
 
 interface PodJobItemRow {
@@ -176,7 +182,9 @@ const drawCropMarks = (doc: jsPDF, slot: number) => {
   const right = left + TRIM_WIDTH_MM;
   const top = y + BLEED_MM;
   const bottom = top + TRIM_HEIGHT_MM;
-  const gap = 0.4;
+  // Keep a clear 2.5 mm gap where horizontal and vertical cut marks meet.
+  // This prevents the printer's corner marks from reading as one joined line.
+  const gap = 2.5;
 
   doc.setDrawColor(20, 20, 20);
   doc.setLineWidth(0.12);
@@ -238,13 +246,24 @@ export const generatePodPrintPdf = async (
   const inventoryUnitIds = [...new Set(jobItems.map((item) => item.inventory_unit_id))];
   const { data: unitsData, error: unitsError } = await supabase
     .from("inventory_units")
-    .select("id, card_design_id")
+    .select("id, card_design_id, order_item_id")
     .in("id", inventoryUnitIds);
 
   if (unitsError) throw new Error(`Nie udało się odczytać sztuk POD: ${unitsError.message}`);
   if (!unitsData?.length) throw new Error("Nie znaleziono sztuk POD przypisanych do kodów QR.");
 
   const units = unitsData as PodUnitRow[];
+  const orderItemIds = [...new Set(units.map((unit) => unit.order_item_id).filter((id): id is string => !!id))];
+  const { data: orderItemsData, error: orderItemsError } = orderItemIds.length > 0
+    ? await supabase
+        .from("order_items")
+        .select("id, secondary_front_thank_you_text")
+        .in("id", orderItemIds)
+    : { data: [], error: null };
+  if (orderItemsError) throw new Error(`Nie udało się odczytać wariantów językowych zamówienia: ${orderItemsError.message}`);
+  const orderItemLanguageById = new Map(
+    ((orderItemsData ?? []) as OrderItemLanguageRow[]).map((orderItem) => [orderItem.id, orderItem]),
+  );
   const designIds = [...new Set(units.map((unit) => unit.card_design_id))];
   const { data: designsData, error: designsError } = await supabase
     .from("card_designs")
@@ -287,21 +306,28 @@ export const generatePodPrintPdf = async (
     const unit = unitsById.get(item.inventory_unit_id);
     const design = unit ? designsById.get(unit.card_design_id) : undefined;
     if (!design) throw new Error(`Brak wzoru dla kodu ${item.public_claim_code}.`);
+    const secondaryFrontText = unit?.order_item_id
+      ? orderItemLanguageById.get(unit.order_item_id)?.secondary_front_thank_you_text
+      : null;
+    const designForOrder = secondaryFrontText
+      ? { ...design, thank_you_text: `${design.thank_you_text || ""} / ${secondaryFrontText}`.trim() }
+      : design;
     const registrationUrl = new URL(item.qr_url, PUBLIC_APP_URL).toString();
     const qrCodeDataUrl = await QRCode.toDataURL(registrationUrl, {
       width: 600,
       margin: 3,
       errorCorrectionLevel: "M",
     });
-    let front = renderedFronts.get(design.id);
+    const frontCacheKey = `${design.id}:${unit?.order_item_id || "primary"}`;
+    let front = renderedFronts.get(frontCacheKey);
     if (!front) {
-      front = await renderCard("front", design, qrCodeDataUrl);
-      renderedFronts.set(design.id, front);
+      front = await renderCard("front", designForOrder, qrCodeDataUrl);
+      renderedFronts.set(frontCacheKey, front);
     }
     rendered.push({
       id: item.id,
       front,
-      back: await renderCard("back", design, qrCodeDataUrl),
+      back: await renderCard("back", designForOrder, qrCodeDataUrl),
     });
   }
 

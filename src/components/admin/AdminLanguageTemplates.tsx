@@ -42,8 +42,8 @@ export const AdminLanguageTemplates = () => {
     country_id: "",
     language_code: "pl",
     language_name: "Polski",
-    front_thank_you_text: "DZIĘKUJĘ ŻE JESTEŚ Z NAMI!",
-    back_qr_label: "Podziękuj autorowi za pocztówkę",
+    front_thank_you_text: "DZIĘKUJĘ, ŻE JESTEŚ CZĘŚCIĄ MOJEJ PODRÓŻY",
+    back_qr_label: "Zeskanuj ten kod QR i śledź moje podróże",
   });
 
   const fetchData = useCallback(async () => {
@@ -74,8 +74,8 @@ export const AdminLanguageTemplates = () => {
       country_id: "",
       language_code: "pl",
       language_name: "Polski",
-      front_thank_you_text: "DZIĘKUJĘ ŻE JESTEŚ Z NAMI!",
-      back_qr_label: "Podziękuj autorowi za pocztówkę",
+      front_thank_you_text: "DZIĘKUJĘ, ŻE JESTEŚ CZĘŚCIĄ MOJEJ PODRÓŻY",
+      back_qr_label: "Zeskanuj ten kod QR i śledź moje podróże",
     });
     setEditingId(null);
     setShowAdd(false);
@@ -101,7 +101,13 @@ export const AdminLanguageTemplates = () => {
     // Try finding language matching country iso2 code
     const matchingLang = WORLD_LANGUAGES.find(
       (l) => l.code === country.iso2.toLowerCase()
-    ) || (country.iso2 === "US" || country.iso2 === "GB" ? WORLD_LANGUAGES.find((l) => l.code === "en") : null);
+    ) || (
+      country.iso2 === "AU"
+        ? WORLD_LANGUAGES.find((l) => l.code === "en-au")
+        : country.iso2 === "US" || country.iso2 === "GB"
+          ? WORLD_LANGUAGES.find((l) => l.code === "en")
+          : null
+    );
 
     const lang = matchingLang || WORLD_LANGUAGES.find((l) => l.code === "pl") || WORLD_LANGUAGES[0];
 

@@ -25,13 +25,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isDbAdmin, setIsDbAdmin] = useState(false);
   const [roleLoading, setRoleLoading] = useState(true);
 
-  const fetchRole = useCallback(async (userId: string, userEmail?: string) => {
+  const fetchRole = useCallback(async (userId: string) => {
     setRoleLoading(true);
-
-    const isHardcodedAdmin = !!(userEmail && (
-      userEmail.toLowerCase() === 'dariusz.pgry@gmail.com' || 
-      userEmail.toLowerCase() === 'fundacja@konopiedlaziemi.org'
-    ));
 
     const { data, error } = await supabase
       .from('user_roles')
@@ -42,7 +37,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const hasDbAdmin = roles.includes('admin');
     setIsDbAdmin(hasDbAdmin);
 
-    if (isHardcodedAdmin || hasDbAdmin) {
+    if (hasDbAdmin) {
       setRole('admin');
     } else if (roles.includes('traveler')) {
       setRole('traveler');
@@ -60,7 +55,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         
         if (session?.user) {
           // Defer role fetch to avoid deadlock with auth state
-          setTimeout(() => fetchRole(session.user.id, session.user.email), 0);
+          setTimeout(() => fetchRole(session.user.id), 0);
         } else {
           setRole(null);
           setRoleLoading(false);
@@ -73,7 +68,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        await fetchRole(session.user.id, session.user.email);
+        await fetchRole(session.user.id);
       } else {
         setRoleLoading(false);
       }

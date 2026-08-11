@@ -109,7 +109,11 @@ const Checkout = () => {
       const payload: Record<string, unknown> = {
         items: items
           .filter((i) => !i.unavailable)
-          .map((i) => ({ card_design_id: i.id, quantity: i.quantity })),
+          .map((i) => ({
+            card_design_id: i.card_design_id,
+            quantity: i.quantity,
+            ...(i.secondary_language ? { secondary_language_code: i.secondary_language.code } : {}),
+          })),
         shipping_method: shippingMethod,
         pickup_point:
           shippingMethod === "inpost" && pickupPoint

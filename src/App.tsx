@@ -22,6 +22,8 @@ import Checkout from "./pages/Checkout";
 import CheckoutConfirmation from "./pages/CheckoutConfirmation";
 import ResetPassword from "./pages/ResetPassword";
 import QrRegistrationTest from "./pages/QrRegistrationTest";
+import Community from "./pages/Community";
+import Map from "./pages/Map";
 
 const queryClient = new QueryClient();
 
@@ -36,6 +38,8 @@ const App = () => (
             <BrowserRouter>
               <Routes>
                 <Route path="/" element={<Index />} />
+                <Route path="/spolecznosc" element={<Community />} />
+                <Route path="/mapa" element={<Map />} />
                 <Route path="/auth" element={<Auth mode="login" />} />
                 <Route path="/logowanie" element={<Auth mode="login" />} />
                 <Route path="/rejestracja" element={<Auth mode="signup" />} />

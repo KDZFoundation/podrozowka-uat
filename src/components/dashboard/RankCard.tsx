@@ -7,25 +7,13 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
+import { DEFAULT_GAMIFICATION_TIERS, useGamificationTiers } from "@/hooks/useGamificationTiers";
 
-const RANK_TIERS = [
-  { name: "Zwiadowca", min: 0, accent: "muted-foreground", bg: "bg-muted", ring: "ring-border" },
-  { name: "Ambasador", min: 500, accent: "[hsl(var(--gold))]", bg: "bg-[hsl(var(--gold))]/10", ring: "ring-[hsl(var(--gold))]" },
-  { name: "Misjonarz Kultury", min: 2500, accent: "accent", bg: "bg-accent/10", ring: "ring-accent" },
-  { name: "Legenda Podróżówki", min: 7500, accent: "[hsl(var(--gold))]", bg: "bg-[hsl(var(--gold))]/5", ring: "ring-[hsl(var(--gold))]" },
-];
-
-const DEFAULT_TIER = { name: "", min: 0, accent: "primary", bg: "bg-primary/10", ring: "ring-primary" };
-
-function getTier(rank: string) {
-  return RANK_TIERS.find((t) => t.name === rank) ?? { ...DEFAULT_TIER, name: rank };
-}
-
-function getNextTier(rank: string) {
-  const idx = RANK_TIERS.findIndex((t) => t.name === rank);
-  if (idx === -1) return null; // unknown rank — no next tier info
-  return idx < RANK_TIERS.length - 1 ? RANK_TIERS[idx + 1] : null;
-}
+const getTier = (rank: string, tiers: typeof DEFAULT_GAMIFICATION_TIERS) => tiers.find((t) => t.name === rank) ?? tiers[0];
+const getNextTier = (rank: string, tiers: typeof DEFAULT_GAMIFICATION_TIERS) => {
+  const idx = tiers.findIndex((t) => t.name === rank);
+  return idx >= 0 && idx < tiers.length - 1 ? tiers[idx + 1] : null;
+};
 
 function AnimatedCounter({ value }: { value: number }) {
   const [display, setDisplay] = useState(0);
@@ -98,6 +86,7 @@ const RankCard = ({ userId }: RankCardProps) => {
   const [isSharing, setIsSharing] = useState(false);
   const { isAdmin } = useAuth();
   const { flags } = useFeatureFlags();
+  const { data: configuredTiers = DEFAULT_GAMIFICATION_TIERS } = useGamificationTiers();
 
   const { data, isLoading } = useQuery({
     queryKey: ["rank-card", userId],
@@ -147,15 +136,15 @@ const RankCard = ({ userId }: RankCardProps) => {
   const totalKilometers = data?.totalKilometers ?? 0;
   const showTravelStats = isAdmin && flags.travel_stats;
 
-  const tier = getTier(currentRank);
-  const nextTier = getNextTier(currentRank);
+  const tier = getTier(currentRank, configuredTiers);
+  const nextTier = getNextTier(currentRank, configuredTiers);
   const isLegend = !nextTier;
 
   const progressValue = nextTier
-    ? Math.min(100, Math.round(((totalPoints - tier.min) / (nextTier.min - tier.min)) * 100))
+    ? Math.min(100, Math.round(((totalPoints - tier.min_points) / (nextTier.min_points - tier.min_points)) * 100))
     : 100;
 
-  const pointsToNext = nextTier ? nextTier.min - totalPoints : 0;
+  const pointsToNext = nextTier ? nextTier.min_points - totalPoints : 0;
 
   if (isLoading) {
     return (
@@ -240,7 +229,7 @@ const RankCard = ({ userId }: RankCardProps) => {
                 {totalPoints} pkt
               </span>
               <span className={isLegend ? "text-[hsl(var(--gold))]/70" : "text-muted-foreground"}>
-                {nextTier.min} pkt
+                {nextTier.min_points} pkt
               </span>
             </div>
             <Progress

@@ -30,6 +30,7 @@ jobs:
     outputs:
       changed: ${{ steps.diff.outputs.changed }}
       has_changes: ${{ steps.diff.outputs.has_changes }}
+      shared_changed: ${{ steps.diff.outputs.shared_changed }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -54,13 +55,19 @@ jobs:
           
           # Pobranie listy zmienionych katalogów funkcji
           # Ignorujemy katalog _shared oraz pliki bezpośrednio w funkcji
+          SHARED_CHANGED=$(git diff --name-only "$BASE" HEAD -- 'supabase/functions/_shared/' | grep -q . && echo true || echo false)
+          echo "shared_changed=$SHARED_CHANGED" >> "$GITHUB_OUTPUT"
+
           CHANGED=$(git diff --name-only "$BASE" HEAD -- 'supabase/functions/' | \
-            grep -v '^supabase/functions/_shared/' | \
             sed 's|supabase/functions/\([^/]*\)/.*|\1|' | \
             sort -u | \
             jq -R -s -c 'split("\n") | map(select(length > 0))')
           
           echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          if [ "$SHARED_CHANGED" = "true" ]; then
+            CHANGED=$(find supabase/functions -mindepth 1 -maxdepth 1 -type d ! -name _shared -printf '%f\n' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+          fi
           echo "has_changes=$([ "$CHANGED" != '[]' ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           
           echo "Zmienione funkcje: $CHANGED"

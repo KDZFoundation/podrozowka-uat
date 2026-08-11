@@ -41,6 +41,8 @@ interface Category {
   slug: string;
 }
 
+interface Author { id: string; display_name: string; agreement_status: string; active: boolean }
+
 interface LanguageTemplate {
   id: string;
   country_id: string;
@@ -62,6 +64,7 @@ interface CardCreatorProps {
     id?: string;
     country_id: string;
     category_id?: string | null;
+    author_id?: string | null;
     language_code: string;
     view_no: number;
     title?: string | null;
@@ -83,6 +86,7 @@ export const AdminCardCreator = ({
 }: CardCreatorProps) => {
   const [countries, setCountries] = useState<Country[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [authors, setAuthors] = useState<Author[]>([]);
   const [langTemplates, setLangTemplates] = useState<LanguageTemplate[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -102,6 +106,7 @@ export const AdminCardCreator = ({
     initialDesign?.back_qr_label || "miejsce na wpisanie treści zeskanowania kodu (w danym języku)"
   );
   const [photoAuthor, setPhotoAuthor] = useState(initialDesign?.photo_author || "");
+  const [authorId, setAuthorId] = useState(initialDesign?.author_id || "none");
   const [imageUrl, setImageUrl] = useState(initialDesign?.image_front_url || "");
 
   // Crop Settings State
@@ -118,15 +123,17 @@ export const AdminCardCreator = ({
 
   // Fetch Countries, Categories & Templates
   const loadData = useCallback(async () => {
-    const [{ data: cData }, { data: tData }, { data: catData }] = await Promise.all([
+    const [{ data: cData }, { data: tData }, { data: catData }, { data: aData }] = await Promise.all([
       supabase.from("countries").select("*").order("name_pl"),
       supabase.from("card_language_templates").select("*").order("country_id"),
       supabase.from("categories").select("id, name, slug").order("sort_order").order("name"),
+      supabase.from("authors").select("id, display_name, agreement_status, active").eq("active", true).order("display_name"),
     ]);
 
     if (cData) setCountries(cData as Country[]);
     if (tData) setLangTemplates(tData as unknown as LanguageTemplate[]);
     if (catData) setCategories(catData as Category[]);
+    if (aData) setAuthors(aData as Author[]);
   }, []);
 
   useEffect(() => {
@@ -260,6 +267,7 @@ export const AdminCardCreator = ({
     const payload = {
       country_id: countryId,
       category_id: categoryId || null,
+      author_id: authorId === "none" ? null : authorId,
       language_code: languageCode || "pl",
       view_no: viewNo,
       title: null,
@@ -479,6 +487,22 @@ export const AdminCardCreator = ({
                   />
                 </label>
               </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Autor z kartoteki (umowa i dane kontaktowe)</label>
+              <Select value={authorId} onValueChange={(value) => {
+                setAuthorId(value);
+                const selected = authors.find((author) => author.id === value);
+                if (selected && !photoAuthor.trim()) setPhotoAuthor(selected.display_name);
+              }}>
+                <SelectTrigger><SelectValue placeholder="Wybierz autora…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Bez przypisania</SelectItem>
+                  {authors.map((author) => <SelectItem key={author.id} value={author.id}>{author.display_name} ({author.agreement_status})</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="mt-1 text-[11px] text-muted-foreground">Powiązanie nie zastępuje napisu na kartce — napis pozostaje edytowalny osobno.</p>
             </div>
 
             {/* Mode Switcher: Auto vs Cropping */}

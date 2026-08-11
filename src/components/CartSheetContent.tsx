@@ -4,13 +4,16 @@ import { Button } from "@/components/ui/button";
 import { SheetClose, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useCart } from "@/contexts/CartContext";
 import { useCartItems } from "@/hooks/useCartItems";
+import { useCartLanguageOptions } from "@/hooks/useCartLanguageOptions";
+import CartLanguagePicker from "@/components/cart/CartLanguagePicker";
 
 const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
 
 const CartSheetContent = () => {
-  const { setQuantity, removeItem, items: savedCartItems } = useCart();
+  const { setQuantity, setSecondaryLanguage, removeItem, items: savedCartItems } = useCart();
   const { items, subtotalGrosze, isLoading } = useCartItems();
+  const { optionsByLineId } = useCartLanguageOptions(items);
 
   const isResolvingItems = savedCartItems.length > 0 && items.length === 0;
   const empty = savedCartItems.length === 0 && !isLoading;
@@ -62,7 +65,7 @@ const CartSheetContent = () => {
           <div className="space-y-3">
             {items.map((it) => (
               <div key={it.id} className="flex gap-3 pb-3 border-b border-border/60 last:border-0">
-                <Link to={`/sklep/${it.id}`} className="shrink-0">
+                <Link to={`/sklep/${it.card_design_id}`} className="shrink-0">
                   {it.image ? (
                     <img src={it.image} alt="" className="w-16 h-16 object-cover rounded" referrerPolicy="no-referrer" />
                   ) : (
@@ -71,9 +74,12 @@ const CartSheetContent = () => {
                 </Link>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
-                    <Link to={`/sklep/${it.id}`} className="text-sm font-medium line-clamp-2 hover:text-primary">
+                    <Link to={`/sklep/${it.card_design_id}`} className="text-sm font-medium line-clamp-2 hover:text-primary">
                       {it.title || "Podróżówka"}
                     </Link>
+                    {it.secondary_language && (
+                      <p className="mt-1 text-xs text-primary">Przód: + {it.secondary_language.name}</p>
+                    )}
                     <button
                       onClick={() => removeItem(it.id)}
                       className="p-1 rounded hover:bg-muted text-muted-foreground shrink-0"
@@ -82,6 +88,15 @@ const CartSheetContent = () => {
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
+                  {!it.unavailable && (
+                    <CartLanguagePicker
+                      lineId={it.id}
+                      value={it.secondary_language}
+                      options={optionsByLineId.get(it.id) || []}
+                      onChange={(language) => setSecondaryLanguage(it.id, language)}
+                      compact
+                    />
+                  )}
                   {it.unavailable ? (
                     <p className="text-xs text-destructive flex items-center gap-1 mt-1">
                       <AlertCircle className="w-3 h-3" /> Produkt niedostępny
