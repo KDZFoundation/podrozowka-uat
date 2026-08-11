@@ -19,8 +19,8 @@ Deno.serve(async (req) => {
     if (!shipmentId) return new Response(JSON.stringify({ error: "Wymagane shipment_id" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     const { data: shipment } = await supabase.from("shipments").select("inpost_shipment_id").eq("id", shipmentId).single();
     if (!shipment?.inpost_shipment_id) return new Response(JSON.stringify({ error: "Brak przesyłki InPost" }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    const { token } = shipxCredentials();
-    const response = await fetch(`${shipxBaseUrl()}/shipments/${shipment.inpost_shipment_id}/label?format=pdf&type=A6`, { headers: shipxHeaders(token) });
+    const { token, environment } = await shipxCredentials(supabase);
+    const response = await fetch(`${shipxBaseUrl(environment)}/shipments/${shipment.inpost_shipment_id}/label?format=pdf&type=A6`, { headers: shipxHeaders(token) });
     if (!response.ok) return new Response(JSON.stringify({ error: "Etykieta nie jest jeszcze dostępna", details: await shipxError(response) }), { status: response.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     return new Response(response.body, { headers: { ...corsHeaders, "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename=inpost-${shipment.inpost_shipment_id}.pdf` } });
   } catch (error) {

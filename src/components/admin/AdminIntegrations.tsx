@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { useFeatureFlags, FeatureFlagKey } from "@/hooks/useFeatureFlags";
 import { useQueryClient } from "@tanstack/react-query";
 import AdminPaymentSettings from "@/components/admin/AdminPaymentSettings";
+import AdminInpostSettings from "@/components/admin/AdminInpostSettings";
 
 interface IntegrationSecretStatus {
   name: string;
@@ -343,6 +344,8 @@ const AdminIntegrations = () => {
                 oraz dodać sekrety <code className="font-mono">INPOST_SHIPX_ORGANIZATION_ID</code> i <code className="font-mono">INPOST_SHIPX_TOKEN</code> do sekretów Supabase.
               </p>
             </div>
+
+            <AdminInpostSettings />
           </div>
         )}
 

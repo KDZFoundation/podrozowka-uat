@@ -21,14 +21,14 @@ Deno.serve(async (req) => {
     const { data: shipment } = await supabase.from("shipments").select("id, inpost_shipment_id").eq("id", shipment_id).single();
     if (!shipment?.inpost_shipment_id) return json({ error: "Najpierw utwórz przesyłkę w InPost." }, 409, corsHeaders);
 
-    const { token } = shipxCredentials();
-    const getResponse = await fetch(`${shipxBaseUrl()}/shipments/${shipment.inpost_shipment_id}`, { headers: shipxHeaders(token) });
+    const { token, environment } = await shipxCredentials(supabase);
+    const getResponse = await fetch(`${shipxBaseUrl(environment)}/shipments/${shipment.inpost_shipment_id}`, { headers: shipxHeaders(token) });
     if (!getResponse.ok) return json({ error: "Nie udało się pobrać oferty ShipX", details: await shipxError(getResponse) }, getResponse.status, corsHeaders);
     const remoteShipment = await getResponse.json();
     const offer = remoteShipment.selected_offer || remoteShipment.offers?.find((item: { status?: string }) => item.status === "available" || item.status === "selected");
     if (!offer?.id) return json({ error: "Oferta ShipX nie jest jeszcze gotowa. Odśwież za chwilę i spróbuj ponownie.", shipx_status: remoteShipment.status }, 409, corsHeaders);
 
-    const buyResponse = await fetch(`${shipxBaseUrl()}/shipments/${shipment.inpost_shipment_id}/buy`, {
+    const buyResponse = await fetch(`${shipxBaseUrl(environment)}/shipments/${shipment.inpost_shipment_id}/buy`, {
       method: "POST", headers: shipxHeaders(token), body: JSON.stringify({ offer_id: offer.id }),
     });
     if (!buyResponse.ok) return json({ error: "Nie udało się kupić przesyłki w ShipX", details: await shipxError(buyResponse) }, buyResponse.status, corsHeaders);

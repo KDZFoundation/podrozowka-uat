@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import type { PickupPoint } from "@/contexts/CheckoutContext";
+import { supabase } from "@/integrations/supabase/client";
 
 // Web component type declaration
 declare global {
@@ -83,9 +84,10 @@ interface Props {
 }
 
 const InpostGeowidget = ({ onSelect }: Props) => {
-  const token = import.meta.env.VITE_INPOST_GEOWIDGET_TOKEN as string | undefined;
+  const configuredToken = import.meta.env.VITE_INPOST_GEOWIDGET_TOKEN as string | undefined;
+  const [token, setToken] = useState<string | undefined>(configuredToken);
   const [status, setStatus] = useState<"loading" | "ready" | "error" | "no-token">(
-    token ? "loading" : "no-token",
+    configuredToken ? "loading" : "no-token",
   );
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -93,6 +95,20 @@ const InpostGeowidget = ({ onSelect }: Props) => {
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
+
+  useEffect(() => {
+    if (configuredToken) return;
+    let cancelled = false;
+    supabase.functions.invoke<{ token: string | null }>("inpost-geowidget-config", { method: "GET" })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error || !data?.token) { setStatus("no-token"); return; }
+        setToken(data.token);
+        setStatus("loading");
+      })
+      .catch(() => { if (!cancelled) setStatus("no-token"); });
+    return () => { cancelled = true; };
+  }, [configuredToken]);
 
   useEffect(() => {
     if (!token) return;

@@ -37,6 +37,7 @@ try {
     'p24-webhook',
     'hotpay-webhook',
     'inpost-shipx-webhook',
+    'inpost-geowidget-config',
     'issue-fiscal-document',
     'fiscal-document-pdf',
     'create-payment'
@@ -47,7 +48,8 @@ try {
     'create-inpost-shipment',
     'buy-inpost-shipment',
     'get-inpost-label',
-    'admin-payment-status'
+    'admin-payment-status',
+    'admin-inpost-settings'
   )
 
   foreach ($functionName in $functionsWithoutJwt) {
