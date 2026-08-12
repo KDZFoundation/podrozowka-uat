@@ -869,7 +869,10 @@ FunctionsClientProto.invoke = async function (functionName: string, options?: In
     const context = (res.error as { context?: Response })?.context;
     const isNotDeployed = context?.headers?.get?.("sb-error-code") === "NOT_FOUND";
 
-    if (!isNotDeployed && !emulatedFunctions.includes(name)) {
+    // A deployed function can still return 400/401/500. Those responses must
+    // be returned to the caller instead of being mislabelled as "not found"
+    // and replaced by the development-only fallback.
+    if (!isNotDeployed) {
       let finalMsg: string | undefined;
 
       if (context) {

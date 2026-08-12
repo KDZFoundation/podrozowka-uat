@@ -287,7 +287,17 @@ const MyOrders = ({ userId }: { userId: string }) => {
         payment_method: paymentMethod,
         invoice: { requested: false },
       };
-      const { data, error } = await supabase.functions.invoke("create-payment", { body: payload });
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        toast.error("Sesja wygasła", { description: "Zaloguj się ponownie przed przejściem do płatności." });
+        setIsSubmitting(false);
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke("create-payment", {
+        body: payload,
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
       if (error) throw error;
       const res = data as CreatePaymentResponse;
       const errCode = res?.error;

@@ -145,7 +145,20 @@ const Checkout = () => {
           : { requested: false },
       };
       const { supabase } = await import("@/integrations/supabase/client");
-      const { data, error } = await supabase.functions.invoke("create-payment", { body: payload });
+      // Pass the current access token explicitly. This keeps the checkout
+      // request authenticated even when the Functions client has not yet
+      // picked up a restored OAuth session after a page refresh.
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        toast.error("Sesja wygasła", { description: "Zaloguj się ponownie przed przejściem do płatności." });
+        setIsSubmitting(false);
+        return;
+      }
+      const { data, error } = await supabase.functions.invoke("create-payment", {
+        body: payload,
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
       if (error) throw error;
       interface CreatePaymentResponse {
         error?: string;
