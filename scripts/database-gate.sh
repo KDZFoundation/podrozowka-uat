@@ -18,6 +18,11 @@ run_psql() {
     psql -h "$PG_HOST" -v ON_ERROR_STOP=1 -U postgres -d "$DB_NAME" "$@"
 }
 
+run_admin_psql() {
+  MSYS_NO_PATHCONV=1 docker exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$CONTAINER_NAME" \
+    psql -h 127.0.0.1 -v ON_ERROR_STOP=1 -U supabase_admin -d "$DB_NAME" "$@"
+}
+
 assert_equals() {
   local description="$1"
   local actual="$2"
@@ -74,6 +79,24 @@ for attempt in {1..60}; do
 
   sleep 1
 done
+
+# Storage metadata is normally provisioned by the Supabase Storage service,
+# which is not started by the lightweight PostgreSQL image used by this gate.
+# Provide the minimal catalog required by our storage migration; this exists
+# only in the disposable test container.
+run_admin_psql -c '
+  create table if not exists storage.buckets (
+    id text primary key,
+    name text not null,
+    public boolean not null default false
+  );
+  create table if not exists storage.objects (
+    bucket_id text not null
+  );
+
+  alter table storage.buckets owner to postgres;
+  alter table storage.objects owner to postgres;
+'
 
 mapfile -t migrations < <(find supabase/migrations -maxdepth 1 -type f -name '*.sql' -print | sort)
 if [[ "${#migrations[@]}" -eq 0 ]]; then
