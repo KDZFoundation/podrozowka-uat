@@ -203,13 +203,13 @@ const UserRanking = () => {
             className="text-center"
           >
             <span className="inline-block px-3 py-1 bg-[hsl(var(--gold))]/10 text-[hsl(var(--gold))] rounded-full text-sm font-medium mb-4">
-              Top Ambasadorów Polski
+              Top Podróżników
             </span>
             <h2 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">
-              Bądź pierwszym ambasadorem!
+              Bądź pierwszym podróżnikiem w rankingu!
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto mb-8">
-              Dołącz do społeczności, kupuj Podróżówki i zostań jednym z naszych ambasadorów promujących Polskę na
+              Dołącz do społeczności, kupuj Podróżówki i zostań jednym z podróżników promujących Polskę na
               świecie.
             </p>
             <a
@@ -238,7 +238,7 @@ const UserRanking = () => {
             Cultural Impact Ranking
           </span>
           <h2 className="font-display text-3xl md:text-4xl font-bold text-foreground mb-4">
-            Top Ambasadorów Polski
+            Top Podróżników
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto">
             Użytkownicy z największym wpływem kulturowym — promują Polskę na świecie i budują relacje.

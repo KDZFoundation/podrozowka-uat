@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Users, Globe2, CheckCircle, ShoppingBag } from "lucide-react";
+import { Compass as Users, Globe2, MapPinned as CheckCircle, Send as ShoppingBag } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -75,7 +75,7 @@ const PlatformStats = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
           {statsData.map((stat, index) => (
             <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: index * 0.1 }} viewport={{ once: true }}
-              className="bg-card rounded-xl p-6 shadow-soft text-center">
+              className="relative overflow-hidden rounded-xl border border-border/70 bg-card p-6 text-center shadow-soft before:absolute before:inset-x-0 before:top-0 before:h-1 before:bg-primary/80">
               <div className={`inline-flex items-center justify-center w-12 h-12 ${stat.bgColor} rounded-full mb-4`}>
                 <stat.icon className={`w-6 h-6 ${stat.color}`} />
               </div>
