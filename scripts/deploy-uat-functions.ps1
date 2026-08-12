@@ -39,6 +39,7 @@ try {
     'inpost-shipx-webhook',
     'inpost-geowidget-config',
     'orlen-widget-config',
+    'contact-form',
     'issue-fiscal-document',
     'fiscal-document-pdf',
     'create-payment'

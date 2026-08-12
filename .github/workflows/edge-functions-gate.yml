@@ -118,7 +118,7 @@ jobs:
         if: env.SKIP_DEPLOY != 'true'
         run: |
           # Funkcje które nie wymagają autoryzacji JWT
-          NO_JWT_FUNCTIONS="register-postcard generate-qr generate-qr-pdf p24-webhook issue-fiscal-document fiscal-document-pdf create-payment"
+          NO_JWT_FUNCTIONS="register-postcard generate-qr generate-qr-pdf p24-webhook hotpay-webhook inpost-shipx-webhook inpost-geowidget-config orlen-widget-config contact-form issue-fiscal-document fiscal-document-pdf create-payment"
           
           for func in $(echo '${{ needs.detect-changes.outputs.changed }}' | jq -r '.[]'); do
             JWT_FLAG=""

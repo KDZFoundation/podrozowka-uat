@@ -6,22 +6,31 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const CONTACT_EMAIL = "kontakt@podrozowka.pl";
 
 const Contact = () => {
   const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
+  const [isSending, setIsSending] = useState(false);
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const subject = form.subject.trim() || "Wiadomość ze strony Podróżówka";
-    const body = [
-      `Imię i nazwisko: ${form.name}`,
-      `E-mail: ${form.email}`,
-      "",
-      form.message,
-    ].join("\n");
-    window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    setIsSending(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<{ error?: string }>("contact-form", { body: form });
+      if (error || data?.error) throw new Error(data?.error || error?.message);
+      toast.success("Wiadomość została wysłana", { description: "Odpowiemy na podany adres e-mail." });
+      setForm({ name: "", email: "", subject: "", message: "" });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      toast.error("Nie udało się wysłać wiadomości", {
+        description: code === "email_not_configured" ? "Formularz wymaga jeszcze konfiguracji poczty." : "Spróbuj ponownie lub napisz bezpośrednio na kontakt@podrozowka.pl.",
+      });
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
@@ -49,14 +58,14 @@ const Contact = () => {
 
               <form onSubmit={handleSubmit} className="rounded-3xl border border-border bg-card p-6 shadow-soft md:p-9">
                 <h2 className="font-display text-2xl font-bold text-foreground">Formularz kontaktowy</h2>
-                <p className="mt-2 text-sm text-muted-foreground">Po wysłaniu otworzy się Twoja aplikacja pocztowa z gotową wiadomością do nas.</p>
+                <p className="mt-2 text-sm text-muted-foreground">Wiadomość zostanie wysłana bezpośrednio do naszego zespołu.</p>
                 <div className="mt-7 grid gap-5">
                   <div className="grid gap-2"><Label htmlFor="contact-name">Imię i nazwisko</Label><Input id="contact-name" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></div>
                   <div className="grid gap-2"><Label htmlFor="contact-email">Adres e-mail</Label><Input id="contact-email" type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></div>
                   <div className="grid gap-2"><Label htmlFor="contact-subject">Temat</Label><Input id="contact-subject" required value={form.subject} onChange={(event) => setForm({ ...form, subject: event.target.value })} placeholder="Np. pytanie o zamówienie" /></div>
                   <div className="grid gap-2"><Label htmlFor="contact-message">Wiadomość</Label><Textarea id="contact-message" required value={form.message} onChange={(event) => setForm({ ...form, message: event.target.value })} className="min-h-36 resize-y" placeholder="Jak możemy pomóc?" /></div>
                 </div>
-                <Button type="submit" className="mt-7 w-full sm:w-auto"><Send className="mr-2 h-4 w-4" />Przygotuj wiadomość</Button>
+                <Button type="submit" disabled={isSending} className="mt-7 w-full sm:w-auto"><Send className="mr-2 h-4 w-4" />{isSending ? "Wysyłanie..." : "Wyślij"}</Button>
               </form>
             </div>
           </div>
