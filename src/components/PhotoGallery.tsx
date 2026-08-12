@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import krakowImage from "@/assets/images/krakow_square_1784208481677.jpg";
+import chopinMonumentImage from "@/assets/images/chopin-monument-warsaw.jpg";
 import polishArtImage from "@/assets/images/p11-wycinanka-ludowa.png";
 import heroImage from "@/assets/images/tatra_village_sunset_1784209489924.jpg";
 import wroclawImage from "@/assets/images/wroclaw_1784208512742.jpg";
@@ -27,12 +27,12 @@ const photos: Photo[] = [
   },
   {
     id: "2",
-    src: krakowImage,
-    alt: "Rynek Główny w Krakowie",
-    title: "Bazylika Mariacka nocą",
-    location: "Kraków, Małopolska",
-    photographer: "Anna Nowak",
-    category: "architektura"
+    src: chopinMonumentImage,
+    alt: "Pomnik Fryderyka Chopina w Łazienkach Królewskich w Warszawie",
+    title: "Pomnik Fryderyka Chopina",
+    location: "Łazienki Królewskie, Warszawa",
+    photographer: "Аимаина хикари / Wikimedia Commons (CC0)",
+    category: "postacie"
   },
   {
     id: "3",
