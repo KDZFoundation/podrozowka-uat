@@ -328,8 +328,12 @@ const MyOrders = ({ userId }: { userId: string }) => {
       window.location.href = url;
     } catch (err) {
       console.error(err);
-      const e = err as Error;
-      toast.error("Nie udało się rozpocząć płatności", { description: e?.message });
+      const errMsg = err instanceof Error
+        ? err.message
+        : typeof err === "object" && err && "message" in err
+          ? String((err as { message?: unknown }).message || "Błąd płatności")
+          : String(err);
+      toast.error("Nie udało się rozpocząć płatności", { description: errMsg });
       setIsSubmitting(false);
     }
   };

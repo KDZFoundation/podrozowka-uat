@@ -200,7 +200,11 @@ const Checkout = () => {
       window.location.href = url;
     } catch (e) {
       console.error(e);
-      const errMsg = e instanceof Error ? e.message : String(e);
+      const errMsg = e instanceof Error
+        ? e.message
+        : typeof e === "object" && e && "message" in e
+          ? String((e as { message?: unknown }).message || "Błąd płatności")
+          : String(e);
       toast.error("Nie udało się rozpocząć płatności", { description: errMsg });
       setIsSubmitting(false);
     }
