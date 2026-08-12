@@ -25,6 +25,7 @@ import ResetPassword from "./pages/ResetPassword";
 import QrRegistrationTest from "./pages/QrRegistrationTest";
 import Community from "./pages/Community";
 import Map from "./pages/Map";
+import Contact from "./pages/Contact";
 
 const queryClient = new QueryClient();
 
@@ -41,6 +42,7 @@ const App = () => (
                 <Route path="/" element={<Index />} />
                 <Route path="/spolecznosc" element={<Community />} />
                 <Route path="/mapa" element={<Map />} />
+                <Route path="/kontakt" element={<Contact />} />
                 <Route path="/auth" element={<Auth mode="login" />} />
                 <Route path="/logowanie" element={<Auth mode="login" />} />
                 <Route path="/rejestracja" element={<Auth mode="signup" />} />

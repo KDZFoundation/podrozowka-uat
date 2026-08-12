@@ -46,6 +46,7 @@ const Footer = () => {
               <li><Link to="/mapa" className="hover:text-primary-foreground transition-colors">Mapa</Link></li>
               <li><Link to="/sklep" className="hover:text-primary-foreground transition-colors">Sklep</Link></li>
               <li><Link to="/spolecznosc" className="hover:text-primary-foreground transition-colors">Społeczność</Link></li>
+              <li><Link to="/kontakt" className="hover:text-primary-foreground transition-colors">Kontakt</Link></li>
               <li><Link to="/polityka-prywatnosci" className="hover:text-primary-foreground transition-colors">Polityka prywatności</Link></li>
               <li><Link to="/regulamin" className="hover:text-primary-foreground transition-colors">Regulamin</Link></li>
               <li><Link to="/zwroty" className="hover:text-primary-foreground transition-colors">Zwroty i reklamacje</Link></li>
@@ -56,7 +57,7 @@ const Footer = () => {
           <div>
             <h4 className="mb-3 text-sm font-semibold">Kontakt</h4>
             <ul className="space-y-1.5 text-sm text-primary-foreground/70">
-              <li>kontakt@podrozowka.pl</li>
+              <li><Link to="/kontakt" className="hover:text-primary-foreground transition-colors">kontakt@podrozowka.pl</Link></li>
               <li>Polska</li>
               <li className="pt-1">
                 <Link 

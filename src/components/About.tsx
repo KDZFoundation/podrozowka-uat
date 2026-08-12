@@ -1,20 +1,12 @@
 import { motion } from "framer-motion";
 import { Heart, Globe, Users, Sparkles } from "lucide-react";
-import polishArtImage from "@/assets/polish-art.jpg";
-import krakowImage from "@/assets/krakow-square.jpg";
-import eventImage from "@/assets/event-wianki.jpg";
+import PostcardPreview from "@/components/PostcardPreview";
 
 const features = [
   { icon: Heart, title: "Osobiste podziękowanie", description: "Wręcz coś wyjątkowego zamiast zwykłej wizytówki czy napiwku." },
   { icon: Globe, title: "Ambasador Polski", description: "Pokaż światu piękno naszego kraju poprzez sztukę i fotografię." },
   { icon: Users, title: "Budowanie relacji", description: "Twórz autentyczne więzi międzykulturowe podczas swoich podróży." },
   { icon: Sparkles, title: "Unikalna pamiątka", description: "Każda Podróżówka to dzieło sztuki, które zostanie zapamiętane." },
-];
-
-const projectImages = [
-  { src: polishArtImage, alt: "Polska wycinanka ludowa" },
-  { src: krakowImage, alt: "Krakowski rynek" },
-  { src: eventImage, alt: "Tradycyjne wianki na Wiśle" },
 ];
 
 const About = () => (
@@ -38,14 +30,8 @@ const About = () => (
             </div>
           </motion.div>
         </div>
-        <motion.div initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6 }} viewport={{ once: true }} className="relative">
-          <div className="grid grid-cols-2 gap-3">
-            {projectImages.map((image, index) => (
-              <div key={image.src} className={`overflow-hidden rounded-2xl shadow-elevated ${index === 0 ? "col-span-2" : ""}`}><img src={image.src} alt={image.alt} className={`w-full object-cover ${index === 0 ? "aspect-[2/1]" : "aspect-square"}`} referrerPolicy="no-referrer" /></div>
-            ))}
-          </div>
-          <div className="absolute -bottom-6 -left-6 max-w-xs rounded-xl bg-card p-6 shadow-card"><p className="mb-2 font-display text-sm text-muted-foreground">Inspirowane tradycją</p><p className="font-medium text-foreground">Wzory czerpią z polskiej sztuki ludowej, wycinanek i tradycyjnych motywów.</p></div>
-          <div className="absolute -right-4 -top-4 h-24 w-24 rounded-full bg-primary/10 blur-2xl" />
+        <motion.div initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }} transition={{ duration: 0.6 }} viewport={{ once: true }}>
+          <PostcardPreview embedded />
         </motion.div>
       </div>
     </div>
