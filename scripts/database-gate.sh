@@ -37,6 +37,21 @@ assert_equals() {
 }
 
 echo "Starting isolated PostgreSQL image: $POSTGRES_IMAGE"
+for attempt in {1..4}; do
+  if docker pull "$POSTGRES_IMAGE"; then
+    break
+  fi
+
+  if [[ "$attempt" == "4" ]]; then
+    echo "Database Gate failed: could not pull $POSTGRES_IMAGE after 4 attempts." >&2
+    exit 1
+  fi
+
+  wait_seconds=$((attempt * 15))
+  echo "Image pull failed (possibly a registry rate limit). Retrying in ${wait_seconds}s..." >&2
+  sleep "$wait_seconds"
+done
+
 docker run -d --name "$CONTAINER_NAME" \
   -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
   -e POSTGRES_DB="$DB_NAME" \
