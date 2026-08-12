@@ -51,6 +51,15 @@ try {
     Write-Output 'Including migrations that were added before the latest remote migration.'
   }
 
+  # Configure the linked temporary project with the IPv4 database connection.
+  # This is required on networks without IPv6 support; it never alters the
+  # repository's main Supabase configuration or the DEV project link.
+  Write-Output 'Configuring IPv4 connection for UAT...'
+  & $cliPath link --workdir $deployWorkdir --project-ref $ProjectRef --password $plainPassword
+  if ($LASTEXITCODE -ne 0) {
+    throw "UAT project link failed with exit code $LASTEXITCODE"
+  }
+
   Write-Output 'Previewing UAT migrations...'
   & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword --dry-run $includeAllArgs
   if ($LASTEXITCODE -ne 0) {
