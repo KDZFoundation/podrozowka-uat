@@ -1,5 +1,6 @@
 param(
-  [string]$ProjectRef = 'nqqephusxnxzzkfulfae'
+  [string]$ProjectRef = 'nqqephusxnxzzkfulfae',
+  [switch]$IncludeAll
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,15 +45,20 @@ $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure
 
 try {
   $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
+  $includeAllArgs = if ($IncludeAll) { @('--include-all') } else { @() }
+
+  if ($IncludeAll) {
+    Write-Output 'Including migrations that were added before the latest remote migration.'
+  }
 
   Write-Output 'Previewing UAT migrations...'
-  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword --dry-run
+  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword --dry-run @includeAllArgs
   if ($LASTEXITCODE -ne 0) {
     throw "UAT migration preview failed with exit code $LASTEXITCODE"
   }
 
   Write-Output 'Applying pending migrations to UAT...'
-  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword
+  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword @includeAllArgs
   if ($LASTEXITCODE -ne 0) {
     throw "UAT migration deployment failed with exit code $LASTEXITCODE"
   }
