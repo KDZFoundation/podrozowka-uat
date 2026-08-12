@@ -52,13 +52,13 @@ try {
   }
 
   Write-Output 'Previewing UAT migrations...'
-  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword --dry-run @includeAllArgs
+  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword --dry-run $includeAllArgs
   if ($LASTEXITCODE -ne 0) {
     throw "UAT migration preview failed with exit code $LASTEXITCODE"
   }
 
   Write-Output 'Applying pending migrations to UAT...'
-  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword @includeAllArgs
+  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword $includeAllArgs
   if ($LASTEXITCODE -ne 0) {
     throw "UAT migration deployment failed with exit code $LASTEXITCODE"
   }
