@@ -36,7 +36,7 @@ const ImpactExplainer = () => (
               </div>
             ))}
           </div>
-        </div>
+        </article>
         <article className="rounded-2xl border border-border bg-card p-6 shadow-soft">
           <div className="flex items-center gap-3"><Flag className="h-6 w-6 text-primary" /><h3 className="font-display text-2xl font-bold text-foreground">Misje kulturowe</h3></div>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">To cele, które zachęcają do świadomego odkrywania nowych miejsc i budowania relacji.</p>
@@ -45,12 +45,12 @@ const ImpactExplainer = () => (
             <li className="flex gap-2"><BookOpenCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />Przekaż Podróżówkę w wyjątkowym spotkaniu.</li>
             <li className="flex gap-2"><BookOpenCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />Zdobądź potwierdzenie relacji przez kod QR.</li>
           </ul>
-        </div>
+        </article>
         <article className="rounded-2xl border border-border bg-card p-6 shadow-soft">
           <div className="flex items-center gap-3"><HeartHandshake className="h-6 w-6 text-accent" /><h3 className="font-display text-2xl font-bold text-foreground">Ściana relacji</h3></div>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground">Gdy obdarowany zeskanuje kod QR i zarejestruje kartkę, powstaje potwierdzenie Waszego spotkania.</p>
           <div className="mt-5 rounded-xl bg-secondary p-4 text-sm text-muted-foreground"><Route className="mb-2 h-5 w-5 text-accent" />To właśnie z takich połączeń tworzy się mapa i galeria społeczności.</div>
-        </div>
+        </article>
       </div>
     </div>
   </section>
