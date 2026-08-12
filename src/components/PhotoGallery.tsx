@@ -1,9 +1,9 @@
 import { motion } from "framer-motion";
-import krakowImage from "@/assets/krakow-square.jpg";
-import polishArtImage from "@/assets/polish-art.jpg";
-import heroImage from "@/assets/hero-poland.jpg";
-import eventImage from "@/assets/event-wianki.jpg";
-import peopleImage from "@/assets/people-gorale.jpg";
+import krakowImage from "@/assets/images/krakow_square_1784208481677.jpg";
+import polishArtImage from "@/assets/images/p11-wycinanka-ludowa.png";
+import heroImage from "@/assets/images/tatra_village_sunset_1784209489924.jpg";
+import wroclawImage from "@/assets/images/wroclaw_1784208512742.jpg";
+import wiankiImage from "@/assets/images/wianki_festival_krakow_1784209523878.jpg";
 
 interface Photo {
   id: string;
@@ -45,21 +45,21 @@ const photos: Photo[] = [
   },
   {
     id: "4",
-    src: eventImage,
-    alt: "Tradycyjne puszczanie wianków świętojańskich na Wiśle w Krakowie",
-    title: "Puszczanie wianków na Wiśle",
-    location: "Kraków, Małopolska",
-    photographer: "Michał Wiśniewski",
-    category: "wydarzenie"
+    src: wroclawImage,
+    alt: "Kolorowe kamienice nad Odrą we Wrocławiu",
+    title: "Kolorowe kamienice Wrocławia",
+    location: "Wrocław, Dolny Śląsk",
+    photographer: "Podróżówka",
+    category: "architektura"
   },
   {
     id: "5",
-    src: peopleImage,
-    alt: "Górale w tradycyjnych strojach podhalańskich",
-    title: "Górale w strojach ludowych",
-    location: "Zakopane, Podhale",
-    photographer: "Tomasz Kot",
-    category: "postacie"
+    src: wiankiImage,
+    alt: "Tradycyjne wianki na Wiśle",
+    title: "Wianki nad Wisłą",
+    location: "Kraków, Małopolska",
+    photographer: "Podróżówka",
+    category: "wydarzenie"
   }
 ];
 
@@ -81,7 +81,7 @@ const PhotoGallery = () => {
         </div>
 
         {/* Gallery grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-6xl mx-auto">
+        <div className="grid max-w-5xl grid-cols-1 gap-4 md:grid-cols-2 md:gap-5 mx-auto">
           {photos.map((photo, index) => (
             <motion.div
               key={photo.id}
@@ -90,13 +90,15 @@ const PhotoGallery = () => {
               transition={{ duration: 0.5, delay: index * 0.1 }}
               viewport={{ once: true }}
               className={`group relative overflow-hidden rounded-2xl ${
-                index === 0 ? "md:col-span-2 aspect-[2/1]" : "aspect-square"
+                index === 0 ? "md:col-span-2 aspect-[2/1]" : "aspect-[4/3]"
               }`}
             >
               <img
                 src={photo.src}
                 alt={photo.alt}
-                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                className={`h-full w-full transition-transform duration-700 group-hover:scale-105 ${
+                  photo.id === "3" ? "object-contain bg-[#f8eed0] p-2" : "object-cover"
+                }`}
                 referrerPolicy="no-referrer"
               />
               

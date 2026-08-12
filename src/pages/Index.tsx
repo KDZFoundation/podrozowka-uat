@@ -1,6 +1,5 @@
 import Header from "@/components/Header";
 import Hero from "@/components/Hero";
-import PostcardPreview from "@/components/PostcardPreview";
 import About from "@/components/About";
 import LanguageShowcase from "@/components/LanguageShowcase";
 import PhotoGallery from "@/components/PhotoGallery";
@@ -13,7 +12,6 @@ const Index = () => (
     <main id="main-content">
       <Hero />
       <CommunityLoop />
-      <PostcardPreview />
       <About />
       <LanguageShowcase />
       <PhotoGallery />

@@ -1,13 +1,13 @@
 import { Link } from "react-router-dom";
-import { ArrowRight, Gift, QrCode, Sparkles, Trophy, Users } from "lucide-react";
+import { ArrowRight, HandHeart, MapPinned, Plane, QrCode, Sparkles } from "lucide-react";
 import { useEffect } from "react";
 import { trackEvent } from "@/lib/analytics";
 
 const steps = [
-  { icon: Gift, number: "01", title: "Wybierasz", text: "Łączysz różne wzory i liczby kartek w jednym zamówieniu." },
-  { icon: Users, number: "02", title: "Wręczasz", text: "Zabierasz Podróżówki ze sobą i dziękujesz osobom spotkanym w drodze." },
-  { icon: QrCode, number: "03", title: "Obdarowany skanuje QR", text: "Obdarowana osoba wpisuje swoje dane i przypisuje kartkę do Twojej historii." },
-  { icon: Trophy, number: "04", title: "Budujesz wpływ", text: "Każda zarejestrowana relacja rozwija Twój Wpływ Kulturowy, rangę i misje." },
+  { icon: MapPinned, number: "01", title: "Wybierasz kierunek", text: "Dobierasz wzory i języki do osób, które możesz spotkać po drodze." },
+  { icon: Plane, number: "02", title: "Ruszysz w podróż", text: "Zabierasz Podróżówki ze sobą — gotowe na wyjątkowe spotkania." },
+  { icon: HandHeart, number: "03", title: "Wręczasz gest", text: "Dziękujesz osobie spotkanej w podróży i przekazujesz jej cząstkę Polski." },
+  { icon: QrCode, number: "04", title: "Łączy Was QR", text: "Obdarowany rejestruje kartkę, a relacja zasila Twoją historię i wpływ kulturowy." },
 ];
 
 const CommunityLoop = () => {
@@ -22,13 +22,14 @@ const CommunityLoop = () => {
       </div>
 
       <div className="relative mt-12 grid gap-4 md:grid-cols-4">
-        <div className="absolute left-[12%] right-[12%] top-12 hidden h-px bg-primary/20 md:block" aria-hidden="true" />
+        <div className="absolute left-[12%] right-[12%] top-12 hidden border-t-2 border-dashed border-primary/30 md:block" aria-hidden="true" />
         {steps.map((step) => (
-          <article key={step.number} className="relative rounded-2xl border border-border/70 bg-card p-5 shadow-soft">
-            <div className="mb-5 flex items-center justify-between"><div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground"><step.icon className="h-5 w-5" /></div><span className="text-sm font-bold tracking-widest text-primary/60">{step.number}</span></div>
-            <h3 className="font-display text-lg font-semibold">{step.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{step.text}</p>
-          </article>
+            <article key={step.number} className="relative overflow-hidden rounded-2xl border border-border/70 bg-card p-5 shadow-soft transition-transform hover:-translate-y-1">
+              <div className="absolute -right-5 -top-6 font-display text-8xl font-bold text-primary/[0.06]" aria-hidden="true">{step.number}</div>
+              <div className="mb-5 flex items-center justify-between"><div className="flex h-12 w-12 items-center justify-center rounded-full border-4 border-background bg-primary text-primary-foreground shadow-soft"><step.icon className="h-5 w-5" /></div><span className="text-sm font-bold tracking-widest text-primary/60">ETAP {step.number}</span></div>
+              <h3 className="font-display text-lg font-semibold">{step.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{step.text}</p>
+            </article>
         ))}
       </div>
 

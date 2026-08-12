@@ -20,6 +20,7 @@ import { useFeatureFlags, FeatureFlagKey } from "@/hooks/useFeatureFlags";
 import { useQueryClient } from "@tanstack/react-query";
 import AdminPaymentSettings from "@/components/admin/AdminPaymentSettings";
 import AdminInpostSettings from "@/components/admin/AdminInpostSettings";
+import AdminOrlenSettings from "@/components/admin/AdminOrlenSettings";
 
 interface IntegrationSecretStatus {
   name: string;
@@ -386,32 +387,7 @@ const AdminIntegrations = () => {
               </div>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="p-4 rounded-xl bg-muted/40 border border-border space-y-2">
-                <span className="text-xs font-medium text-muted-foreground block">Partner ID / Login NADAJ:</span>
-                <div className="font-mono text-xs text-foreground bg-background p-2 rounded border border-border flex items-center justify-between">
-                  <span>ORLEN_PACZKA_PARTNER_ID</span>
-                  <span className="text-muted-foreground text-[11px]">(do skonfigurowania)</span>
-                </div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-muted/40 border border-border space-y-2">
-                <span className="text-xs font-medium text-muted-foreground block">Klucz API ORLEN:</span>
-                <div className="font-mono text-xs text-foreground bg-background p-2 rounded border border-border flex items-center justify-between">
-                  <span>ORLEN_PACZKA_API_KEY</span>
-                  <span className="text-muted-foreground text-[11px]">(do skonfigurowania)</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-blue-500/5 border border-blue-500/20 text-xs text-blue-900 dark:text-blue-200 space-y-1">
-              <p className="font-semibold flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400" /> Wirtualna integracja gotowa
-              </p>
-              <p className="text-muted-foreground leading-relaxed">
-                Moduł wyboru punktów odbioru ORLEN Paczka oraz wysyłania przesyłek poprzez API NADAJ jest przygotowany pod podłączenie kluczy produkcyjnych lub testowych API ORLEN.
-              </p>
-            </div>
+            <AdminOrlenSettings />
           </div>
         )}
 

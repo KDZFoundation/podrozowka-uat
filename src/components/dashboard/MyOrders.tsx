@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Loader2, ShoppingCart, ArrowLeft, Plus, Minus, Trash2, MapPin, Package } from "lucide-react";
 import { toast } from "sonner";
 import InpostGeowidget from "@/components/checkout/InpostGeowidget";
+import OrlenPaczkaWidget from "@/components/checkout/OrlenPaczkaWidget";
 import type { PickupPoint } from "@/contexts/CheckoutContext";
 import {
   getShippingCostGrosze,
@@ -242,7 +243,9 @@ const MyOrders = ({ userId }: { userId: string }) => {
   const totalGrosze = subtotalGrosze + shippingCostGrosze;
 
   const shippingValid =
-    shippingMethod === "inpost" ? !!pickupPoint : isCourierAddressValid(courierAddress);
+    shippingMethod === "inpost" || shippingMethod === "orlen"
+      ? !!pickupPoint && pickupPoint.provider === shippingMethod
+      : isCourierAddressValid(courierAddress);
 
 
 
@@ -253,8 +256,8 @@ const MyOrders = ({ userId }: { userId: string }) => {
     }
     if (!shippingValid) {
       toast.error(
-        shippingMethod === "inpost"
-          ? "Wybierz paczkomat InPost"
+        shippingMethod === "inpost" || shippingMethod === "orlen"
+          ? `Wybierz ${shippingMethod === "orlen" ? "punkt ORLEN Paczka" : "paczkomat InPost"}`
           : "Uzupełnij dane adresowe do kuriera",
       );
       return;
@@ -266,11 +269,12 @@ const MyOrders = ({ userId }: { userId: string }) => {
         items: cart.map((c) => ({ card_design_id: c.design_id, quantity: c.quantity })),
         shipping_method: shippingMethod,
         pickup_point:
-          shippingMethod === "inpost" && pickupPoint
+          (shippingMethod === "inpost" || shippingMethod === "orlen") && pickupPoint
             ? {
                 name: pickupPoint.name,
                 address: pickupPoint.address,
                 city: pickupPoint.city,
+                code: pickupPoint.code || null,
               }
             : null,
         shipping_address:
@@ -460,7 +464,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
                   <span>Suma częściowa</span><span>{formatPln(subtotalGrosze)}</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Dostawa (InPost{paymentMethod === "cod" ? ", za pobraniem" : ""})</span>
+                  <span>Dostawa ({shippingMethod === "courier" ? "kurier" : shippingMethod === "orlen" ? "ORLEN Paczka" : "InPost"}{paymentMethod === "cod" ? ", za pobraniem" : ""})</span>
                   <span>{formatPln(shippingCostGrosze)}</span>
                 </div>
                 <div className="flex justify-between font-display font-bold text-base pt-1">
@@ -486,13 +490,13 @@ const MyOrders = ({ userId }: { userId: string }) => {
             </div>
             <div>
               <h3 className="font-medium">Metoda dostawy</h3>
-              <p className="text-sm text-muted-foreground">Paczkomat InPost lub kurier pod wskazany adres.</p>
+              <p className="text-sm text-muted-foreground">Punkt InPost, ORLEN Paczka lub kurier pod wskazany adres.</p>
             </div>
           </div>
 
           <ShippingMethodPicker value={shippingMethod} onChange={setShippingMethod} />
 
-          {shippingMethod === "inpost" ? (
+          {shippingMethod === "inpost" || shippingMethod === "orlen" ? (
             pickupPoint ? (
               <div className="border border-border rounded-xl p-4 flex items-start gap-3">
                 <MapPin className="w-5 h-5 text-primary shrink-0 mt-0.5" />
@@ -505,7 +509,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
               </div>
             ) : (
               <Button variant="outline" onClick={() => setDialogOpen(true)}>
-                <MapPin className="w-4 h-4 mr-2" /> Wybierz paczkomat
+                <MapPin className="w-4 h-4 mr-2" /> {shippingMethod === "orlen" ? "Wybierz punkt ORLEN Paczka" : "Wybierz paczkomat"}
               </Button>
             )
           ) : (
@@ -530,15 +534,17 @@ const MyOrders = ({ userId }: { userId: string }) => {
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogContent className="max-w-4xl w-[95vw] p-4 sm:p-6">
             <DialogHeader>
-              <DialogTitle>Wybierz paczkomat InPost</DialogTitle>
+              <DialogTitle>{shippingMethod === "orlen" ? "Wybierz punkt ORLEN Paczka" : "Wybierz paczkomat InPost"}</DialogTitle>
             </DialogHeader>
-            <InpostGeowidget
+            {shippingMethod === "orlen" ? <OrlenPaczkaWidget onSelect={(p) => {
+              setPickupPoint(p); setDialogOpen(false); toast.success("Wybrano punkt ORLEN Paczka", { description: p.name });
+            }} /> : <InpostGeowidget
               onSelect={(p) => {
                 setPickupPoint(p);
                 setDialogOpen(false);
                 toast.success("Wybrano paczkomat", { description: p.name });
               }}
-            />
+            />}
           </DialogContent>
         </Dialog>
       </div>

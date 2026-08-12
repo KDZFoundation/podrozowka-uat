@@ -1,5 +1,5 @@
 param(
-  [string]$ProjectRef = 'iyxbgyfuudwcrirlbmhb'
+  [string]$ProjectRef = 'xiqhaiyieisgemqopxfw'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,69 +14,36 @@ foreach ($requiredPath in @($cliPath, $configPath)) {
   }
 }
 
-$confirmation = Read-Host "Czy na pewno chcesz wdrożyć na PRODUKCJĘ? (T/N)"
-if ($confirmation -notmatch '^[Tt]') {
-    Write-Output "Anulowano wdrożenie."
-    exit 0
-}
-
-# The token is used only for this PowerShell process. It is never written to a file.
-$secureToken = Read-Host 'Enter a temporary Supabase personal access token for PROD (input is hidden)' -AsSecureString
+# The token is used only for this PowerShell process and is never saved to disk.
+$secureToken = Read-Host 'Enter a temporary Supabase personal access token for DEV (input is hidden)' -AsSecureString
 $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureToken)
 
 try {
   $plainToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($tokenPointer)
-  # Copying from a browser can occasionally add an invisible line-break or
-  # Unicode formatting character. Keep only printable token characters.
   $plainToken = [System.Text.RegularExpressions.Regex]::Replace($plainToken, '[^\x21-\x7E]', '').Trim()
   if ($plainToken -notmatch '^sbp_[A-Za-z0-9_-]{20,}$') {
     throw 'The supplied token is not a valid Supabase personal access token format. Copy the full value that starts with sbp_.'
   }
 
   $env:SUPABASE_ACCESS_TOKEN = $plainToken
-  Write-Output "Using a validated Supabase personal access token (length: $($plainToken.Length))."
 
-  $functionsWithoutJwt = @(
-    'register-postcard',
-    'generate-qr',
-    'generate-qr-pdf',
-    'p24-webhook',
-    'hotpay-webhook',
-    'inpost-shipx-webhook',
-    'inpost-geowidget-config',
-    'orlen-widget-config',
-    'issue-fiscal-document',
-    'fiscal-document-pdf',
-    'create-payment'
-  )
-
-  $functionsWithJwt = @(
-    'confirm-cod-payment',
-    'create-inpost-shipment',
-    'buy-inpost-shipment',
-    'get-inpost-label',
-    'admin-payment-status',
-    'admin-inpost-settings',
-    'admin-orlen-settings'
-  )
-
-  foreach ($functionName in $functionsWithoutJwt) {
-    Write-Output "Deploying PROD Edge Function: $functionName (JWT verification disabled)..."
+  foreach ($functionName in @('p24-webhook', 'hotpay-webhook', 'create-payment', 'inpost-shipx-webhook', 'inpost-geowidget-config', 'orlen-widget-config')) {
+    Write-Output "Deploying DEV Edge Function: $functionName (JWT verification disabled)..."
     & $cliPath functions deploy $functionName --project-ref $ProjectRef --no-verify-jwt
     if ($LASTEXITCODE -ne 0) {
       throw "Deployment failed for $functionName with exit code $LASTEXITCODE"
     }
   }
 
-  foreach ($functionName in $functionsWithJwt) {
-    Write-Output "Deploying PROD Edge Function: $functionName..."
+  foreach ($functionName in @('admin-payment-status', 'admin-inpost-settings', 'admin-orlen-settings', 'create-inpost-shipment', 'buy-inpost-shipment', 'get-inpost-label')) {
+    Write-Output "Deploying DEV Edge Function: $functionName..."
     & $cliPath functions deploy $functionName --project-ref $ProjectRef
     if ($LASTEXITCODE -ne 0) {
       throw "Deployment failed for $functionName with exit code $LASTEXITCODE"
     }
   }
 
-  Write-Output 'PROD Edge Functions deployment completed.'
+  Write-Output 'DEV payment Edge Functions deployment completed.'
 }
 finally {
   Remove-Item Env:SUPABASE_ACCESS_TOKEN -ErrorAction SilentlyContinue

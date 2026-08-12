@@ -2,11 +2,15 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { RotateCcw } from "lucide-react";
 import QRCode from "qrcode";
-import krakowImage from "@/assets/krakow-square.jpg";
+import wroclawImage from "@/assets/images/wroclaw_1784208512742.jpg";
 import { PostcardFront } from "@/components/postcard/PostcardFront";
 import { PostcardBack } from "@/components/postcard/PostcardBack";
 
-const PostcardPreview = () => {
+type PostcardPreviewProps = {
+  embedded?: boolean;
+};
+
+const PostcardPreview = ({ embedded = false }: PostcardPreviewProps) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
 
@@ -17,13 +21,13 @@ const PostcardPreview = () => {
   }, []);
 
   return (
-    <section id="jak-to-dziala" className="bg-secondary/30 py-16 md:py-24">
+    <section id={embedded ? undefined : "jak-to-dziala"} className={embedded ? "" : "bg-secondary/30 py-16 md:py-24"}>
       <div className="container mx-auto px-4">
-        <div className="mb-10 text-center">
+        <div className={embedded ? "mb-6 text-center" : "mb-10 text-center"}>
           <span className="mb-4 inline-block rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
             Przykładowy wzór
           </span>
-          <h2 className="mb-3 font-display text-2xl font-bold text-foreground md:text-4xl">
+          <h2 className={`mb-3 font-display font-bold text-foreground ${embedded ? "text-2xl md:text-3xl" : "text-2xl md:text-4xl"}`}>
             Zobacz jak wygląda Podróżówka
           </h2>
           <p className="mx-auto max-w-xl text-muted-foreground">Kliknij kartkę, aby zobaczyć drugą stronę</p>
@@ -33,7 +37,7 @@ const PostcardPreview = () => {
           <button
             type="button"
             aria-label={isFlipped ? "Pokaż przód kartki" : "Pokaż tył kartki"}
-            className="relative w-[320px] cursor-pointer border-0 bg-transparent p-0 md:w-[520px]"
+            className={`relative cursor-pointer border-0 bg-transparent p-0 ${embedded ? "w-[280px] md:w-[430px]" : "w-[320px] md:w-[520px]"}`}
             style={{ perspective: "1000px" }}
             onClick={() => setIsFlipped((value) => !value)}
           >
@@ -45,7 +49,7 @@ const PostcardPreview = () => {
             >
               <div className="absolute inset-0 overflow-hidden rounded-xl bg-white shadow-elevated" style={{ backfaceVisibility: "hidden" }}>
                 <PostcardFront
-                  imageUrl={krakowImage}
+                  imageUrl={wroclawImage}
                   photoAuthor="@Podrozowka"
                   contentText="ขอบคุณที่อยู่กับเรา!"
                   showCropMarks={false}
