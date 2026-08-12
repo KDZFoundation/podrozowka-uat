@@ -27,7 +27,7 @@ try {
 
   $env:SUPABASE_ACCESS_TOKEN = $plainToken
 
-  foreach ($functionName in @('p24-webhook', 'hotpay-webhook', 'create-payment', 'inpost-shipx-webhook', 'inpost-geowidget-config', 'orlen-widget-config')) {
+  foreach ($functionName in @('p24-webhook', 'hotpay-webhook', 'create-payment', 'inpost-shipx-webhook', 'inpost-geowidget-config', 'orlen-widget-config', 'contact-form')) {
     Write-Output "Deploying DEV Edge Function: $functionName (JWT verification disabled)..."
     & $cliPath functions deploy $functionName --project-ref $ProjectRef --no-verify-jwt
     if ($LASTEXITCODE -ne 0) {
