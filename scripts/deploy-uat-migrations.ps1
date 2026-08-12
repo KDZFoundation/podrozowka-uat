@@ -1,6 +1,7 @@
 param(
   [string]$ProjectRef = 'nqqephusxnxzzkfulfae',
-  [switch]$IncludeAll
+  [switch]$IncludeAll,
+  [string]$PoolerHost
 )
 
 $ErrorActionPreference = 'Stop'
@@ -47,27 +48,32 @@ try {
   $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
   $includeAllArgs = if ($IncludeAll) { @('--include-all') } else { @() }
 
+  if ([string]::IsNullOrWhiteSpace($PoolerHost)) {
+    $PoolerHost = Read-Host 'Enter the UAT Session Pooler host (Dashboard > Connect > Session pooler; host only)'
+  }
+
+  if ($PoolerHost -notmatch '^[a-z0-9.-]+\.pooler\.supabase\.com$') {
+    throw 'Invalid Session Pooler host. Paste only the host ending with .pooler.supabase.com (without protocol, user, password, port, or path).'
+  }
+
+  $encodedPassword = [Uri]::EscapeDataString($plainPassword)
+  $databaseUrl = "postgresql://postgres.${ProjectRef}:$encodedPassword@$PoolerHost`:5432/postgres"
+
   if ($IncludeAll) {
     Write-Output 'Including migrations that were added before the latest remote migration.'
   }
 
-  # Configure the linked temporary project with the IPv4 database connection.
-  # This is required on networks without IPv6 support; it never alters the
-  # repository's main Supabase configuration or the DEV project link.
-  Write-Output 'Configuring IPv4 connection for UAT...'
-  & $cliPath link --workdir $deployWorkdir --project-ref $ProjectRef --password $plainPassword
-  if ($LASTEXITCODE -ne 0) {
-    throw "UAT project link failed with exit code $LASTEXITCODE"
-  }
-
+  # Use Session Pooler over IPv4 rather than "supabase link". This avoids
+  # both IPv6-only direct database hosts and Supabase management API access.
+  Write-Output "Using UAT Session Pooler over IPv4: $PoolerHost"
   Write-Output 'Previewing UAT migrations...'
-  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword --dry-run $includeAllArgs
+  & $cliPath db push --workdir $deployWorkdir --db-url $databaseUrl --dry-run $includeAllArgs
   if ($LASTEXITCODE -ne 0) {
     throw "UAT migration preview failed with exit code $LASTEXITCODE"
   }
 
   Write-Output 'Applying pending migrations to UAT...'
-  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword $includeAllArgs
+  & $cliPath db push --workdir $deployWorkdir --db-url $databaseUrl $includeAllArgs
   if ($LASTEXITCODE -ne 0) {
     throw "UAT migration deployment failed with exit code $LASTEXITCODE"
   }
@@ -79,4 +85,6 @@ finally {
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
   }
   Remove-Variable plainPassword -ErrorAction SilentlyContinue
+  Remove-Variable encodedPassword -ErrorAction SilentlyContinue
+  Remove-Variable databaseUrl -ErrorAction SilentlyContinue
 }
