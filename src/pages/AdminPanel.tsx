@@ -142,7 +142,7 @@ const AdminPanel = () => {
   }, [isAdmin, fetchStats]);
 
   useEffect(() => {
-    if (!devToolsEnabled && (activeTab === "dev-tools" || activeTab === "lab")) {
+    if (!devToolsEnabled && activeTab === "dev-tools") {
       setActiveTab("overview");
     }
   }, [activeTab, devToolsEnabled]);
@@ -189,7 +189,7 @@ const AdminPanel = () => {
     supportTabs[2],
     ...primaryTabs.slice(4),
     ...supportTabs.slice(3),
-  ].filter((tab) => devToolsEnabled || (tab.id !== "dev-tools" && tab.id !== "lab"));
+  ].filter((tab) => devToolsEnabled || tab.id !== "dev-tools");
 
   const workflowCards: { id: TabId; step: string; title: string; description: string; icon: typeof Package }[] = [
     { id: "card-designs", step: "01", title: "Wzory", description: "Przygotuj przód, tył i język kartki.", icon: Image },
@@ -474,7 +474,7 @@ CREATE POLICY "Admins manage categories"
         {activeTab === "gamification" && <AdminGamification />}
         {activeTab === "fiscal" && <AdminFiscalFailures />}
         {activeTab === "integrations" && <AdminIntegrations />}
-        {activeTab === "lab" && devToolsEnabled && <AdminLab />}
+        {activeTab === "lab" && <AdminLab />}
       </main>
     </div>
   );
