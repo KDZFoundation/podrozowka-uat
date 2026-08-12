@@ -182,9 +182,11 @@ const drawCropMarks = (doc: jsPDF, slot: number) => {
   const right = left + TRIM_WIDTH_MM;
   const top = y + BLEED_MM;
   const bottom = top + TRIM_HEIGHT_MM;
-  // Keep a clear 2.5 mm gap where horizontal and vertical cut marks meet.
-  // This prevents the printer's corner marks from reading as one joined line.
-  const gap = 2.5;
+  // The artwork includes a 3 mm bleed. Keep the crop marks a further 2.5 mm
+  // outside that artwork, so no line visually enters the photo at a corner.
+  // `gap` is measured from the trim line, hence it includes both values.
+  const artworkClearance = 2.5;
+  const gap = BLEED_MM + artworkClearance;
 
   doc.setDrawColor(20, 20, 20);
   doc.setLineWidth(0.12);

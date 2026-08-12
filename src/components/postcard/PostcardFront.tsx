@@ -82,7 +82,7 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
 
         {imageUrl && (
           <div
-            className="absolute left-[4%] top-[4%] h-[74%] w-[92%] overflow-hidden"
+            className="absolute left-[4%] top-[6.25%] h-[71.75%] w-[92%] overflow-hidden"
             aria-label="Obszar zdjęcia z bezpiecznym odstępem od linii cięcia"
           >
             <img
