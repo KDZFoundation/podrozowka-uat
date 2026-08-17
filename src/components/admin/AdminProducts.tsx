@@ -117,11 +117,11 @@ const buildProductTitle = (design: CardDesignRowWithCountry) => {
   const categoryInitial = design.categories?.name?.trim().charAt(0).toLocaleUpperCase("pl-PL") || "O";
   const view = String(design.view_no).padStart(2, "0");
   const language = design.language_code.toUpperCase();
-  return `PodrĂłĹĽĂłwka ${country}, ${categoryInitial} V${view} ${language}`;
+  return `Podróżówka ${country}, ${categoryInitial} V${view} ${language}`;
 };
 
 const formatPln = (grosze: number) =>
-  (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zĹ‚";
+  (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
 
 const AdminProducts = () => {
   const { isAdmin } = useAuth();
@@ -244,7 +244,7 @@ const AdminProducts = () => {
     setErrors({});
     setExtraImages([]);
     setShowDialog(true);
-    toast({ title: "DuplikujÄ™ produkt", description: "Wybierz kraj i zapisz jako nowy rekord." });
+    toast({ title: "Duplikuję produkt", description: "Wybierz kraj i zapisz jako nowy rekord." });
   };
 
   const closeDialog = () => {
@@ -259,31 +259,31 @@ const AdminProducts = () => {
   const validate = (): FormErrors => {
     const e: FormErrors = {};
     if (!editingId) {
-      if (!sourceDesignId) e.source_design_id = "Wybierz wzĂłr z kreatora";
+      if (!sourceDesignId) e.source_design_id = "Wybierz wzór z kreatora";
       const priceStr = form.price_pln.replace(",", ".").trim();
       if (!priceStr) e.price_pln = "Cena jest wymagana";
       else {
         const parsed = Number(priceStr);
-        if (!Number.isFinite(parsed) || parsed <= 0) e.price_pln = "Cena musi byÄ‡ wiÄ™ksza od 0";
+        if (!Number.isFinite(parsed) || parsed <= 0) e.price_pln = "Cena musi być większa od 0";
         else if (!/^\d+(\.\d{1,2})?$/.test(priceStr)) e.price_pln = "Maks. 2 miejsca po przecinku";
       }
       return e;
     }
     if (!form.title.trim()) e.title = "Nazwa jest wymagana";
-    else if (form.title.length > 200) e.title = "Nazwa moĹĽe mieÄ‡ maks. 200 znakĂłw";
-    if (form.description && form.description.length > 2000) e.description = "Opis moĹĽe mieÄ‡ maks. 2000 znakĂłw";
+    else if (form.title.length > 200) e.title = "Nazwa może mieć maks. 200 znaków";
+    if (form.description && form.description.length > 2000) e.description = "Opis może mieć maks. 2000 znaków";
     if (!form.country_id) e.country_id = "Wybierz kraj";
-    if (!form.language_code.trim()) e.language_code = "Podaj kod jÄ™zyka";
+    if (!form.language_code.trim()) e.language_code = "Podaj kod języka";
     if (!Number.isInteger(form.view_no) || form.view_no < 1 || form.view_no > 9999) {
-      e.view_no = "Numer widoku musi byÄ‡ liczbÄ… od 1 do 9999";
+      e.view_no = "Numer widoku musi być liczbą od 1 do 9999";
     }
 
     const priceStr = form.price_pln.replace(",", ".").trim();
     if (!priceStr) e.price_pln = "Cena jest wymagana";
     else {
       const parsed = Number(priceStr);
-      if (!Number.isFinite(parsed)) e.price_pln = "Podaj poprawnÄ… liczbÄ™";
-      else if (parsed <= 0) e.price_pln = "Cena musi byÄ‡ wiÄ™ksza od 0";
+      if (!Number.isFinite(parsed)) e.price_pln = "Podaj poprawną liczbę";
+      else if (parsed <= 0) e.price_pln = "Cena musi być większa od 0";
       else if (!/^\d+(\.\d{1,2})?$/.test(priceStr)) e.price_pln = "Maks. 2 miejsca po przecinku";
     }
     return e;
@@ -314,7 +314,7 @@ const AdminProducts = () => {
       const { error } = await supabase.from("card_designs").update(payload).eq("id", editingId);
       setSaving(false);
       if (error) {
-        toast({ title: "BĹ‚Ä…d zapisu", description: error.message, variant: "destructive" });
+        toast({ title: "Błąd zapisu", description: error.message, variant: "destructive" });
         return;
       }
       toast({ title: "Produkt zaktualizowany" });
@@ -322,7 +322,7 @@ const AdminProducts = () => {
       const sourceDesign = designs.find((design) => design.id === sourceDesignId);
       if (!sourceDesign) {
         setSaving(false);
-        toast({ title: "WzĂłr nie zostaĹ‚ odnaleziony", variant: "destructive" });
+        toast({ title: "Wzór nie został odnaleziony", variant: "destructive" });
         return;
       }
       const { error } = await supabase
@@ -336,7 +336,7 @@ const AdminProducts = () => {
         .eq("id", sourceDesignId);
       setSaving(false);
       if (error) {
-        toast({ title: "BĹ‚Ä…d dodawania", description: error.message, variant: "destructive" });
+        toast({ title: "Błąd dodawania", description: error.message, variant: "destructive" });
         return;
       }
       toast({ title: "Produkt opublikowany w sklepie" });
@@ -376,7 +376,7 @@ const AdminProducts = () => {
 
   const uploadExtraImage = async (file: File) => {
     if (!editingId) {
-      toast({ title: "Zapisz produkt zanim dodasz galeriÄ™", variant: "destructive" });
+      toast({ title: "Zapisz produkt zanim dodasz galerię", variant: "destructive" });
       return;
     }
     if (!file.type.startsWith("image/")) {
@@ -410,7 +410,7 @@ const AdminProducts = () => {
     setUploading(false);
     if (insErr) {
       console.error("[upload] extra image db insert failed", { path, insErr });
-      toast({ title: "[DB] BĹ‚Ä…d zapisu zdjÄ™cia w bazie", description: `${insErr.message} â€” plik zostaĹ‚ wgrany, ale nie zapisano rekordu w card_design_images.`, variant: "destructive" });
+      toast({ title: "[DB] Błąd zapisu zdjęcia w bazie", description: `${insErr.message} — plik został wgrany, ale nie zapisano rekordu w card_design_images.`, variant: "destructive" });
       return;
     }
     console.info("[upload] extra image ok", { path, url: data.publicUrl });
@@ -420,7 +420,7 @@ const AdminProducts = () => {
   const removeExtraImage = async (id: string) => {
     const { error } = await supabase.from("card_design_images").delete().eq("id", id);
     if (error) {
-      toast({ title: "Nie udaĹ‚o siÄ™ usunÄ…Ä‡", description: error.message, variant: "destructive" });
+      toast({ title: "Nie udało się usunąć", description: error.message, variant: "destructive" });
       return;
     }
     setExtraImages((prev) => prev.filter((i) => i.id !== id));
@@ -449,9 +449,9 @@ const AdminProducts = () => {
       .update({ active: false })
       .eq("id", deleteTarget.id);
     if (error) {
-      toast({ title: "Nie udaĹ‚o siÄ™ wycofaÄ‡ produktu", description: error.message, variant: "destructive" });
+      toast({ title: "Nie udało się wycofać produktu", description: error.message, variant: "destructive" });
     } else {
-      toast({ title: "Produkt wycofany ze sklepu. WzĂłr pozostaĹ‚ w kreatorze." });
+      toast({ title: "Produkt wycofany ze sklepu. Wzór pozostał w kreatorze." });
       fetchAll();
     }
     setDeleteTarget(null);
@@ -460,7 +460,7 @@ const AdminProducts = () => {
   const toggleActive = async (p: ProductRow) => {
     const { error } = await supabase.from("card_designs").update({ active: !p.active }).eq("id", p.id);
     if (error) {
-      toast({ title: "BĹ‚Ä…d", description: error.message, variant: "destructive" });
+      toast({ title: "Błąd", description: error.message, variant: "destructive" });
       return;
     }
     fetchAll();
@@ -474,8 +474,8 @@ const AdminProducts = () => {
     setFirminoSyncingId(null);
     if (error || data?.error) {
       toast({
-        title: "Nie udaĹ‚o siÄ™ zsynchronizowaÄ‡ z Firmino",
-        description: data?.error || error?.message || "Nieznany bĹ‚Ä…d",
+        title: "Nie udało się zsynchronizować z Firmino",
+        description: data?.error || error?.message || "Nieznany błąd",
         variant: "destructive",
       });
       return;
@@ -525,7 +525,7 @@ const AdminProducts = () => {
   }, [products, search, sortKey, sortDir]);
 
   if (!isAdmin) return null;
-  if (isLoading) return <div className="animate-pulse text-muted-foreground text-center py-8">Ĺadowanie...</div>;
+  if (isLoading) return <div className="animate-pulse text-muted-foreground text-center py-8">Ładowanie...</div>;
 
   return (
     <div className="space-y-4">
@@ -583,9 +583,9 @@ const AdminProducts = () => {
                       <div className="w-12 h-8 rounded bg-muted" />
                     )}
                   </td>
-                  <td className="p-3 font-medium">{p.title || "â€”"}</td>
+                  <td className="p-3 font-medium">{p.title || "—"}</td>
                   <td className="p-3 text-muted-foreground">{p.country_name}</td>
-                  <td className="p-3 font-mono text-xs whitespace-nowrap">{p.product_code || "â€”"}</td>
+                  <td className="p-3 font-mono text-xs whitespace-nowrap">{p.product_code || "—"}</td>
                   <td className="p-3 text-right font-mono">{formatPln(p.price_grosze)}</td>
                   <td className="p-3 text-right font-mono">{stockMap[p.id] || 0}</td>
                   <td className="p-3">
@@ -637,7 +637,7 @@ const AdminProducts = () => {
               {visible.length === 0 && (
                 <tr>
                   <td colSpan={9} className="p-8 text-center text-muted-foreground">
-                    {search ? "Brak produktĂłw pasujÄ…cych do wyszukiwania" : "Brak produktĂłw"}
+                    {search ? "Brak produktów pasujących do wyszukiwania" : "Brak produktów"}
                   </td>
                 </tr>
               )}
@@ -665,16 +665,16 @@ const AdminProducts = () => {
             <div className="p-4 space-y-4">
               {!editingId && (
                 <div>
-                  <label className="text-xs text-muted-foreground">WzĂłr z kreatora *</label>
+                  <label className="text-xs text-muted-foreground">Wzór z kreatora *</label>
                   <select
                     value={sourceDesignId}
                     onChange={(e) => setSourceDesignId(e.target.value)}
                     className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm"
                   >
-                    <option value="">Wybierz zapisany wzĂłr...</option>
+                    <option value="">Wybierz zapisany wzór...</option>
                     {designs.map((design) => (
                       <option key={design.id} value={design.id}>
-                        {design.countries?.name_pl || "â€”"} â€” V{design.view_no} {design.title ? `(${design.title})` : ""}
+                        {design.countries?.name_pl || "—"} — V{design.view_no} {design.title ? `(${design.title})` : ""}
                       </option>
                     ))}
                   </select>
@@ -725,7 +725,7 @@ const AdminProducts = () => {
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
                   rows={3}
-                  placeholder="KrĂłtki opis produktu widoczny w sklepie..."
+                  placeholder="Krótki opis produktu widoczny w sklepie..."
                   maxLength={2000}
                 />
                 {errors.description && <p className="text-xs text-destructive mt-1">{errors.description}</p>}
@@ -749,7 +749,7 @@ const AdminProducts = () => {
                   {errors.country_id && <p className="text-xs text-destructive mt-1">{errors.country_id}</p>}
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground">JÄ™zyk</label>
+                  <label className="text-xs text-muted-foreground">Język</label>
                   <Input
                     value={form.language_code}
                     onChange={(e) => setForm({ ...form, language_code: e.target.value })}
@@ -777,7 +777,7 @@ const AdminProducts = () => {
                   onChange={(e) => setForm({ ...form, category_id: e.target.value })}
                   className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm"
                 >
-                  <option value="">â€” Brak kategorii â€”</option>
+                  <option value="">— Brak kategorii —</option>
                   {categories.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
@@ -785,17 +785,17 @@ const AdminProducts = () => {
               </div>
 
               <div>
-                <label className="text-xs text-muted-foreground">Tekst podziÄ™kowania (opcjonalny)</label>
+                <label className="text-xs text-muted-foreground">Tekst podziękowania (opcjonalny)</label>
                 <Textarea
                   value={form.thank_you_text}
                   onChange={(e) => setForm({ ...form, thank_you_text: e.target.value })}
                   rows={2}
-                  placeholder="DziÄ™kujemy za..."
+                  placeholder="Dziękujemy za..."
                 />
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs text-muted-foreground">ZdjÄ™cie gĹ‚Ăłwne</label>
+                <label className="text-xs text-muted-foreground">Zdjęcie główne</label>
                 <div className="flex items-center gap-3">
                   {form.image_front_url ? (
                     <img src={form.image_front_url} alt="" className="w-24 h-16 object-cover rounded border border-border" referrerPolicy="no-referrer" />
@@ -816,12 +816,12 @@ const AdminProducts = () => {
                       }}
                     />
                     <span className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md border border-input bg-background hover:bg-muted">
-                      <Upload className="w-4 h-4" /> {uploading ? "WysyĹ‚anie..." : "Wgraj zdjÄ™cie"}
+                      <Upload className="w-4 h-4" /> {uploading ? "Wysyłanie..." : "Wgraj zdjęcie"}
                     </span>
                   </label>
                   {form.image_front_url && (
                     <Button variant="ghost" size="sm" onClick={() => setForm({ ...form, image_front_url: "" })}>
-                      UsuĹ„
+                      Usuń
                     </Button>
                   )}
                 </div>
@@ -834,7 +834,7 @@ const AdminProducts = () => {
 
               {editingId && (
                 <div className="space-y-2">
-                  <label className="text-xs text-muted-foreground">Dodatkowe zdjÄ™cia</label>
+                  <label className="text-xs text-muted-foreground">Dodatkowe zdjęcia</label>
                   <div className="flex flex-wrap gap-2">
                     {extraImages.map((img, idx) => (
                       <div key={img.id} className="relative group">
@@ -844,7 +844,7 @@ const AdminProducts = () => {
                             onClick={() => moveExtraImage(img.id, -1)}
                             disabled={idx === 0}
                             className="p-1 rounded bg-white/20 hover:bg-white/40 disabled:opacity-30"
-                            aria-label="W gĂłrÄ™"
+                            aria-label="W górę"
                           >
                             <ArrowUp className="w-3 h-3 text-white" />
                           </button>
@@ -852,14 +852,14 @@ const AdminProducts = () => {
                             onClick={() => moveExtraImage(img.id, 1)}
                             disabled={idx === extraImages.length - 1}
                             className="p-1 rounded bg-white/20 hover:bg-white/40 disabled:opacity-30"
-                            aria-label="W dĂłĹ‚"
+                            aria-label="W dół"
                           >
                             <ArrowDown className="w-3 h-3 text-white" />
                           </button>
                           <button
                             onClick={() => removeExtraImage(img.id)}
                             className="p-1 rounded bg-destructive/80 hover:bg-destructive"
-                            aria-label="UsuĹ„"
+                            aria-label="Usuń"
                           >
                             <Trash2 className="w-3 h-3 text-white" />
                           </button>
@@ -890,7 +890,7 @@ const AdminProducts = () => {
                   id="active-switch"
                 />
                 <label htmlFor="active-switch" className="text-sm cursor-pointer">
-                  {form.active ? "Aktywny â€” widoczny w sklepie" : "Nieaktywny â€” ukryty"}
+                  {form.active ? "Aktywny — widoczny w sklepie" : "Nieaktywny — ukryty"}
                 </label>
               </div>
               </>}
