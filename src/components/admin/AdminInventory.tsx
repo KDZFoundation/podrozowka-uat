@@ -154,6 +154,8 @@ const AdminInventory = () => {
   const [initLocationId, setInitLocationId] = useState("");
   const [isInitializing, setIsInitializing] = useState(false);
   const [isClearingInventory, setIsClearingInventory] = useState(false);
+  const [pendingDeleteUnit, setPendingDeleteUnit] = useState<{ id: string; code: string } | null>(null);
+  const [isDeletingUnit, setIsDeletingUnit] = useState(false);
 
   // Detail view
   const [selectedUnit, setSelectedUnit] = useState<InventoryUnit | null>(null);
@@ -375,13 +377,15 @@ const AdminInventory = () => {
   };
 
   const handleDeleteUnit = async (unitId: string) => {
-    if (!confirm("Czy na pewno chcesz usunąć tę pozycję z magazynu?")) return;
+    setIsDeletingUnit(true);
     const { error } = await supabase.from("inventory_units").delete().eq("id", unitId);
+    setIsDeletingUnit(false);
     if (error) {
       toast({ title: "Błąd usuwania z magazynu", description: error.message, variant: "destructive" });
     } else {
       toast({ title: "Pozycja usunięta z magazynu" });
-      fetchUnits();
+      setPendingDeleteUnit(null);
+      await fetchUnits();
     }
   };
 
@@ -604,6 +608,22 @@ const AdminInventory = () => {
       )}
 
       {/* Filters */}
+      {pendingDeleteUnit && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4">
+          <div>
+            <p className="font-medium text-foreground">Usunąć pozycję {pendingDeleteUnit.code}?</p>
+            <p className="text-sm text-muted-foreground">Pozycja zostanie trwale usunięta ze stanu magazynowego.</p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setPendingDeleteUnit(null)} disabled={isDeletingUnit}>Anuluj</Button>
+            <Button variant="destructive" onClick={() => handleDeleteUnit(pendingDeleteUnit.id)} disabled={isDeletingUnit}>
+              {isDeletingUnit ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              {isDeletingUnit ? "Usuwam..." : "Usuń pozycję"}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -691,7 +711,7 @@ const AdminInventory = () => {
                         )}
                         {canDeleteUnit(u) && (
                           <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteUnit(u.id); }}
+                            onClick={(e) => { e.stopPropagation(); setPendingDeleteUnit({ id: u.id, code: u.internal_inventory_code }); }}
                             className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 ml-1"
                             title="Usuń niewykorzystaną pozycję z magazynu"
                           >
