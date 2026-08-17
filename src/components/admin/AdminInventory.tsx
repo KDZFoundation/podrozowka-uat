@@ -692,10 +692,11 @@ const AdminInventory = () => {
                         {canDeleteUnit(u) && (
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteUnit(u.id); }}
-                            className="p-1 rounded text-destructive hover:bg-destructive/10 transition-colors ml-1"
-                            title="Usuń nieużywaną pozycję testową"
+                            className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 ml-1"
+                            title="Usuń niewykorzystaną pozycję z magazynu"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
+                            Usuń
                           </button>
                         )}
                       </div>
