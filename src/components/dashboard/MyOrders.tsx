@@ -328,33 +328,6 @@ const MyOrders = ({ userId }: { userId: string }) => {
     }
   };
 
-  const retryPayment = async () => {
-    if (!selectedOrder) return;
-    setIsSubmitting(true);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-      if (!accessToken) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
-
-      const { data, error } = await supabase.functions.invoke("create-payment", {
-        body: { order_id: selectedOrder.id },
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (error) throw error;
-      const response = data as CreatePaymentResponse;
-      if (response.error || !response.redirect_url) {
-        throw new Error(response.error || "Brak adresu płatności");
-      }
-      window.location.href = response.redirect_url;
-    } catch (error) {
-      console.error("Retry payment failed", error);
-      toast.error("Nie udało się rozpocząć ponownej płatności", {
-        description: error instanceof Error ? error.message : "Spróbuj ponownie później.",
-      });
-      setIsSubmitting(false);
-    }
-  };
-
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString("pl-PL", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
