@@ -121,6 +121,10 @@ export type Database = {
           language_code: string
           photo_author: string | null
           price_grosze: number
+          product_code: string
+          firmino_article_id: number | null
+          firmino_synced_at: string | null
+          firmino_sync_error: string | null
           thank_you_text: string | null
           title: string | null
           updated_at: string
@@ -141,6 +145,10 @@ export type Database = {
           language_code?: string
           photo_author?: string | null
           price_grosze?: number
+          product_code?: string
+          firmino_article_id?: number | null
+          firmino_synced_at?: string | null
+          firmino_sync_error?: string | null
           thank_you_text?: string | null
           title?: string | null
           updated_at?: string
@@ -161,6 +169,10 @@ export type Database = {
           language_code?: string
           photo_author?: string | null
           price_grosze?: number
+          product_code?: string
+          firmino_article_id?: number | null
+          firmino_synced_at?: string | null
+          firmino_sync_error?: string | null
           thank_you_text?: string | null
           title?: string | null
           updated_at?: string
@@ -595,6 +607,7 @@ export type Database = {
           fiscal_document_number: string | null
           fiscal_document_status: string | null
           fiscal_document_url: string | null
+          fiscal_provider: string | null
           fulfilled_at: string | null
           id: string
           invoice_requested: boolean
@@ -633,6 +646,7 @@ export type Database = {
           fiscal_document_number?: string | null
           fiscal_document_status?: string | null
           fiscal_document_url?: string | null
+          fiscal_provider?: string | null
           fulfilled_at?: string | null
           id?: string
           invoice_requested?: boolean
@@ -671,6 +685,7 @@ export type Database = {
           fiscal_document_number?: string | null
           fiscal_document_status?: string | null
           fiscal_document_url?: string | null
+          fiscal_provider?: string | null
           fulfilled_at?: string | null
           id?: string
           invoice_requested?: boolean

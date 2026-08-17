@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { getCategoryIcon } from "@/lib/categoryIcons";
 import { useCart } from "@/contexts/CartContext";
 import { getProductTitle } from "@/lib/productTitle";
 
@@ -212,9 +213,12 @@ const ShopProduct = () => {
               )}
               {product.categories && (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-card border border-border text-foreground">
-                  {product.categories.icon_url && (
+                  {product.categories.icon_url ? (
                     <img src={product.categories.icon_url} alt="" className="w-4 h-4 rounded-full object-cover" referrerPolicy="no-referrer" />
-                  )}
+                  ) : (() => {
+                    const CategoryIcon = getCategoryIcon(product.categories?.slug);
+                    return <CategoryIcon className="h-4 w-4" aria-hidden="true" />;
+                  })()}
                   {product.categories.name}
                 </span>
               )}

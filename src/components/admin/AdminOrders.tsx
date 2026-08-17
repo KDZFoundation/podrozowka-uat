@@ -10,9 +10,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Search, ArrowLeft, PackageCheck, Printer, Mail, FileText, CheckCircle2, Send, Trash2 } from "lucide-react";
+import { Loader2, Search, ArrowLeft, PackageCheck, Printer, FileText, CheckCircle2, Send, Trash2, CalendarClock, ClipboardList } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { generatePodPrintPdf } from "@/lib/generatePodPrintPdf";
+import { generatePodBatchPrintPdf, generatePodPrintPdf } from "@/lib/generatePodPrintPdf";
+import { generatePodShippingManifestPdf, type PodBatchShippingRow } from "@/lib/generatePodShippingManifestPdf";
 
 interface OrderRow {
   id: string;
@@ -28,6 +29,25 @@ interface OrderRow {
   shipping_city: string | null;
   created_at: string;
   display_name: string | null;
+}
+
+interface PodProductionBatch {
+  id: string;
+  batch_number: string;
+  production_date: string;
+  status: "queued" | "prepared" | "sent_to_printer" | "closed" | "failed";
+  total_orders: number;
+  total_postcards: number;
+  sent_to_printer_at: string | null;
+  printer_email: string | null;
+  pod_production_batch_orders: Array<PodBatchShippingRow & { print_job_id: string }>;
+}
+
+interface PodBatchApiResponse {
+  batches?: PodProductionBatch[];
+  batch?: PodProductionBatch;
+  error?: string;
+  skipped_order_numbers?: string[];
 }
 
 interface OrderDetail {
@@ -142,18 +162,104 @@ const AdminOrders = () => {
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [reservedUnits, setReservedUnits] = useState<ReservedUnit[]>([]);
-  const [printerEmail, setPrinterEmail] = useState<string>("");
-  const [isSendingPodEmail, setIsSendingPodEmail] = useState(false);
   const [isGeneratingPodPdf, setIsGeneratingPodPdf] = useState(false);
   const [lastGeneratedPodPdf, setLastGeneratedPodPdf] = useState<{
     orderId: string;
     fileName: string;
     downloadUrl: string;
   } | null>(null);
+  const [productionBatches, setProductionBatches] = useState<PodProductionBatch[]>([]);
+  const [isLoadingBatches, setIsLoadingBatches] = useState(true);
+  const [isCreatingBatch, setIsCreatingBatch] = useState(false);
+  const [isDownloadingBatch, setIsDownloadingBatch] = useState<string | null>(null);
 
   useEffect(() => () => {
     if (lastGeneratedPodPdf) URL.revokeObjectURL(lastGeneratedPodPdf.downloadUrl);
   }, [lastGeneratedPodPdf]);
+
+  const fetchProductionBatches = useCallback(async () => {
+    setIsLoadingBatches(true);
+    const { data, error } = await supabase.functions.invoke<PodBatchApiResponse>("pod-production-batches", {
+      body: { operation: "list" },
+    });
+    if (error || data?.error) {
+      console.error("POD production batches", error || data?.error);
+      toast({
+        title: "Nie udało się wczytać paczek POD",
+        description: data?.error || error?.message || "Spróbuj ponownie za chwilę.",
+        variant: "destructive",
+      });
+    } else {
+      setProductionBatches(data?.batches ?? []);
+    }
+    setIsLoadingBatches(false);
+  }, [toast]);
+
+  useEffect(() => {
+    fetchProductionBatches();
+  }, [fetchProductionBatches]);
+
+  const createTodayBatch = async () => {
+    setIsCreatingBatch(true);
+    const date = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Warsaw",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const { data, error } = await supabase.functions.invoke<PodBatchApiResponse>("pod-production-batches", {
+      body: { operation: "create", production_date: date },
+    });
+    setIsCreatingBatch(false);
+    if (error || data?.error) {
+      toast({
+        title: "Nie utworzono paczki produkcyjnej",
+        description: data?.error === "no_ready_paid_orders"
+          ? "Brak opłaconych zamówień z gotowymi kodami QR, które nie są już w paczce."
+          : data?.error || error?.message || "Spróbuj ponownie za chwilę.",
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({
+      title: `Utworzono paczkę ${data?.batch?.batch_number}`,
+      description: `${data?.batch?.total_orders ?? 0} zamówień / ${data?.batch?.total_postcards ?? 0} Podróżówek gotowych do wspólnego druku.`,
+    });
+    await fetchProductionBatches();
+    fetchOrders();
+  };
+
+  const downloadBatchProductionPdf = async (batch: PodProductionBatch) => {
+    setIsDownloadingBatch(batch.id);
+    try {
+      const result = await generatePodBatchPrintPdf(
+        batch.pod_production_batch_orders.map((order) => order.print_job_id),
+        batch.batch_number,
+      );
+      toast({ title: "Pobrano zbiorczy PDF SRA3", description: `${result.itemCount} Podróżówek na ${result.sheetCount} arkuszach.` });
+    } catch (error) {
+      toast({ title: "Błąd PDF paczki POD", description: getErrorMessage(error), variant: "destructive" });
+    } finally {
+      setIsDownloadingBatch(null);
+    }
+  };
+
+  const downloadBatchManifest = (batch: PodProductionBatch) => {
+    generatePodShippingManifestPdf(batch.batch_number, batch.production_date, batch.pod_production_batch_orders);
+    toast({ title: "Pobrano manifest wysyłek", description: "Zawiera osobną kartę kompletacyjną dla każdego zamówienia." });
+  };
+
+  const markBatchSent = async (batch: PodProductionBatch) => {
+    const { data, error } = await supabase.functions.invoke<PodBatchApiResponse>("pod-production-batches", {
+      body: { operation: "mark_sent", batch_id: batch.id },
+    });
+    if (error || data?.error) {
+      toast({ title: "Nie udało się zmienić statusu paczki", description: data?.error || error?.message || "", variant: "destructive" });
+      return;
+    }
+    toast({ title: "Paczka przekazana do drukarni", description: "Status paczki został zapisany. Etykiety przewoźników pozostają osobnym etapem." });
+    await fetchProductionBatches();
+  };
 
   const handleGeneratePodPdf = async (order: OrderDetail) => {
     setIsGeneratingPodPdf(true);
@@ -198,16 +304,6 @@ const AdminOrders = () => {
     } finally {
       setIsGeneratingPodPdf(false);
     }
-  };
-
-  const handleSendToPrinter = async (orderId: string, orderNum: string) => {
-    setIsSendingPodEmail(true);
-    await updateOrderStatus(orderId, "processing_pod");
-    setIsSendingPodEmail(false);
-    toast({
-      title: "Zlecenie wysłane do drukarni! (API / E-mail)",
-      description: `Wysłano zlecenie druku zamówienia ${orderNum} do systemu drukarni. Status: 'W przygotowaniu (API Drukarnia)'.`,
-    });
   };
 
   const handleMarkPodFulfilled = async (orderId: string) => {
@@ -612,12 +708,15 @@ const AdminOrders = () => {
                   )}
                   <Button
                     size="sm"
-                    onClick={() => handleSendToPrinter(selectedOrder.id, selectedOrder.order_number)}
-                    disabled={isSendingPodEmail || selectedOrder.payment_status !== "paid"}
+                    onClick={() => {
+                      setSelectedOrder(null);
+                      void createTodayBatch();
+                    }}
+                    disabled={isCreatingBatch || selectedOrder.payment_status !== "paid"}
                     className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
                   >
-                    {isSendingPodEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                    Wyślij do Drukarni (API / E-mail)
+                    {isCreatingBatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
+                    Dodaj do paczki dziennej POD
                   </Button>
                   {selectedOrder.status === 'processing_pod' && (
                     <Button
@@ -660,21 +759,9 @@ const AdminOrders = () => {
                 </div>
               </div>
 
-              {/* Email config hint */}
-              <div className="bg-muted/30 p-3 rounded-lg flex items-center justify-between text-xs gap-3 flex-wrap">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <span>Adres e-mail drukarni dla zamówień POD:</span>
-                  <Input
-                    type="email"
-                    placeholder="Adres email drukarni zostanie podany wkrótce..."
-                    value={printerEmail}
-                    onChange={(e) => setPrinterEmail(e.target.value)}
-                    className="h-7 w-[280px] text-xs bg-background"
-                  />
-                </div>
-                <span className="text-muted-foreground italic shrink-0">Wysyłka e-mail z kodami QR i plikami PDF w formatile POD</span>
-              </div>
+              <p className="rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground">
+                Zlecenie trafia do dziennej paczki produkcyjnej. Po utworzeniu paczki pobierzesz jeden PDF SRA3 oraz manifest adresowy dla wszystkich zamówień.
+              </p>
             </div>
 
             {/* POD units are generated after payment; there is no stock reservation. */}
@@ -737,9 +824,53 @@ const AdminOrders = () => {
 
       <div className="grid gap-3 rounded-2xl border border-primary/15 bg-primary/[0.04] p-4 text-sm md:grid-cols-3">
         <div><span className="font-semibold text-primary">1. Opłacone</span><p className="mt-1 text-muted-foreground">System tworzy jednostki POD i indywidualne QR.</p></div>
-        <div><span className="font-semibold text-primary">2. PDF SRA3</span><p className="mt-1 text-muted-foreground">Pobierz arkusz produkcyjny front + tył.</p></div>
-        <div><span className="font-semibold text-primary">3. Drukarnia</span><p className="mt-1 text-muted-foreground">Wyślij zlecenie i aktualizuj status realizacji.</p></div>
+        <div><span className="font-semibold text-primary">2. Paczka dzienna</span><p className="mt-1 text-muted-foreground">Jedna paczka łączy PDF SRA3 wielu zamówień i manifest kompletacyjny.</p></div>
+        <div><span className="font-semibold text-primary">3. Drukarnia i wysyłki</span><p className="mt-1 text-muted-foreground">Drukarnia otrzymuje produkcję i adresy; etykiety przewoźników powstają osobno.</p></div>
       </div>
+
+      <section className="rounded-2xl border border-primary/20 bg-card p-5 shadow-soft">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="mb-1 flex items-center gap-2 text-sm font-medium text-primary"><CalendarClock className="h-4 w-4" /> Dzienne paczki produkcyjne</p>
+            <h3 className="font-display text-xl font-semibold">Jedna produkcja, wiele zamówień</h3>
+            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Paczka zawiera zbiorczy PDF SRA3 z Podróżówkami i osobny manifest adresowy. Miasto odbiorcy nie jest już statusem wysyłki.</p>
+          </div>
+          <Button onClick={createTodayBatch} disabled={isCreatingBatch} className="gap-2 shrink-0">
+            {isCreatingBatch ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
+            Utwórz paczkę z dzisiejszych opłaconych
+          </Button>
+        </div>
+        <p className="mt-4 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">Automat o 23:00 utworzy analogiczną paczkę po skonfigurowaniu harmonogramu Supabase. Żaden plik ani etykieta przewoźnika nie zostaną wysłane bez integracji i konfiguracji tego harmonogramu.</p>
+
+        <div className="mt-4 space-y-3">
+          {isLoadingBatches ? (
+            <div className="flex justify-center py-5"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+          ) : productionBatches.length === 0 ? (
+            <p className="rounded-lg border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">Nie ma jeszcze utworzonych paczek dziennych.</p>
+          ) : productionBatches.slice(0, 5).map((batch) => (
+            <article key={batch.id} className="rounded-xl border border-border bg-background p-4">
+              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-mono text-sm font-semibold">{batch.batch_number}</p>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${batch.status === "sent_to_printer" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                      {batch.status === "sent_to_printer" ? "Przekazana drukarni" : "Gotowa do przygotowania"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{batch.production_date} · {batch.total_orders} zamówień · {batch.total_postcards} Podróżówek</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => downloadBatchProductionPdf(batch)} disabled={isDownloadingBatch === batch.id} className="gap-1.5">
+                    {isDownloadingBatch === batch.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />} PDF SRA3
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => downloadBatchManifest(batch)} className="gap-1.5"><ClipboardList className="h-3.5 w-3.5" /> Manifest wysyłek</Button>
+                  {batch.status !== "sent_to_printer" && <Button size="sm" onClick={() => markBatchSent(batch)} className="gap-1.5"><Send className="h-3.5 w-3.5" /> Przekazano drukarni</Button>}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[200px]">
@@ -783,7 +914,6 @@ const AdminOrders = () => {
                 <th className="text-left p-3 font-medium text-muted-foreground">Status</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Płatność</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Metoda</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Wysyłka</th>
                 <th className="text-right p-3 font-medium text-muted-foreground">Kwota</th>
                 <th className="p-3"></th>
               </tr>
@@ -811,7 +941,6 @@ const AdminOrders = () => {
                         {o.payment_method === "cod" ? "Pobranie" : "Online"}
                       </span>
                     </td>
-                    <td className="p-3 text-xs">{o.shipping_city || "—"}</td>
                     <td className="p-3 text-right font-medium">{Number(o.total_amount).toFixed(2)} {o.currency}</td>
                     <td className="p-3 text-xs text-primary">
                       <div className="flex items-center justify-end gap-2">

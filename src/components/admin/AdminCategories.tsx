@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { diagnoseUploadError, logUploadAttempt } from "@/lib/uploadDiagnostics";
 import { slugify } from "@/lib/slugify";
+import { getCategoryIcon } from "@/lib/categoryIcons";
 
 interface Category {
   id: string;
@@ -216,7 +217,12 @@ const AdminCategories = () => {
                     {c.icon_url ? (
                       <img src={c.icon_url} alt="" className="w-8 h-8 object-cover rounded" referrerPolicy="no-referrer" />
                     ) : (
-                      <div className="w-8 h-8 rounded bg-muted" />
+                      <div className="flex h-8 w-8 items-center justify-center rounded bg-primary/10 text-primary" title={`Domyślna ikona: ${c.name}`}>
+                        {(() => {
+                          const CategoryIcon = getCategoryIcon(c.slug);
+                          return <CategoryIcon className="h-4 w-4" aria-hidden="true" />;
+                        })()}
+                      </div>
                     )}
                   </td>
                   <td className="p-3 font-medium">{c.name}</td>
@@ -288,7 +294,12 @@ const AdminCategories = () => {
                   {form.icon_url ? (
                     <img src={form.icon_url} alt="" className="w-16 h-16 object-cover rounded border border-border" referrerPolicy="no-referrer" />
                   ) : (
-                    <div className="w-16 h-16 rounded bg-muted flex items-center justify-center text-xs text-muted-foreground">brak</div>
+                    <div className="w-16 h-16 rounded bg-muted flex items-center justify-center text-primary">
+                      {(() => {
+                        const CategoryIcon = getCategoryIcon(form.slug);
+                        return <CategoryIcon className="h-7 w-7" aria-hidden="true" />;
+                      })()}
+                    </div>
                   )}
                   <label className="cursor-pointer">
                     <input

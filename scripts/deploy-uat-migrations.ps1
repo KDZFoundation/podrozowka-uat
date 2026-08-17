@@ -1,5 +1,7 @@
 param(
-  [string]$ProjectRef = 'nqqephusxnxzzkfulfae'
+  [string]$ProjectRef = 'nqqephusxnxzzkfulfae',
+  [switch]$IncludeAll,
+  [string]$PoolerHost
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,15 +46,42 @@ $passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure
 
 try {
   $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
+  $includeAllArgs = if ($IncludeAll) { @('--include-all') } else { @() }
 
+  if ([string]::IsNullOrWhiteSpace($PoolerHost)) {
+    $PoolerHost = Read-Host 'Enter the UAT Session Pooler host (Dashboard > Connect > Session pooler; host only)'
+  }
+
+  if ($PoolerHost -notmatch '^[a-z0-9.-]+\.pooler\.supabase\.com$') {
+    throw 'Invalid Session Pooler host. Paste only the host ending with .pooler.supabase.com (without protocol, user, password, port, or path).'
+  }
+
+  $encodedPassword = [Uri]::EscapeDataString($plainPassword)
+  $hasLeadingOrTrailingWhitespace = $plainPassword -ne $plainPassword.Trim()
+  if ($hasLeadingOrTrailingWhitespace) {
+    throw 'The entered database password begins or ends with whitespace. Re-enter it without surrounding spaces or a pasted line break.'
+  }
+
+  # Keep each connection part explicit. The password is URI-encoded so special
+  # characters such as @, #, %, :, and / cannot alter the connection URL.
+  $databaseUser = "postgres.$ProjectRef"
+  $databaseUrl = "postgresql://${databaseUser}:$encodedPassword@$PoolerHost`:5432/postgres"
+
+  if ($IncludeAll) {
+    Write-Output 'Including migrations that were added before the latest remote migration.'
+  }
+
+  # Use Session Pooler over IPv4 rather than "supabase link". This avoids
+  # both IPv6-only direct database hosts and Supabase management API access.
+  Write-Output "Using UAT Session Pooler over IPv4: $PoolerHost"
   Write-Output 'Previewing UAT migrations...'
-  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword --dry-run
+  & $cliPath db push --workdir $deployWorkdir --db-url $databaseUrl --dry-run $includeAllArgs
   if ($LASTEXITCODE -ne 0) {
     throw "UAT migration preview failed with exit code $LASTEXITCODE"
   }
 
   Write-Output 'Applying pending migrations to UAT...'
-  & $cliPath db push --workdir $deployWorkdir --linked --password $plainPassword
+  & $cliPath db push --workdir $deployWorkdir --db-url $databaseUrl $includeAllArgs
   if ($LASTEXITCODE -ne 0) {
     throw "UAT migration deployment failed with exit code $LASTEXITCODE"
   }
@@ -64,4 +93,6 @@ finally {
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
   }
   Remove-Variable plainPassword -ErrorAction SilentlyContinue
+  Remove-Variable encodedPassword -ErrorAction SilentlyContinue
+  Remove-Variable databaseUrl -ErrorAction SilentlyContinue
 }

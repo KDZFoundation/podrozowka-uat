@@ -34,6 +34,7 @@ dist-ssr
 .baseline-test-*/
 .schema-export-*/
 .supabase-deploy-*/
+.supabase-migrations-*/
 supabase/baselines/*.sql
 
 # Local PDF previews and development-server output.

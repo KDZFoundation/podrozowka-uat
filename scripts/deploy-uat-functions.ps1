@@ -40,6 +40,7 @@ try {
     'inpost-geowidget-config',
     'orlen-widget-config',
     'contact-form',
+    'pod-production-batches',
     'issue-fiscal-document',
     'fiscal-document-pdf',
     'create-payment'
@@ -53,6 +54,7 @@ try {
     'admin-payment-status',
     'admin-inpost-settings',
     'admin-orlen-settings'
+    ,'sync-firmino-article'
   )
 
   foreach ($functionName in $functionsWithoutJwt) {
