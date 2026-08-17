@@ -5,6 +5,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { firminoRequest, getFirminoConfig, isFirminoSalesEnabled, readFirminoData } from "../_shared/firmino.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -103,6 +104,26 @@ function grossToNet(gross: number): number {
   return Math.round((gross / (1 + VAT_RATE / 100)) * 100) / 100;
 }
 
+function firminoDate(d = new Date()): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function safeFirminoShortName(value: string, fallback: string): string {
+  const normalized = value.replace(/[^\p{L}\p{N} ._-]+/gu, " ").trim();
+  return (normalized || fallback).slice(0, 25);
+}
+
+function shippingLabel(method: string): string {
+  const labels: Record<string, string> = {
+    inpost: "Dostawa — InPost Paczkomat",
+    inpost_courier: "Dostawa — InPost Kurier",
+    orlen: "Dostawa — ORLEN Paczka",
+    pocztex: "Dostawa — Pocztex",
+    courier: "Dostawa — Kurier",
+  };
+  return labels[method] || "Dostawa";
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
 
@@ -147,7 +168,7 @@ Deno.serve(async (req) => {
     const { data: order, error: orderErr } = await supabase
       .from("orders")
       .select(
-        "id, user_id, order_number, total_amount, shipping_cost, invoice_requested, company_name, company_nip, company_address, fiscal_document_status, payment_status",
+        "id, user_id, order_number, total_amount, shipping_cost, shipping_method, shipping_name, shipping_address, shipping_city, shipping_postal_code, shipping_country, shipping_phone, customer_email, invoice_requested, company_name, company_nip, company_address, fiscal_document_status, payment_status",
       )
       .eq("id", orderId)
       .maybeSingle();
@@ -173,6 +194,137 @@ Deno.serve(async (req) => {
         { error: "order_not_paid", payment_status: order.payment_status },
         409,
       );
+    }
+
+    // Catalog synchronization and issuing sales documents are separate gates.
+    // Synchronising an article must never issue a document for an order.
+    if (isFirminoSalesEnabled()) {
+      // An external Firmino ID is the durable idempotency key. This also
+      // protects against a timeout after Firmino created the document.
+      if (order.fiscal_provider === "firmino" && order.fiscal_document_external_id) {
+        return jsonResp({ ok: true, skipped: "firmino_document_already_created" });
+      }
+      await supabase.from("orders").update({
+        fiscal_document_status: "pending",
+        fiscal_document_error: null,
+        fiscal_provider: "firmino",
+      }).eq("id", orderId);
+
+      const config = getFirminoConfig();
+      const { data: userData, error: userErr } = await supabase.auth.admin.getUserById(order.user_id);
+      if (userErr) throw new Error(`Buyer lookup failed: ${userErr.message}`);
+      const buyerEmail = order.customer_email || userData?.user?.email || "";
+      const buyerName = (
+        order.invoice_requested && order.company_name
+          ? order.company_name
+          : order.shipping_name || "Klient detaliczny"
+      ).slice(0, 500);
+      const customerShortName = safeFirminoShortName(buyerEmail || buyerName, `PDZ-${order.user_id.slice(0, 8)}`);
+
+      const findCustomerResult = await firminoRequest<unknown>(config, "customers/find", {
+        text: buyerEmail || customerShortName,
+        size: 20,
+      });
+      const foundCustomers = readFirminoData<{ list?: Array<{ id?: number | string; email?: string; shortName?: string }> }>(findCustomerResult)?.list || [];
+      const existingCustomer = foundCustomers.find((customer) =>
+        (buyerEmail && customer.email?.toLowerCase() === buyerEmail.toLowerCase()) || customer.shortName === customerShortName,
+      );
+      let customerId = existingCustomer?.id ? Number(existingCustomer.id) : null;
+      if (!customerId) {
+        const createdCustomer = await firminoRequest<unknown>(config, "customers/add", {
+          fullName: buyerName,
+          shortName: customerShortName,
+          locality: (order.shipping_city || "Polska").slice(0, 30),
+          countryCode: /^[A-Za-z]{2}$/.test(order.shipping_country || "") ? order.shipping_country!.toUpperCase() : "PL",
+          street: (order.shipping_address || "").slice(0, 120),
+          postCode: (order.shipping_postal_code || "").slice(0, 30),
+          post: (order.shipping_city || "").slice(0, 100),
+          phone: (order.shipping_phone || "").slice(0, 50),
+          email: buyerEmail || undefined,
+        });
+        const customer = readFirminoData<{ id?: number | string }>(createdCustomer);
+        customerId = customer?.id ? Number(customer.id) : null;
+      }
+      if (!customerId || !Number.isFinite(customerId)) throw new Error("firmino_customer_id_missing");
+
+      const { data: itemsRaw, error: itemsErr } = await supabase
+        .from("order_items")
+        .select("quantity, unit_price, secondary_language_name, card_designs(title, product_code, firmino_article_id)")
+        .eq("order_id", orderId);
+      if (itemsErr || !itemsRaw?.length) throw new Error(`Order items load failed: ${itemsErr?.message || "empty"}`);
+
+      const items = (itemsRaw as Array<{
+        quantity: number;
+        unit_price: number;
+        secondary_language_name: string | null;
+        card_designs: { title: string | null; product_code: string; firmino_article_id: number | null } | null;
+      }>).map((item) => ({
+        name: `${item.card_designs?.title || "Podróżówka"}${item.secondary_language_name ? ` / ${item.secondary_language_name}` : ""} [${item.card_designs?.product_code || "PDZ"}]`.slice(0, 512),
+        unit: "szt",
+        vatRate: config.vatRate,
+        price: Number(item.unit_price).toFixed(2),
+        quantity: String(item.quantity),
+        ...(item.card_designs?.firmino_article_id ? { idArticle: item.card_designs.firmino_article_id } : {}),
+      }));
+      if (Number(order.shipping_cost || 0) > 0) {
+        items.push({
+          name: shippingLabel(order.shipping_method),
+          unit: "szt",
+          vatRate: config.vatRate,
+          price: Number(order.shipping_cost).toFixed(2),
+          quantity: "1",
+        });
+      }
+
+      const today = firminoDate();
+      const createdDocument = await firminoRequest<unknown>(config, "sale-documents/add", {
+        documentDate: today,
+        saleDate: today,
+        documentType: "fhan",
+        priceType: "gross",
+        customer: { id: customerId },
+        items,
+        payment: { method: "transfer", termDate: today },
+        printNotes: `Zamówienie Podróżówka ${order.order_number}`,
+      });
+      const document = readFirminoData<{ id?: number | string; documentName?: string }>(createdDocument);
+      const documentId = document?.id ? String(document.id) : "";
+      if (!documentId) throw new Error("firmino_document_id_missing");
+
+      // Persist before follow-up calls. If payment confirmation or e-mail
+      // delivery times out, retrying must not create a second legal document.
+      const { error: persistedDocumentError } = await supabase.from("orders").update({
+        fiscal_document_status: "pending",
+        fiscal_provider: "firmino",
+        fiscal_document_external_id: documentId,
+        fiscal_document_number: document.documentName || `Firmino-${documentId}`,
+        fiscal_document_url: `/functions/v1/fiscal-document-pdf?order=${encodeURIComponent(order.order_number)}`,
+        fiscal_document_issued_at: new Date().toISOString(),
+        fiscal_document_error: null,
+      }).eq("id", orderId);
+      if (persistedDocumentError) throw new Error(`firmino_document_persist_failed:${persistedDocumentError.message}`);
+
+      await firminoRequest(config, `sale-documents/payoff/${documentId}`);
+      if (buyerEmail) {
+        try {
+          await firminoRequest(config, "sale-documents/mail", {
+            idDocument: Number(documentId),
+            mail: buyerEmail,
+            title: `Podróżówka — rachunek ${document.documentName || order.order_number}`,
+            content: "W załączniku przesyłamy rachunek za Twoje zamówienie Podróżówka.",
+          });
+        } catch (mailError) {
+          // The issued, paid document is authoritative. A temporary delivery
+          // failure must not turn it into a failed document or create a duplicate on retry.
+          console.warn("Firmino document mail failed:", (mailError as Error).message);
+        }
+      }
+
+      await supabase.from("orders").update({
+        fiscal_document_status: "issued",
+        fiscal_document_error: null,
+      }).eq("id", orderId);
+      return jsonResp({ ok: true, provider: "firmino", document_id: documentId, document_no: document.documentName || null });
     }
 
     // Kill-switch: in DEV/UAT skip Merit entirely. Only PROD sets FISCAL_ENABLED="true".
@@ -307,6 +459,7 @@ Deno.serve(async (req) => {
       .from("orders")
       .update({
         fiscal_document_status: "issued",
+        fiscal_provider: "merit",
         fiscal_document_external_id: invoiceId,
         fiscal_document_number: invoiceNo,
         fiscal_document_url: `/functions/v1/fiscal-document-pdf?order=${encodeURIComponent(order.order_number)}`,

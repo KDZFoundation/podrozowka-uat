@@ -37,5 +37,11 @@ verify_jwt = false
 [functions.contact-form]
 verify_jwt = false
 
+[functions.pod-production-batches]
+verify_jwt = false
+
 [functions.confirm-cod-payment]
+verify_jwt = true
+
+[functions.sync-firmino-article]
 verify_jwt = true

@@ -254,6 +254,10 @@ export const AdminCardCreator = ({
       toast({ title: "Wybierz kategorię", variant: "destructive" });
       return;
     }
+    if (!Number.isInteger(viewNo) || viewNo < 1 || viewNo > 9999) {
+      toast({ title: "Numer widoku musi mieścić się w zakresie 1–9999", variant: "destructive" });
+      return;
+    }
 
     setIsSaving(true);
 

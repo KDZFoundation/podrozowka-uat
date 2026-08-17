@@ -342,6 +342,33 @@ const MyOrders = ({ userId }: { userId: string }) => {
     }
   };
 
+  const retryPayment = async () => {
+    if (!selectedOrder) return;
+    setIsSubmitting(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
+
+      const { data, error } = await supabase.functions.invoke("create-payment", {
+        body: { order_id: selectedOrder.id },
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (error) throw error;
+      const response = data as CreatePaymentResponse;
+      if (response.error || !response.redirect_url) {
+        throw new Error(response.error || "Brak adresu płatności");
+      }
+      window.location.href = response.redirect_url;
+    } catch (error) {
+      console.error("Retry payment failed", error);
+      toast.error("Nie udało się rozpocząć ponownej płatności", {
+        description: error instanceof Error ? error.message : "Spróbuj ponownie później.",
+      });
+      setIsSubmitting(false);
+    }
+  };
+
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString("pl-PL", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
@@ -380,6 +407,15 @@ const MyOrders = ({ userId }: { userId: string }) => {
                   <p>{selectedOrder.shipping_address}</p>
                   <p>{selectedOrder.shipping_postal_code} {selectedOrder.shipping_city}</p>
                   <p>{selectedOrder.shipping_country}</p>
+                </div>
+              )}
+              {(selectedOrder.payment_status === "unpaid" || selectedOrder.payment_status === "failed") && selectedOrder.status !== "cancelled" && (
+                <div className="border-t border-border pt-4 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">Płatność nie została jeszcze potwierdzona. Możesz bezpiecznie spróbować ponownie.</p>
+                  <Button onClick={retryPayment} disabled={isSubmitting} className="gap-2">
+                    {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {isSubmitting ? "Przekierowywanie…" : "Opłać ponownie"}
+                  </Button>
                 </div>
               )}
             </div>

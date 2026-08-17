@@ -130,7 +130,7 @@ const PhotoGallery = () => {
                   photo.category === "natura" ? "bg-accent/80 text-accent-foreground" :
                   photo.category === "architektura" ? "bg-primary/80 text-primary-foreground" :
                   photo.category === "sztuka" ? "bg-gold/80 text-foreground" :
-                  photo.category === "wydarzenie" ? "bg-red-500/80 text-white" :
+                  photo.category === "wydarzenie" ? "bg-violet-600/85 text-white" :
                   "bg-blue-500/80 text-white"
                 }`}>
                   {photo.category === "natura" ? "🏔️ Natura" : 
@@ -143,15 +143,6 @@ const PhotoGallery = () => {
           ))}
         </div>
 
-        {/* Photographers note */}
-        <div className="mt-12 text-center">
-          <p className="text-muted-foreground text-sm">
-            Wszystkie zdjęcia pochodzą od polskich fotografów. 
-            <a href="#contact" className="text-primary hover:underline ml-1">
-              Chcesz współpracować?
-            </a>
-          </p>
-        </div>
       </div>
     </section>
   );

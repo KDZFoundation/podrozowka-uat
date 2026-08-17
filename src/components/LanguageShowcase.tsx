@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
-import { Heart, Send } from "lucide-react";
+import { ArrowRight, Heart, Send } from "lucide-react";
+import { Link } from "react-router-dom";
 import { thankYouPhrases, greetingsPhrases } from "@/lib/constants";
 
 const LanguageShowcase = () => {
@@ -14,9 +15,14 @@ const LanguageShowcase = () => {
             Podziękuj w każdym języku
           </h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Wybierz wzór z napisem "Dziękuję" lub "Pozdrowienia z Polski" w języku osoby, 
-            której wręczasz Podróżówkę.
+            Wybierz wzór w języku kraju, do którego się wybierasz.
           </p>
+          <Link
+            to="/sklep"
+            className="mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Przejdź do sklepu <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </Link>
         </div>
 
         {/* Thank you section */}

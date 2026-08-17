@@ -7,6 +7,8 @@ import Footer from "@/components/Footer";
 import { supabase } from "@/integrations/supabase/client";
 import { getProductTitle } from "@/lib/productTitle";
 import { useCart } from "@/contexts/CartContext";
+import { getCategoryIcon } from "@/lib/categoryIcons";
+import { PostcardFront, type CropSettings } from "@/components/postcard/PostcardFront";
 
 interface Country {
   id: string;
@@ -26,6 +28,9 @@ interface Product {
   id: string;
   title: string | null;
   image_front_url: string | null;
+  photo_author: string | null;
+  thank_you_text: string | null;
+  crop_settings: CropSettings | null;
   price_grosze: number;
   country_id: string;
   category_id: string | null;
@@ -36,7 +41,7 @@ interface Product {
 }
 
 const formatPln = (grosze: number) =>
-  (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
+  (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "\u00a0zł";
 
 const Shop = () => {
   const [searchParams] = useSearchParams();
@@ -45,6 +50,7 @@ const Shop = () => {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
+  const [countries, setCountries] = useState<Country[]>([]);
   const [countryFilter, setCountryFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [quantitiesToAdd, setQuantitiesToAdd] = useState<Record<string, number>>({});
@@ -57,50 +63,52 @@ const Shop = () => {
   }, []);
 
   useEffect(() => {
-    const load = async () => {
-      const [{ data: designs }, { data: cats }] = await Promise.all([
-        supabase
-          .from("card_designs")
-          .select("id, title, image_front_url, price_grosze, country_id, category_id, language_code, view_no, countries!inner(id, iso2, name_pl), categories(id, name, slug, icon_url, sort_order)")
-          .eq("active", true)
-          .gt("price_grosze", 0)
-          .order("created_at", { ascending: false }),
+    const loadFilters = async () => {
+      const [{ data: cats }, { data: countriesData }] = await Promise.all([
         supabase.from("categories").select("id, name, slug, icon_url, sort_order").order("sort_order").order("name"),
+        supabase.from("countries").select("id, iso2, name_pl").eq("active", true).order("name_pl"),
       ]);
-
-      setProducts((designs as unknown as Product[]) || []);
       setAllCategories((cats as Category[]) || []);
-      if (countryIso && designs) {
-        const found = (designs as unknown as Product[]).find(
-          (d) => d.countries?.iso2?.toLowerCase() === countryIso.toLowerCase()
-        );
-        if (found) {
-          setCountryFilter(found.country_id);
-        }
+      setCountries((countriesData as Country[]) || []);
+      if (countryIso && countriesData) {
+        const country = (countriesData as Country[]).find((item) => item.iso2.toLowerCase() === countryIso.toLowerCase());
+        if (country) setCountryFilter(country.id);
       }
-
-      setIsLoading(false);
     };
-    load();
+    loadFilters();
   }, [countryIso]);
 
-  const countries = useMemo(() => {
-    const map = new Map<string, Country>();
-    products.forEach((p) => {
-      if (p.countries) map.set(p.countries.id, p.countries);
-    });
-    return Array.from(map.values()).sort((a, b) => a.name_pl.localeCompare(b.name_pl, "pl"));
-  }, [products]);
+  useEffect(() => {
+    const loadProducts = async () => {
+      setIsLoading(true);
+      const select = "id, title, image_front_url, photo_author, thank_you_text, crop_settings, price_grosze, country_id, category_id, language_code, view_no, countries!inner(id, iso2, name_pl), categories(id, name, slug, icon_url, sort_order)";
+      const isPopular = countryFilter === "all" && categoryFilter === "all";
+      let query = supabase.from("card_designs").select(select).eq("active", true).gt("price_grosze", 0);
 
-  const visible = useMemo(
-    () =>
-      products.filter(
-        (p) =>
-          (countryFilter === "all" || p.country_id === countryFilter) &&
-          (categoryFilter === "all" || p.category_id === categoryFilter),
-      ),
-    [products, countryFilter, categoryFilter],
-  );
+      if (isPopular) {
+        const { data: popularRows } = await supabase.rpc("get_popular_card_designs", { _limit: 20 });
+        const popularIds = (popularRows || []).map((row) => row.card_design_id);
+        if (popularIds.length > 0) {
+          const { data } = await query.in("id", popularIds);
+          const positions = new Map(popularIds.map((id, index) => [id, index]));
+          setProducts(((data as unknown as Product[]) || []).sort((a, b) => (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0)));
+        } else {
+          const { data } = await query.order("created_at", { ascending: false }).limit(20);
+          setProducts((data as unknown as Product[]) || []);
+        }
+      } else {
+        if (countryFilter !== "all") query = query.eq("country_id", countryFilter);
+        if (categoryFilter !== "all") query = query.eq("category_id", categoryFilter);
+        const { data } = await query.order("created_at", { ascending: false }).limit(100);
+        setProducts((data as unknown as Product[]) || []);
+      }
+      setIsLoading(false);
+    };
+    loadProducts();
+  }, [countryFilter, categoryFilter]);
+
+  const visible = products;
+  const isPopularView = countryFilter === "all" && categoryFilter === "all";
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -124,7 +132,7 @@ const Shop = () => {
             </div>
             <h1 className="font-display text-3xl md:text-4xl font-bold text-foreground">Sklep</h1>
             <p className="text-muted-foreground mt-2 max-w-2xl">
-              Wybierz kartkę pocztową i zabierz kawałek polskiej kultury w podróż.
+              Wybierz Podróżówkę i zabierz ją w podróż.
             </p>
           </div>
           <Link
@@ -183,9 +191,12 @@ const Shop = () => {
                           : "border-border bg-background text-foreground hover:bg-muted"
                       }`}
                     >
-                      {c.icon_url && (
+                      {c.icon_url ? (
                         <img src={c.icon_url} alt="" className="h-5 w-5 rounded-full object-cover" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />
-                      )}
+                      ) : (() => {
+                        const CategoryIcon = getCategoryIcon(c.slug);
+                        return <CategoryIcon className="h-4 w-4" aria-hidden="true" />;
+                      })()}
                       {c.name}
                     </button>
                   ))}
@@ -208,6 +219,16 @@ const Shop = () => {
             </div>
           </div>
         </section>
+
+        {!isLoading && isPopularView && (
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="font-display text-2xl font-bold text-foreground">Najczęściej wybierane</h2>
+              <p className="mt-1 text-sm text-muted-foreground">20 wzorów wybieranych najchętniej przez Podróżników.</p>
+            </div>
+            <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">Top 20</span>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -237,23 +258,19 @@ const Shop = () => {
                   className="group rounded-2xl border border-border/70 bg-card p-3 shadow-soft transition-all duration-300 hover:-translate-y-1 hover:border-primary/35 hover:shadow-lg"
                 >
                   <Link to={`/sklep/${p.id}`} className="block rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
-                    <div className="relative aspect-[1.42/1] overflow-hidden rounded-xl bg-muted shadow-sm">
-                      {p.image_front_url ? (
-                        <img
-                          src={p.image_front_url}
-                          alt={productTitle}
-                          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Package className="w-8 h-8 text-muted-foreground" />
-                        </div>
-                      )}
-                      <div className="absolute left-3 top-3 flex max-w-[calc(100%-1.5rem)] flex-wrap gap-1.5">
-                        {p.countries && (
-                          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/40 bg-background/90 px-2.5 py-1 text-xs font-semibold text-foreground shadow-sm backdrop-blur-sm">
+                    <div className="aspect-[154/111] overflow-hidden rounded-xl bg-muted shadow-sm">
+                      <PostcardFront
+                        imageUrl={p.image_front_url}
+                        photoAuthor={p.photo_author}
+                        contentText={p.thank_you_text}
+                        cropSettings={p.crop_settings || undefined}
+                        showCropMarks={false}
+                        className="h-full w-full transition-transform duration-500 group-hover:scale-[1.02]"
+                      />
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {p.countries && (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-xs font-semibold text-foreground">
                             <img
                               src={`https://flagcdn.com/w40/${p.countries.iso2.toLowerCase()}.png`}
                               alt=""
@@ -261,23 +278,25 @@ const Shop = () => {
                             />
                             {p.countries.name_pl}
                           </span>
-                        )}
-                        {p.categories && (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-white/40 bg-background/90 px-2.5 py-1 text-xs font-medium text-foreground shadow-sm backdrop-blur-sm">
-                            {p.categories.icon_url && (
+                      )}
+                      {p.categories && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground">
+                            {p.categories.icon_url ? (
                               <img src={p.categories.icon_url} alt="" className="w-4 h-4 rounded-full object-cover" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />
-                            )}
+                            ) : (() => {
+                              const CategoryIcon = getCategoryIcon(p.categories?.slug);
+                              return <CategoryIcon className="h-3.5 w-3.5" aria-hidden="true" />;
+                            })()}
                             {p.categories.name}
                           </span>
-                        )}
-                      </div>
+                      )}
                     </div>
                     <h2 className="min-h-12 px-1 pt-4 font-display text-lg font-semibold leading-snug text-foreground line-clamp-2">
                       {productTitle}
                     </h2>
                   </Link>
                   <div className="mt-4 flex items-center justify-between gap-3 px-1 pb-1">
-                    <p className="font-display text-xl font-bold text-primary">{formatPln(p.price_grosze)}</p>
+                <p className="shrink-0 whitespace-nowrap font-display text-xl font-bold text-primary">{formatPln(p.price_grosze)}</p>
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       <div className="flex items-center rounded-lg border border-border bg-background">
                         <button

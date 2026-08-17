@@ -57,7 +57,15 @@ try {
   }
 
   $encodedPassword = [Uri]::EscapeDataString($plainPassword)
-  $databaseUrl = "postgresql://postgres.${ProjectRef}:$encodedPassword@$PoolerHost`:5432/postgres"
+  $hasLeadingOrTrailingWhitespace = $plainPassword -ne $plainPassword.Trim()
+  if ($hasLeadingOrTrailingWhitespace) {
+    throw 'The entered database password begins or ends with whitespace. Re-enter it without surrounding spaces or a pasted line break.'
+  }
+
+  # Keep each connection part explicit. The password is URI-encoded so special
+  # characters such as @, #, %, :, and / cannot alter the connection URL.
+  $databaseUser = "postgres.$ProjectRef"
+  $databaseUrl = "postgresql://${databaseUser}:$encodedPassword@$PoolerHost`:5432/postgres"
 
   if ($IncludeAll) {
     Write-Output 'Including migrations that were added before the latest remote migration.'

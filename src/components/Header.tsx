@@ -97,9 +97,6 @@ const Header = () => {
             <Link to="/spolecznosc" className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${pathname === "/spolecznosc" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}>
               Społeczność
             </Link>
-            <Link to="/kontakt" className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${pathname === "/kontakt" ? "bg-background text-primary shadow-sm" : "text-muted-foreground hover:bg-background hover:text-foreground"}`}>
-              Kontakt
-            </Link>
           </nav>
 
           {/* Right side */}
@@ -245,7 +242,6 @@ const Header = () => {
               <Link to="/mapa" className="text-foreground py-2 text-lg" onClick={() => setIsMenuOpen(false)}>Mapa</Link>
               <Link to="/sklep" className="text-foreground py-2 text-lg" onClick={() => setIsMenuOpen(false)}>Sklep</Link>
               <Link to="/spolecznosc" className="text-foreground py-2 text-lg" onClick={() => setIsMenuOpen(false)}>Społeczność</Link>
-              <Link to="/kontakt" className="text-foreground py-2 text-lg" onClick={() => setIsMenuOpen(false)}>Kontakt</Link>
 
               {user && (
                 <>

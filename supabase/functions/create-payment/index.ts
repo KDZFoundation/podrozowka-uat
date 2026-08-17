@@ -21,6 +21,12 @@ type HotPayCredentials = {
 
 type PaymentGateway = "hotpay" | "p24";
 
+type PayableOrder = {
+  id: string;
+  order_number: string;
+  total_amount: number;
+};
+
 async function resolvePaymentGateway(serviceClient: SupabaseClient): Promise<PaymentGateway> {
   try {
     const { data } = await serviceClient
@@ -135,6 +141,92 @@ function isValidNip(raw: string): boolean {
   return c === Number(nip[9]);
 }
 
+async function startOnlinePayment(
+  serviceClient: SupabaseClient,
+  order: PayableOrder,
+  userEmail: string,
+  origin: string,
+): Promise<{ body: Record<string, unknown>; status: number }> {
+  const gateway = await resolvePaymentGateway(serviceClient);
+  if (gateway === "hotpay") {
+    const hotpayCredentials = await resolveHotPayCredentials(serviceClient);
+    if (!hotpayCredentials) return { body: { error: "payment_gateway_not_configured" }, status: 503 };
+
+    const amount = Number(order.total_amount).toFixed(2);
+    const serviceName = `Podróżówka - zamówienie ${order.order_number}`;
+    const returnUrl = `${origin}/checkout/potwierdzenie?order=${encodeURIComponent(order.order_number)}`;
+    const hash = await sha256Hex(
+      `${hotpayCredentials.notificationPassword};${amount};${serviceName};${returnUrl};${order.order_number};${hotpayCredentials.secret}`,
+    );
+    const form = new FormData();
+    form.set("SEKRET", hotpayCredentials.secret);
+    form.set("KWOTA", amount);
+    form.set("NAZWA_USLUGI", serviceName);
+    form.set("ADRES_WWW", returnUrl);
+    form.set("ID_ZAMOWIENIA", order.order_number);
+    form.set("EMAIL", userEmail || "");
+    form.set("TYP", "INIT");
+    form.set("HASH", hash);
+
+    const hotpayResponse = await fetch("https://platnosc.hotpay.pl/", { method: "POST", body: form });
+    const hotpayJson = await hotpayResponse.json().catch(() => null) as { STATUS?: boolean; URL?: string; WIADOMOSC?: string } | null;
+    if (!hotpayResponse.ok || !hotpayJson?.STATUS || !hotpayJson.URL) {
+      console.error("HotPay INIT failed", hotpayResponse.status, hotpayJson?.WIADOMOSC || "invalid response");
+      return { body: { error: "payment_gateway_error" }, status: 502 };
+    }
+    return {
+      body: { order_id: order.id, order_number: order.order_number, payment_gateway: "hotpay", redirect_url: hotpayJson.URL },
+      status: 200,
+    };
+  }
+
+  const p24Credentials = await resolveP24Credentials(serviceClient);
+  if (!p24Credentials) return { body: { error: "payment_gateway_not_configured" }, status: 503 };
+
+  const totalGrosze = Math.round(Number(order.total_amount) * 100);
+  const signPayload = JSON.stringify({
+    sessionId: order.id,
+    merchantId: p24Credentials.merchantId,
+    amount: totalGrosze,
+    currency: "PLN",
+    crc: p24Credentials.crcKey,
+  });
+  const sign = await sha384Hex(signPayload);
+  const registerBody = {
+    merchantId: p24Credentials.merchantId,
+    posId: p24Credentials.posId,
+    sessionId: order.id,
+    amount: totalGrosze,
+    currency: "PLN",
+    description: `Podróżówka – zamówienie ${order.order_number}`,
+    email: userEmail || "no-reply@podrozowka.pl",
+    country: "PL",
+    language: "pl",
+    urlReturn: `${origin}/checkout/potwierdzenie?order=${encodeURIComponent(order.order_number)}`,
+    urlStatus: `${SUPABASE_URL}/functions/v1/p24-webhook`,
+    sign,
+    encoding: "UTF-8",
+  };
+  const isSandbox = await resolveP24Mode(serviceClient);
+  const p24ApiBase = isSandbox ? "https://sandbox.przelewy24.pl/api/v1" : "https://secure.przelewy24.pl/api/v1";
+  const p24TrnUrl = isSandbox ? "https://sandbox.przelewy24.pl/trnRequest" : "https://secure.przelewy24.pl/trnRequest";
+  const basicAuth = btoa(`${p24Credentials.posId}:${p24Credentials.apiKey}`);
+  const registerRes = await fetch(`${p24ApiBase}/transaction/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Basic ${basicAuth}` },
+    body: JSON.stringify(registerBody),
+  });
+  const registerJson = await registerRes.json().catch(() => ({}));
+  if (!registerRes.ok || !registerJson?.data?.token) {
+    console.error("P24 register failed", registerRes.status, JSON.stringify(registerJson));
+    return { body: { error: "payment_gateway_error" }, status: 502 };
+  }
+  return {
+    body: { order_id: order.id, order_number: order.order_number, payment_gateway: "p24", redirect_url: `${p24TrnUrl}/${registerJson.data.token}` },
+    status: 200,
+  };
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = buildCorsHeaders(req);
 
@@ -165,6 +257,33 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => null);
     if (!body || typeof body !== "object") return jsonResp({ error: "invalid_body" }, 400);
+
+    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    // A failed or abandoned online payment can be resumed without creating a second order.
+    const retryOrderId = body.order_id;
+    if (retryOrderId !== undefined) {
+      if (!isUuid(retryOrderId)) return jsonResp({ error: "invalid_order" }, 400);
+      const { data: existingOrder, error: existingOrderError } = await serviceClient
+        .from("orders")
+        .select("id, order_number, total_amount, payment_method, payment_status, status")
+        .eq("id", retryOrderId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (existingOrderError || !existingOrder) return jsonResp({ error: "order_not_found" }, 404);
+      if (existingOrder.payment_method !== "online") return jsonResp({ error: "order_not_online_payment" }, 400);
+      if (existingOrder.payment_status === "paid") return jsonResp({ error: "order_already_paid" }, 409);
+      if (existingOrder.payment_status !== "unpaid" && existingOrder.payment_status !== "failed") {
+        return jsonResp({ error: "order_not_payable" }, 409);
+      }
+      if (existingOrder.status === "cancelled") return jsonResp({ error: "order_not_payable" }, 409);
+
+      const origin = req.headers.get("Origin") || req.headers.get("origin") || "https://podrozowka.lovable.app";
+      const payment = await startOnlinePayment(serviceClient, existingOrder as PayableOrder, userEmail, origin);
+      return jsonResp(payment.body, payment.status);
+    }
 
     const items = Array.isArray(body.items) ? body.items : null;
     const shippingCostGrosze = Number(body.shipping_cost_grosze);
@@ -243,10 +362,6 @@ Deno.serve(async (req) => {
       return jsonResp({ error: "invalid_payment_method" }, 400);
     }
     const paymentMethod: "online" | "cod" = paymentMethodRaw;
-
-    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
 
     if (paymentMethod === "cod") {
       const codEnabled = await ensureAndGetCodFlag(serviceClient);
@@ -333,8 +448,7 @@ Deno.serve(async (req) => {
       return jsonResp({ error: "create_order_failed" }, 500);
     }
 
-    const order = rpcData as { id: string; order_number: string; total_amount: number };
-    const totalGrosze = Math.round(Number(order.total_amount) * 100);
+    const order = rpcData as PayableOrder;
 
     // COD: no P24 registration — order is placed, customer pays on delivery.
     if (paymentMethod === "cod") {
@@ -347,7 +461,10 @@ Deno.serve(async (req) => {
 
     const origin = req.headers.get("Origin") || req.headers.get("origin") || "https://podrozowka.lovable.app";
 
-    const gateway = await resolvePaymentGateway(serviceClient);
+    const payment = await startOnlinePayment(serviceClient, order, userEmail, origin);
+    return jsonResp(payment.body, payment.status);
+
+    /* Legacy payment path retained temporarily for a narrow diff while the shared flow above is active.
     if (gateway === "hotpay") {
       const hotpayCredentials = await resolveHotPayCredentials(serviceClient);
       if (!hotpayCredentials) return jsonResp({ error: "payment_gateway_not_configured" }, 503);
@@ -443,7 +560,7 @@ Deno.serve(async (req) => {
       order_id: order.id,
       order_number: order.order_number,
       redirect_url: redirectUrl,
-    });
+    }); */
   } catch (e) {
     console.error("create-payment error:", e);
     return jsonResp({ error: "internal_error" }, 500);

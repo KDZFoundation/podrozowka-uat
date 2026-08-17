@@ -26,6 +26,7 @@ import QrRegistrationTest from "./pages/QrRegistrationTest";
 import Community from "./pages/Community";
 import Map from "./pages/Map";
 import Contact from "./pages/Contact";
+import Authors from "./pages/Authors";
 
 const queryClient = new QueryClient();
 
@@ -43,6 +44,7 @@ const App = () => (
                 <Route path="/spolecznosc" element={<Community />} />
                 <Route path="/mapa" element={<Map />} />
                 <Route path="/kontakt" element={<Contact />} />
+                <Route path="/autorzy" element={<Authors />} />
                 <Route path="/auth" element={<Auth mode="login" />} />
                 <Route path="/logowanie" element={<Auth mode="login" />} />
                 <Route path="/rejestracja" element={<Auth mode="signup" />} />

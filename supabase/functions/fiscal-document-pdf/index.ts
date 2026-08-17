@@ -3,6 +3,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildCorsHeaders } from "../_shared/cors.ts";
+import { getFirminoConfig } from "../_shared/firmino.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -71,7 +72,7 @@ Deno.serve(async (req) => {
 
     const { data: order, error: orderErr } = await admin
       .from("orders")
-      .select("id, user_id, fiscal_document_external_id, fiscal_document_status, fiscal_document_number")
+      .select("id, user_id, fiscal_document_external_id, fiscal_document_status, fiscal_document_number, fiscal_provider")
       .eq("order_number", orderNumber)
       .maybeSingle();
     if (orderErr || !order) return textResp("not found", 404);
@@ -83,6 +84,32 @@ Deno.serve(async (req) => {
 
     if (order.fiscal_document_status !== "issued" || !order.fiscal_document_external_id) {
       return textResp("document not available", 404);
+    }
+
+    if (order.fiscal_provider === "firmino") {
+      const config = getFirminoConfig();
+      const headers: Record<string, string> = {
+        Authorization: `Basic ${btoa(`${config.login}:${config.password}`)}`,
+      };
+      if (config.companyShortName) headers.companyShortName = config.companyShortName;
+      const response = await fetch(
+        `https://app.firmino.pl/app/services/rest/api/sale-documents/download/${encodeURIComponent(order.fiscal_document_external_id)}`,
+        { method: "POST", headers },
+      );
+      if (!response.ok) {
+        console.error("Firmino document download failed", response.status);
+        return textResp("upstream error", 502);
+      }
+      const filename = (order.fiscal_document_number || orderNumber).replace(/[^A-Za-z0-9._-]/g, "_");
+      return new Response(await response.arrayBuffer(), {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `inline; filename="${filename}.pdf"`,
+          "Cache-Control": "private, max-age=0, must-revalidate",
+        },
+      });
     }
 
     if (!MERIT_API_ID || !MERIT_API_KEY) return textResp("merit not configured", 500);

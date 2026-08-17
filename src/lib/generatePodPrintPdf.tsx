@@ -48,6 +48,7 @@ interface OrderItemLanguageRow {
 
 interface PodJobItemRow {
   id: string;
+  print_job_id: string;
   inventory_unit_id: string;
   public_claim_code: string;
   qr_url: string;
@@ -218,27 +219,37 @@ const addSideToSheet = (
   });
 };
 
-export const generatePodPrintPdf = async (
-  printJobId: string,
-  orderNumber: string,
+const generatePodPrintPdfForJobs = async (
+  printJobIds: string[],
+  documentNumber: string,
 ): Promise<PodPrintPdfResult> => {
-  const [{ data: job, error: jobError }, { data: jobItemsData, error: itemsError }] = await Promise.all([
-    supabase.from("qr_print_jobs").select("total_items, generated_items, status").eq("id", printJobId).single(),
+  if (printJobIds.length === 0) throw new Error("No POD print jobs selected.");
+  const [{ data: jobsData, error: jobError }, { data: jobItemsData, error: itemsError }] = await Promise.all([
+    supabase.from("qr_print_jobs").select("id, total_items, generated_items, status").in("id", printJobIds),
     supabase
       .from("qr_print_job_items")
-      .select("id, inventory_unit_id, public_claim_code, qr_url, generated_at")
-      .eq("print_job_id", printJobId)
+      .select("id, print_job_id, inventory_unit_id, public_claim_code, qr_url, generated_at")
+      .in("print_job_id", printJobIds)
       .order("generated_at", { ascending: true }),
   ]);
 
   if (jobError) throw new Error(`Nie udało się odczytać zadania POD: ${jobError.message}`);
   if (itemsError) throw new Error(`Nie udało się odczytać kodów QR: ${itemsError.message}`);
   if (!jobItemsData?.length) throw new Error("Zadanie POD nie zawiera kartek do wydruku.");
-  if (job.status !== "ready" && job.status !== "printed") {
-    throw new Error("Kody QR dla tego zamówienia nie są jeszcze gotowe.");
+  if (!jobsData || jobsData.length !== printJobIds.length) {
+    throw new Error("Nie znaleziono wszystkich zadań POD paczki.");
   }
-  if (jobItemsData.length !== job.total_items || jobItemsData.length !== job.generated_items) {
-    throw new Error("Liczba kodów QR nie zgadza się z liczbą kartek w zadaniu POD.");
+  const itemCounts = new Map<string, number>();
+  for (const item of jobItemsData as PodJobItemRow[]) {
+    itemCounts.set(item.print_job_id, (itemCounts.get(item.print_job_id) ?? 0) + 1);
+  }
+  for (const job of jobsData) {
+    if (job.status !== "ready" && job.status !== "printed") {
+      throw new Error("Kody QR dla jednego z zamówień nie są jeszcze gotowe.");
+    }
+    if (itemCounts.get(job.id) !== job.total_items || itemCounts.get(job.id) !== job.generated_items) {
+      throw new Error("Liczba kodów QR nie zgadza się z liczbą kartek w zadaniu POD.");
+    }
   }
 
   // Avoid a deeply nested PostgREST join here. With RLS enabled on all three
@@ -341,7 +352,7 @@ export const generatePodPrintPdf = async (
     putOnlyUsedFonts: true,
   });
   doc.setProperties({
-    title: `POD ${orderNumber} - SRA3`,
+    title: `POD ${documentNumber} - SRA3`,
     subject: "Arkusze impozycyjne SRA3, druk dwustronny, flip on short edge",
     creator: "Podróżówka",
   });
@@ -355,7 +366,8 @@ export const generatePodPrintPdf = async (
     addSideToSheet(doc, sheetItems, "back");
   }
 
-  const fileName = `POD-${orderNumber}-SRA3.pdf`;
+  const documentFilePrefix = documentNumber.startsWith("POD-") ? documentNumber : `POD-${documentNumber}`;
+  const fileName = `${documentFilePrefix}-SRA3.pdf`;
   const pdfBlob = doc.output("blob");
   const downloadUrl = URL.createObjectURL(pdfBlob);
   const downloadLink = document.createElement("a");
@@ -368,3 +380,9 @@ export const generatePodPrintPdf = async (
 
   return { fileName, downloadUrl, itemCount: rendered.length, sheetCount };
 };
+
+export const generatePodPrintPdf = (printJobId: string, orderNumber: string) =>
+  generatePodPrintPdfForJobs([printJobId], orderNumber);
+
+export const generatePodBatchPrintPdf = (printJobIds: string[], batchNumber: string) =>
+  generatePodPrintPdfForJobs(printJobIds, batchNumber);
