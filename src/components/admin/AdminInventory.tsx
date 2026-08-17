@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Search, Plus, Package, ArrowLeft, Clock, Trash2, UserPlus } from "lucide-react";
+import { Loader2, Search, Plus, Package, ArrowLeft, Clock, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface InventoryUnit {
@@ -94,11 +94,6 @@ interface LocationOption {
   code: string;
 }
 
-interface StockOrderItemDraft {
-  designId: string;
-  quantity: number;
-}
-
 const FULFILLMENT_LABELS: Record<string, string> = {
   in_stock: "W magazynie",
   reserved: "Zarezerwowana",
@@ -115,19 +110,6 @@ const BUSINESS_LABELS: Record<string, string> = {
   purchased: "Kupiona",
   assigned: "Przypisana Podróżnikowi",
   registered: "Zarejestrowana",
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  pod: "POD / sklep",
-  stock: "Magazyn fizyczny",
-};
-
-const CHANNEL_LABELS: Record<string, string> = {
-  warehouse: "Magazyn",
-  event: "Targi / festiwal",
-  promotion: "Promocja",
-  partner: "Partner / biuro podróży",
-  ecommerce: "Sklep internetowy",
 };
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -169,12 +151,7 @@ const AdminInventory = () => {
   const [initDesignId, setInitDesignId] = useState("");
   const [initQuantity, setInitQuantity] = useState("5000");
   const [initBatchName, setInitBatchName] = useState("");
-  const [initPurpose, setInitPurpose] = useState("");
-  const [initChannel, setInitChannel] = useState("event");
-  const [initEventName, setInitEventName] = useState("");
-  const [initPartnerName, setInitPartnerName] = useState("");
   const [initLocationId, setInitLocationId] = useState("");
-  const [initItems, setInitItems] = useState<StockOrderItemDraft[]>([]);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isClearingInventory, setIsClearingInventory] = useState(false);
 
@@ -188,42 +165,17 @@ const AdminInventory = () => {
     payload_json: unknown;
     created_at: string;
   }>>([]);
-  const [movementEvents, setMovementEvents] = useState<Array<{
-    id: string;
-    movement_type: string;
-    note: string | null;
-    reference_type: string | null;
-    reference_id: string | null;
-    created_at: string;
-    from_location: { name: string } | null;
-    to_location: { name: string } | null;
-  }>>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
-  const [assignEmail, setAssignEmail] = useState("");
-  const [assignNote, setAssignNote] = useState("");
-  const [isAssigning, setIsAssigning] = useState(false);
 
   const openUnitDetail = async (unit: InventoryUnit) => {
     setSelectedUnit(unit);
     setEventsLoading(true);
-    const [{ data }, { data: movements }] = await Promise.all([
-      supabase
-        .from("inventory_unit_events")
-        .select("id, event_type, actor_type, actor_id, payload_json, created_at")
-        .eq("inventory_unit_id", unit.id)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("inventory_movements")
-        .select(`
-          id, movement_type, note, reference_type, reference_id, created_at,
-          from_location:inventory_locations!inventory_movements_from_location_id_fkey(name),
-          to_location:inventory_locations!inventory_movements_to_location_id_fkey(name)
-        `)
-        .eq("inventory_unit_id", unit.id)
-        .order("created_at", { ascending: true }),
-    ]);
+    const { data } = await supabase
+      .from("inventory_unit_events")
+      .select("id, event_type, actor_type, actor_id, payload_json, created_at")
+      .eq("inventory_unit_id", unit.id)
+      .order("created_at", { ascending: true });
     setUnitEvents(data || []);
-    setMovementEvents((movements || []) as unknown as typeof movementEvents);
     setEventsLoading(false);
   };
 
@@ -324,143 +276,72 @@ const AdminInventory = () => {
     );
   });
 
-  const addStockOrderItem = () => {
-    const quantity = parseInt(initQuantity);
-    if (!initDesignId || Number.isNaN(quantity) || quantity < 1 || quantity > 10000) {
-      toast({ title: "Wybierz wzór i podaj prawidłową ilość", variant: "destructive" });
-      return;
-    }
-
-    setInitItems((current) => {
-      const existing = current.find((item) => item.designId === initDesignId);
-      if (existing) {
-        return current.map((item) => item.designId === initDesignId
-          ? { ...item, quantity: item.quantity + quantity }
-          : item);
-      }
-      return [...current, { designId: initDesignId, quantity }];
-    });
-    setInitDesignId("");
-    setInitQuantity("1");
-  };
-
   const initializeBatch = async () => {
-    const pendingQuantity = parseInt(initQuantity);
-    const items = [...initItems];
-    if (initDesignId && !Number.isNaN(pendingQuantity) && pendingQuantity > 0) {
-      const existing = items.find((item) => item.designId === initDesignId);
-      if (existing) existing.quantity += pendingQuantity;
-      else items.push({ designId: initDesignId, quantity: pendingQuantity });
-    }
-
-    if (!initBatchName || !initPurpose || !initLocationId || items.length === 0) {
-      toast({ title: "Uzupełnij nazwę, cel, lokalizację i dodaj co najmniej jeden wzór", variant: "destructive" });
+    if (!initDesignId) {
+      toast({ title: "Wybierz wzór Podróżówki", variant: "destructive" });
       return;
     }
 
-    if (initChannel === "event" && !initEventName.trim()) {
-      toast({ title: "Podaj nazwę targów lub festiwalu", variant: "destructive" });
-      return;
-    }
-
-    if (initChannel === "partner" && !initPartnerName.trim()) {
-      toast({ title: "Podaj nazwę partnera lub biura podróży", variant: "destructive" });
-      return;
-    }
-
-    const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-    if (totalQuantity < 1 || totalQuantity > 10000) {
-      toast({ title: "Łączna ilość w zamówieniu musi być między 1 a 10000", variant: "destructive" });
+    const quantity = parseInt(initQuantity);
+    if (Number.isNaN(quantity) || quantity < 1 || quantity > 10000) {
+      toast({ title: "Ilość musi być między 1 a 10000", variant: "destructive" });
       return;
     }
 
     setIsInitializing(true);
-
     const now = new Date().toISOString();
-    const { data: productionOrder, error: productionOrderError } = await supabase
-      .from("stock_production_orders")
+    const design = designs.find((candidate) => candidate.id === initDesignId);
+    const country = countries.find((candidate) => candidate.id === design?.country_id);
+    const batchName = initBatchName.trim() || `Magazyn — ${country?.name_pl || "Wzór"} V${design?.view_no || 0} — ${new Date().toLocaleDateString("pl-PL")}`;
+    const { data: batch, error: batchError } = await supabase
+      .from("stock_batches")
       .insert({
-        name: initBatchName,
-        purpose: initPurpose,
-        distribution_channel: initChannel,
-        event_name: initChannel === "event" ? initEventName.trim() : null,
-        partner_name: initChannel === "partner" ? initPartnerName.trim() : null,
-        location_id: initLocationId,
-        status: "received",
-        total_quantity: totalQuantity,
-        ordered_at: now,
+        name: batchName,
+        description: "Ręcznie dodany stan magazynowy",
+        card_design_id: initDesignId,
+        quantity,
+        source_type: "stock",
+        purpose: "Stan magazynowy",
+        distribution_channel: "warehouse",
+        location_id: initLocationId || null,
+        production_status: "received",
         received_at: now,
       })
-      .select("id, order_number")
+      .select("id")
       .single();
 
-    if (productionOrderError || !productionOrder) {
-      toast({ title: "Błąd tworzenia zamówienia magazynowego", description: productionOrderError?.message, variant: "destructive" });
+    if (batchError || !batch) {
+      toast({ title: "Nie udało się utworzyć partii magazynowej", description: batchError?.message, variant: "destructive" });
       setIsInitializing(false);
       return;
     }
 
+    const prefix = `STK-${batch.id.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
     const CHUNK = 500;
     let created = 0;
 
-    for (const item of items) {
-      const design = designs.find((candidate) => candidate.id === item.designId);
-      const country = countries.find((candidate) => candidate.id === design?.country_id);
-      const itemName = `${initBatchName} — ${country?.name_pl || "Wzór"} V${design?.view_no || 0}`;
-      const { data: batch, error: batchError } = await supabase
-        .from("stock_batches")
-        .insert({
-          name: itemName,
-          description: initPurpose,
-          card_design_id: item.designId,
-          quantity: item.quantity,
-          source_type: "stock",
-          purpose: initPurpose,
-          distribution_channel: initChannel,
-          event_name: initChannel === "event" ? initEventName.trim() : null,
-          partner_name: initChannel === "partner" ? initPartnerName.trim() : null,
-          location_id: initLocationId,
-          production_order_id: productionOrder.id,
-          production_status: "received",
-          received_at: now,
-        })
-        .select("id")
-        .single();
+    for (let i = 0; i < quantity; i += CHUNK) {
+      const chunk = Math.min(CHUNK, quantity - i);
+      const rows = Array.from({ length: chunk }, (_, index) => ({
+        stock_batch_id: batch.id,
+        card_design_id: initDesignId,
+        internal_inventory_code: `${prefix}-${String(i + index + 1).padStart(5, "0")}`,
+        fulfillment_status: "in_stock" as const,
+        current_location_id: initLocationId || null,
+      }));
 
-      if (batchError || !batch) {
-        toast({ title: `Błąd tworzenia partii po ${created} sztukach`, description: batchError?.message, variant: "destructive" });
+      const { error } = await supabase.from("inventory_units").insert(rows);
+      if (error) {
+        toast({ title: `Dodano ${created} z ${quantity} sztuk`, description: error.message, variant: "destructive" });
         setIsInitializing(false);
         return;
       }
-
-      const prefix = `STK-${batch.id.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
-      for (let i = 0; i < item.quantity; i += CHUNK) {
-        const chunk = Math.min(CHUNK, item.quantity - i);
-        const rows = Array.from({ length: chunk }, (_, j) => ({
-          stock_batch_id: batch.id,
-          card_design_id: item.designId,
-          internal_inventory_code: `${prefix}-${String(i + j + 1).padStart(5, "0")}`,
-          fulfillment_status: "in_stock" as const,
-          current_location_id: initLocationId,
-        }));
-
-        const { error } = await supabase.from("inventory_units").insert(rows);
-        if (error) {
-          toast({ title: `Błąd po ${created} sztukach`, description: error.message, variant: "destructive" });
-          setIsInitializing(false);
-          return;
-        }
-        created += chunk;
-      }
+      created += chunk;
     }
 
-    toast({ title: `Przyjęto ${created} sztuk`, description: `Zamówienie produkcyjne ${productionOrder.order_number}` });
+    toast({ title: `Dodano ${created} sztuk na magazyn` });
     setShowInitDialog(false);
     setInitBatchName("");
-    setInitPurpose("");
-    setInitEventName("");
-    setInitPartnerName("");
-    setInitItems([]);
     setInitDesignId("");
     setInitQuantity("5000");
     setIsInitializing(false);
@@ -504,37 +385,6 @@ const AdminInventory = () => {
     }
   };
 
-  const handleAssignToTraveler = async () => {
-    if (!selectedUnit || !assignEmail.trim()) {
-      toast({ title: "Podaj e-mail konta Podróżnika", variant: "destructive" });
-      return;
-    }
-
-    setIsAssigning(true);
-    const { error } = await supabase.rpc("admin_assign_stock_unit", {
-      _unit_id: selectedUnit.id,
-      _traveler_email: assignEmail.trim(),
-      _note: assignNote.trim() || undefined,
-    });
-    setIsAssigning(false);
-
-    if (error) {
-      const description = error.message.includes("traveler_account_not_found")
-        ? "Nie znaleziono konta o podanym adresie e-mail. Podróżnik musi najpierw założyć konto."
-        : error.message.includes("inventory_unit_already_assigned")
-          ? "Ta Podróżówka jest już przypisana."
-          : error.message;
-      toast({ title: "Nie udało się przypisać Podróżówki", description, variant: "destructive" });
-      return;
-    }
-
-    toast({ title: "Podróżówka przypisana Podróżnikowi" });
-    setAssignEmail("");
-    setAssignNote("");
-    setSelectedUnit(null);
-    await fetchUnits();
-  };
-
   const canDeleteUnit = (unit: InventoryUnit) =>
     !unit.order_id &&
     !unit.public_claim_code &&
@@ -568,7 +418,6 @@ const AdminInventory = () => {
 
       setSelectedUnit(null);
       setUnitEvents([]);
-      setMovementEvents([]);
       toast({ title: "Magazyn został wyczyszczony" });
       await fetchUnits();
     } catch (error) {
@@ -639,10 +488,7 @@ const AdminInventory = () => {
             <div><span className="text-muted-foreground">Wzór:</span><p>V{selectedUnit.view_no} {selectedUnit.design_title || ""}</p></div>
             <div><span className="text-muted-foreground">Claim code:</span><p className="font-mono text-xs">{selectedUnit.public_claim_code || "—"}</p></div>
             <div><span className="text-muted-foreground">Zamówienie:</span><p className="font-mono text-xs">{selectedUnit.order_id || "—"}</p></div>
-            <div><span className="text-muted-foreground">Źródło:</span><p>{SOURCE_LABELS[selectedUnit.source_type] || selectedUnit.source_type}</p></div>
             <div><span className="text-muted-foreground">Partia:</span><p>{selectedUnit.batch_name || "—"}</p></div>
-            <div><span className="text-muted-foreground">Kanał:</span><p>{CHANNEL_LABELS[selectedUnit.distribution_channel] || selectedUnit.distribution_channel}</p></div>
-            <div><span className="text-muted-foreground">Lokalizacja:</span><p>{selectedUnit.location_name || "—"}</p></div>
           </div>
           {selectedUnit.fulfillment_status !== 'voided' && selectedUnit.fulfillment_status !== 'damaged' && (
             <div className="flex gap-2 border-t border-border pt-4">
@@ -651,23 +497,6 @@ const AdminInventory = () => {
             </div>
           )}
         </div>
-
-        {selectedUnit.source_type === "stock" && !selectedUnit.business_status && ["in_stock", "allocated", "qr_generated", "qr_applied"].includes(selectedUnit.fulfillment_status) && (
-          <div className="bg-card rounded-xl p-6 shadow-soft space-y-4">
-            <div>
-              <h4 className="font-display font-semibold flex items-center gap-2"><UserPlus className="w-4 h-4 text-primary" /> Wydaj Podróżnikowi</h4>
-              <p className="text-sm text-muted-foreground mt-1">Przypisz fizyczną Podróżówkę wydawaną na festiwalu, targach lub przez partnera do istniejącego konta.</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input type="email" value={assignEmail} onChange={(event) => setAssignEmail(event.target.value)} placeholder="E-mail konta Podróżnika" />
-              <Input value={assignNote} onChange={(event) => setAssignNote(event.target.value)} placeholder="Notatka, np. Festiwal 2026 / stoisko A" />
-            </div>
-            <Button onClick={handleAssignToTraveler} disabled={isAssigning}>
-              {isAssigning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
-              Przypisz i oznacz jako wydaną
-            </Button>
-          </div>
-        )}
 
         {/* Event timeline */}
         <div className="bg-card rounded-xl p-6 shadow-soft">
@@ -710,29 +539,6 @@ const AdminInventory = () => {
           )}
         </div>
 
-        <div className="bg-card rounded-xl p-6 shadow-soft">
-          <h4 className="font-display font-semibold mb-4 flex items-center gap-2">
-            <Package className="w-4 h-4 text-primary" /> Ruchy magazynowe
-          </h4>
-          {movementEvents.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Brak zarejestrowanych ruchów</p>
-          ) : (
-            <div className="space-y-3">
-              {movementEvents.map((movement) => (
-                <div key={movement.id} className="rounded-lg border border-border p-3 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-medium">{movement.movement_type}</span>
-                    <span className="text-xs text-muted-foreground">{formatDateFull(movement.created_at)}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {movement.from_location?.name || "—"} → {movement.to_location?.name || "—"}
-                    {movement.note ? ` · ${movement.note}` : ""}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     );
   }
@@ -742,7 +548,7 @@ const AdminInventory = () => {
       <div className="flex flex-wrap gap-3 items-center justify-between">
         <div>
           <h2 className="font-display text-xl font-bold text-foreground">Magazyn & System POD</h2>
-          <p className="text-xs text-muted-foreground">System realizuje zamówienia w formule Print On Demand (POD) — bezpośrednio na zlecenie z drukarni.</p>
+          <p className="text-xs text-muted-foreground">Jednostki ze sklepu powstają automatycznie jako POD. Tutaj możesz również dodać gotowe Podróżówki na stan magazynowy.</p>
         </div>
         <div className="flex gap-2">
           {import.meta.env.DEV && (
@@ -752,7 +558,7 @@ const AdminInventory = () => {
             </Button>
           )}
           <Button onClick={() => setShowInitDialog(true)} size="sm" className="gap-2">
-            <Plus className="w-4 h-4" /> Nowe zamówienie magazynowe
+            <Plus className="w-4 h-4" /> Dodaj na magazyn
           </Button>
         </div>
       </div>
@@ -760,12 +566,12 @@ const AdminInventory = () => {
       {/* Init batch dialog */}
       {showInitDialog && (
         <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-          <h3 className="font-display text-lg font-semibold">Nowe fizyczne zamówienie produkcyjne</h3>
-          <p className="text-sm text-muted-foreground">Dla targów, festiwali, promocji i przyszłego zatowarowania partnerów. Zamówienia sklepu tworzą partie POD automatycznie.</p>
+          <h3 className="font-display text-lg font-semibold">Dodaj Podróżówki na magazyn</h3>
+          <p className="text-sm text-muted-foreground">Wybierz wzór i liczbę gotowych sztuk. Nazwa partii jest opcjonalna.</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="text-sm text-muted-foreground mb-1 block">Nazwa zamówienia produkcyjnego</label>
-              <Input value={initBatchName} onChange={(e) => setInitBatchName(e.target.value)} placeholder="np. Festiwal Podróżniczy 2026" />
+              <label className="text-sm text-muted-foreground mb-1 block">Nazwa partii (opcjonalnie)</label>
+              <Input value={initBatchName} onChange={(e) => setInitBatchName(e.target.value)} placeholder="np. Festiwal 2026" />
             </div>
             <div>
               <label className="text-sm text-muted-foreground mb-1 block">Wzór kartki</label>
@@ -787,70 +593,10 @@ const AdminInventory = () => {
               <label className="text-sm text-muted-foreground mb-1 block">Ilość sztuk</label>
               <Input type="number" value={initQuantity} onChange={(e) => setInitQuantity(e.target.value)} min={1} max={10000} />
             </div>
-            <div className="flex items-end">
-              <Button type="button" variant="outline" onClick={addStockOrderItem} className="w-full">
-                <Plus className="w-4 h-4 mr-2" /> Dodaj wzór do zamówienia
-              </Button>
-            </div>
-            <div>
-              <label className="text-sm text-muted-foreground mb-1 block">Cel partii</label>
-              <Input value={initPurpose} onChange={(e) => setInitPurpose(e.target.value)} placeholder="np. Promocja portalu 2026" />
-            </div>
-            <div>
-              <label className="text-sm text-muted-foreground mb-1 block">Kanał dystrybucji</label>
-              <Select value={initChannel} onValueChange={setInitChannel}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="event">Targi / festiwal</SelectItem>
-                  <SelectItem value="promotion">Promocja</SelectItem>
-                  <SelectItem value="partner">Partner / biuro podróży</SelectItem>
-                  <SelectItem value="warehouse">Zapas magazynowy</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm text-muted-foreground mb-1 block">Lokalizacja przyjęcia</label>
-              <Select value={initLocationId} onValueChange={setInitLocationId}>
-                <SelectTrigger><SelectValue placeholder="Wybierz lokalizację" /></SelectTrigger>
-                <SelectContent>
-                  {locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.name} ({location.code})</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            {initChannel === "event" && (
-              <div>
-                <label className="text-sm text-muted-foreground mb-1 block">Nazwa wydarzenia</label>
-                <Input value={initEventName} onChange={(e) => setInitEventName(e.target.value)} placeholder="np. Festiwal Podróżniczy 2026" />
-              </div>
-            )}
-            {initChannel === "partner" && (
-              <div>
-                <label className="text-sm text-muted-foreground mb-1 block">Partner</label>
-                <Input value={initPartnerName} onChange={(e) => setInitPartnerName(e.target.value)} placeholder="np. Biuro Podróży XYZ" />
-              </div>
-            )}
           </div>
-          {initItems.length > 0 && (
-            <div className="rounded-xl border border-border overflow-hidden">
-              <div className="bg-muted/50 px-4 py-2 text-sm font-medium">Pozycje zamówienia · razem {initItems.reduce((sum, item) => sum + item.quantity, 0)} szt.</div>
-              {initItems.map((item) => {
-                const design = designs.find((candidate) => candidate.id === item.designId);
-                const country = countries.find((candidate) => candidate.id === design?.country_id);
-                return (
-                  <div key={item.designId} className="flex items-center justify-between gap-3 border-t border-border px-4 py-2 text-sm">
-                    <span>{country?.name_pl || "—"} · V{design?.view_no || 0} {design?.title || ""}</span>
-                    <div className="flex items-center gap-3">
-                      <strong>{item.quantity} szt.</strong>
-                      <button type="button" className="text-destructive hover:underline" onClick={() => setInitItems((current) => current.filter((entry) => entry.designId !== item.designId))}>Usuń</button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
           <div className="flex gap-2">
             <Button onClick={initializeBatch} disabled={isInitializing}>
-              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Przyjmuję...</> : <><Package className="w-4 h-4 mr-2" /> Utwórz zamówienie i przyjmij stan</>}
+              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Dodaję...</> : <><Package className="w-4 h-4 mr-2" /> Dodaj na magazyn</>}
             </Button>
             <Button variant="outline" onClick={() => setShowInitDialog(false)} disabled={isInitializing}>Anuluj</Button>
           </div>
@@ -897,9 +643,7 @@ const AdminInventory = () => {
                 <th className="text-left p-3 font-medium text-muted-foreground">Kod</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Kraj</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Wzór</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Źródło</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Partia / kanał</th>
-                <th className="text-left p-3 font-medium text-muted-foreground">Lokalizacja</th>
+                <th className="text-left p-3 font-medium text-muted-foreground">Partia</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Realizacja</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Biznesowy</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Claim code</th>
@@ -912,21 +656,16 @@ const AdminInventory = () => {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={14} className="p-8 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" /></td></tr>
+                <tr><td colSpan={12} className="p-8 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" /></td></tr>
               ) : filteredUnits.length === 0 ? (
-                <tr><td colSpan={14} className="p-8 text-center text-muted-foreground">Brak wyników</td></tr>
+                <tr><td colSpan={12} className="p-8 text-center text-muted-foreground">Brak wyników</td></tr>
               ) : (
                 filteredUnits.map((u) => (
                   <tr key={u.id} className="border-b border-border/50 hover:bg-muted/30 cursor-pointer" onClick={() => openUnitDetail(u)}>
                     <td className="p-3 font-mono text-xs">{u.internal_inventory_code}</td>
                     <td className="p-3">{u.country_name || "—"}</td>
                     <td className="p-3 text-muted-foreground">V{u.view_no} {u.design_title || ""}</td>
-                    <td className="p-3 text-xs font-medium">{SOURCE_LABELS[u.source_type] || u.source_type}</td>
-                    <td className="p-3 text-xs">
-                      <p>{u.batch_name || "—"}</p>
-                      <p className="text-muted-foreground">{CHANNEL_LABELS[u.distribution_channel] || u.distribution_channel}</p>
-                    </td>
-                    <td className="p-3 text-xs">{u.location_name || "—"}</td>
+                    <td className="p-3 text-xs">{u.batch_name || "—"}</td>
                     <td className="p-3">{fulfillmentBadge(u.fulfillment_status)}</td>
                     <td className="p-3">{businessBadge(u.business_status)}</td>
                     <td className="p-3 font-mono text-xs">{u.public_claim_code || "—"}</td>
