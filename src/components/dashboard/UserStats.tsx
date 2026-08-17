@@ -57,7 +57,7 @@ const fetchUserStats = async (userId: string) => {
 
   const typedUnits = (data || []) as unknown as StatsUnitJoin[];
   const totalUnits = typedUnits.length;
-  const purchasedCount = typedUnits.filter((u) => u.business_status === 'purchased').length;
+  const purchasedCount = typedUnits.filter((u) => ['purchased', 'assigned'].includes(u.business_status || '')).length;
   const registeredCount = typedUnits.filter((u) => u.business_status === 'registered').length;
 
   const countryMap = new Map<string, { total: number; registered: number }>();

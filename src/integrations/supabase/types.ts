@@ -413,11 +413,118 @@ export type Database = {
           },
         ]
       }
+      inventory_locations: {
+        Row: {
+          active: boolean
+          address: string | null
+          code: string
+          created_at: string
+          id: string
+          location_type: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          address?: string | null
+          code: string
+          created_at?: string
+          id?: string
+          location_type?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          address?: string | null
+          code?: string
+          created_at?: string
+          id?: string
+          location_type?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      inventory_movements: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          from_location_id: string | null
+          id: string
+          inventory_unit_id: string
+          movement_type: string
+          note: string | null
+          reference_id: string | null
+          reference_type: string | null
+          stock_batch_id: string
+          to_location_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          from_location_id?: string | null
+          id?: string
+          inventory_unit_id: string
+          movement_type: string
+          note?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
+          stock_batch_id: string
+          to_location_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          from_location_id?: string | null
+          id?: string
+          inventory_unit_id?: string
+          movement_type?: string
+          note?: string | null
+          reference_id?: string | null
+          reference_type?: string | null
+          stock_batch_id?: string
+          to_location_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_movements_from_location_id_fkey"
+            columns: ["from_location_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_movements_inventory_unit_id_fkey"
+            columns: ["inventory_unit_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_movements_stock_batch_id_fkey"
+            columns: ["stock_batch_id"]
+            isOneToOne: false
+            referencedRelation: "stock_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_movements_to_location_id_fkey"
+            columns: ["to_location_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inventory_units: {
         Row: {
+          assigned_at: string | null
           business_status: Database["public"]["Enums"]["business_status"] | null
           card_design_id: string
           created_at: string
+          current_location_id: string | null
+          distribution_note: string | null
           fulfillment_status: Database["public"]["Enums"]["fulfillment_status"]
           id: string
           internal_inventory_code: string
@@ -435,11 +542,14 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          assigned_at?: string | null
           business_status?:
             | Database["public"]["Enums"]["business_status"]
             | null
           card_design_id: string
           created_at?: string
+          current_location_id?: string | null
+          distribution_note?: string | null
           fulfillment_status?: Database["public"]["Enums"]["fulfillment_status"]
           id?: string
           internal_inventory_code: string
@@ -457,11 +567,14 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          assigned_at?: string | null
           business_status?:
             | Database["public"]["Enums"]["business_status"]
             | null
           card_design_id?: string
           created_at?: string
+          current_location_id?: string | null
+          distribution_note?: string | null
           fulfillment_status?: Database["public"]["Enums"]["fulfillment_status"]
           id?: string
           internal_inventory_code?: string
@@ -491,6 +604,13 @@ export type Database = {
             columns: ["stock_batch_id"]
             isOneToOne: false
             referencedRelation: "stock_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_units_current_location_id_fkey"
+            columns: ["current_location_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_locations"
             referencedColumns: ["id"]
           },
         ]
@@ -1089,32 +1209,124 @@ export type Database = {
           },
         ]
       }
+      stock_production_orders: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          distribution_channel: string
+          event_name: string | null
+          id: string
+          location_id: string | null
+          name: string
+          notes: string | null
+          order_number: string
+          ordered_at: string | null
+          partner_name: string | null
+          purpose: string
+          received_at: string | null
+          status: string
+          total_quantity: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          distribution_channel?: string
+          event_name?: string | null
+          id?: string
+          location_id?: string | null
+          name: string
+          notes?: string | null
+          order_number?: string
+          ordered_at?: string | null
+          partner_name?: string | null
+          purpose: string
+          received_at?: string | null
+          status?: string
+          total_quantity?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          distribution_channel?: string
+          event_name?: string | null
+          id?: string
+          location_id?: string | null
+          name?: string
+          notes?: string | null
+          order_number?: string
+          ordered_at?: string | null
+          partner_name?: string | null
+          purpose?: string
+          received_at?: string | null
+          status?: string
+          total_quantity?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stock_production_orders_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stock_batches: {
         Row: {
           card_design_id: string
           created_at: string
           description: string | null
+          distribution_channel: string
+          event_name: string | null
           id: string
+          location_id: string | null
           name: string
+          partner_name: string | null
+          production_order_id: string | null
+          production_status: string
+          purpose: string | null
           quantity: number
+          received_at: string | null
+          source_type: string
           updated_at: string
         }
         Insert: {
           card_design_id: string
           created_at?: string
           description?: string | null
+          distribution_channel?: string
+          event_name?: string | null
           id?: string
+          location_id?: string | null
           name: string
+          partner_name?: string | null
+          production_order_id?: string | null
+          production_status?: string
+          purpose?: string | null
           quantity?: number
+          received_at?: string | null
+          source_type?: string
           updated_at?: string
         }
         Update: {
           card_design_id?: string
           created_at?: string
           description?: string | null
+          distribution_channel?: string
+          event_name?: string | null
           id?: string
+          location_id?: string | null
           name?: string
+          partner_name?: string | null
+          production_order_id?: string | null
+          production_status?: string
+          purpose?: string | null
           quantity?: number
+          received_at?: string | null
+          source_type?: string
           updated_at?: string
         }
         Relationships: [
@@ -1123,6 +1335,20 @@ export type Database = {
             columns: ["card_design_id"]
             isOneToOne: false
             referencedRelation: "card_designs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_batches_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stock_batches_production_order_id_fkey"
+            columns: ["production_order_id"]
+            isOneToOne: false
+            referencedRelation: "stock_production_orders"
             referencedColumns: ["id"]
           },
         ]
@@ -1263,6 +1489,18 @@ export type Database = {
         Args: { lat1: number; lat2: number; lon1: number; lon2: number }
         Returns: number
       }
+      admin_assign_stock_unit: {
+        Args: {
+          _note?: string
+          _traveler_email: string
+          _unit_id: string
+        }
+        Returns: Json
+      }
+      delete_order_with_inventory_cleanup: {
+        Args: { _order_id: string }
+        Returns: Json
+      }
       calculate_user_impact_points: {
         Args: { _user_id: string }
         Returns: undefined
@@ -1346,7 +1584,7 @@ export type Database = {
     }
     Enums: {
       app_role: "traveler" | "admin"
-      business_status: "purchased" | "registered"
+      business_status: "purchased" | "registered" | "assigned"
       event_actor_type: "system" | "admin" | "traveler" | "recipient"
       fulfillment_status:
         | "in_stock"
@@ -1356,6 +1594,8 @@ export type Database = {
         | "shipped"
         | "voided"
         | "damaged"
+        | "allocated"
+        | "issued"
       inventory_event_type:
         | "created_in_stock"
         | "reserved_for_order"
@@ -1507,7 +1747,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["traveler", "admin"],
-      business_status: ["purchased", "registered"],
+      business_status: ["purchased", "registered", "assigned"],
       event_actor_type: ["system", "admin", "traveler", "recipient"],
       fulfillment_status: [
         "in_stock",
@@ -1517,6 +1757,8 @@ export const Constants = {
         "shipped",
         "voided",
         "damaged",
+        "allocated",
+        "issued",
       ],
       inventory_event_type: [
         "created_in_stock",

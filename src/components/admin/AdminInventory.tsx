@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Search, Plus, Package, ArrowLeft, Clock, Trash2 } from "lucide-react";
+import { Loader2, Search, Plus, Package, ArrowLeft, Clock, Trash2, UserPlus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface InventoryUnit {
@@ -31,6 +31,13 @@ interface InventoryUnit {
   country_name: string | null;
   view_no: number | null;
   batch_name: string | null;
+  source_type: string;
+  distribution_channel: string;
+  purpose: string | null;
+  event_name: string | null;
+  partner_name: string | null;
+  production_status: string;
+  location_name: string | null;
 }
 
 interface AdminInventoryJoin {
@@ -47,12 +54,25 @@ interface AdminInventoryJoin {
   created_at: string;
   card_design_id: string;
   stock_batch_id: string | null;
+  current_location_id: string | null;
   card_designs: {
     title: string | null;
     view_no: number;
     countries: {
       name_pl: string;
     } | null;
+  } | null;
+  stock_batches: {
+    name: string;
+    source_type: string;
+    purpose: string | null;
+    distribution_channel: string;
+    event_name: string | null;
+    partner_name: string | null;
+    production_status: string;
+  } | null;
+  inventory_locations: {
+    name: string;
   } | null;
 }
 
@@ -68,19 +88,46 @@ interface DesignOption {
   country_id: string;
 }
 
+interface LocationOption {
+  id: string;
+  name: string;
+  code: string;
+}
+
+interface StockOrderItemDraft {
+  designId: string;
+  quantity: number;
+}
+
 const FULFILLMENT_LABELS: Record<string, string> = {
   in_stock: "W magazynie",
   reserved: "Zarezerwowana",
   qr_generated: "QR wygenerowany",
   qr_applied: "QR naklejony",
   shipped: "Wysłana",
+  allocated: "Przydzielona do dystrybucji",
+  issued: "Wydana Podróżnikowi",
   voided: "Anulowana",
   damaged: "Uszkodzona",
 };
 
 const BUSINESS_LABELS: Record<string, string> = {
   purchased: "Kupiona",
+  assigned: "Przypisana Podróżnikowi",
   registered: "Zarejestrowana",
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  pod: "POD / sklep",
+  stock: "Magazyn fizyczny",
+};
+
+const CHANNEL_LABELS: Record<string, string> = {
+  warehouse: "Magazyn",
+  event: "Targi / festiwal",
+  promotion: "Promocja",
+  partner: "Partner / biuro podróży",
+  ecommerce: "Sklep internetowy",
 };
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
@@ -115,12 +162,19 @@ const AdminInventory = () => {
 
   const [countries, setCountries] = useState<CountryOption[]>([]);
   const [designs, setDesigns] = useState<DesignOption[]>([]);
+  const [locations, setLocations] = useState<LocationOption[]>([]);
 
   // Init batch dialog
   const [showInitDialog, setShowInitDialog] = useState(false);
   const [initDesignId, setInitDesignId] = useState("");
   const [initQuantity, setInitQuantity] = useState("5000");
   const [initBatchName, setInitBatchName] = useState("");
+  const [initPurpose, setInitPurpose] = useState("");
+  const [initChannel, setInitChannel] = useState("event");
+  const [initEventName, setInitEventName] = useState("");
+  const [initPartnerName, setInitPartnerName] = useState("");
+  const [initLocationId, setInitLocationId] = useState("");
+  const [initItems, setInitItems] = useState<StockOrderItemDraft[]>([]);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isClearingInventory, setIsClearingInventory] = useState(false);
 
@@ -134,27 +188,57 @@ const AdminInventory = () => {
     payload_json: unknown;
     created_at: string;
   }>>([]);
+  const [movementEvents, setMovementEvents] = useState<Array<{
+    id: string;
+    movement_type: string;
+    note: string | null;
+    reference_type: string | null;
+    reference_id: string | null;
+    created_at: string;
+    from_location: { name: string } | null;
+    to_location: { name: string } | null;
+  }>>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [assignEmail, setAssignEmail] = useState("");
+  const [assignNote, setAssignNote] = useState("");
+  const [isAssigning, setIsAssigning] = useState(false);
 
   const openUnitDetail = async (unit: InventoryUnit) => {
     setSelectedUnit(unit);
     setEventsLoading(true);
-    const { data } = await supabase
-      .from("inventory_unit_events")
-      .select("id, event_type, actor_type, actor_id, payload_json, created_at")
-      .eq("inventory_unit_id", unit.id)
-      .order("created_at", { ascending: true });
+    const [{ data }, { data: movements }] = await Promise.all([
+      supabase
+        .from("inventory_unit_events")
+        .select("id, event_type, actor_type, actor_id, payload_json, created_at")
+        .eq("inventory_unit_id", unit.id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("inventory_movements")
+        .select(`
+          id, movement_type, note, reference_type, reference_id, created_at,
+          from_location:inventory_locations!inventory_movements_from_location_id_fkey(name),
+          to_location:inventory_locations!inventory_movements_to_location_id_fkey(name)
+        `)
+        .eq("inventory_unit_id", unit.id)
+        .order("created_at", { ascending: true }),
+    ]);
     setUnitEvents(data || []);
+    setMovementEvents((movements || []) as unknown as typeof movementEvents);
     setEventsLoading(false);
   };
 
   const fetchFilters = useCallback(async () => {
-    const [{ data: c }, { data: d }] = await Promise.all([
+    const [{ data: c }, { data: d }, { data: l }] = await Promise.all([
       supabase.from("countries").select("id, name_pl").order("name_pl"),
       supabase.from("card_designs").select("id, title, view_no, country_id").order("view_no"),
+      supabase.from("inventory_locations").select("id, name, code").eq("active", true).order("name"),
     ]);
     if (c) setCountries(c);
     if (d) setDesigns(d);
+    if (l) {
+      setLocations(l);
+      setInitLocationId((current) => current || l[0]?.id || "");
+    }
   }, []);
 
   const fetchUnits = useCallback(async () => {
@@ -166,17 +250,19 @@ const AdminInventory = () => {
         id, internal_inventory_code, business_status, fulfillment_status,
         traveler_user_id, order_id, public_claim_code,
         qr_generated_at, shipped_at, registered_at, created_at,
-        card_design_id, stock_batch_id,
-        card_designs!inner(title, view_no, countries!inner(name_pl))
+        card_design_id, stock_batch_id, current_location_id,
+        card_designs!inner(title, view_no, countries!inner(name_pl)),
+        stock_batches!inner(name, source_type, purpose, distribution_channel, event_name, partner_name, production_status),
+        inventory_locations(name)
       `)
       .order("created_at", { ascending: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
     if (fulfillmentFilter !== "all") {
-      query = query.eq("fulfillment_status", fulfillmentFilter as Database["public"]["Enums"]["inventory_unit_fulfillment_status"]);
+      query = query.eq("fulfillment_status", fulfillmentFilter as Database["public"]["Enums"]["fulfillment_status"]);
     }
     if (businessFilter !== "all") {
-      query = query.eq("business_status", businessFilter as Database["public"]["Enums"]["inventory_unit_business_status"]);
+      query = query.eq("business_status", businessFilter as Database["public"]["Enums"]["business_status"]);
     }
     if (countryFilter !== "all") {
       query = query.eq("card_designs.countries.id", countryFilter);
@@ -204,7 +290,14 @@ const AdminInventory = () => {
           design_title: u.card_designs?.title || null,
           country_name: u.card_designs?.countries?.name_pl || null,
           view_no: u.card_designs?.view_no || null,
-          batch_name: null,
+          batch_name: u.stock_batches?.name || null,
+          source_type: u.stock_batches?.source_type || "stock",
+          distribution_channel: u.stock_batches?.distribution_channel || "warehouse",
+          purpose: u.stock_batches?.purpose || null,
+          event_name: u.stock_batches?.event_name || null,
+          partner_name: u.stock_batches?.partner_name || null,
+          production_status: u.stock_batches?.production_status || "received",
+          location_name: u.inventory_locations?.name || null,
         }))
       );
     }
@@ -231,72 +324,145 @@ const AdminInventory = () => {
     );
   });
 
-  const initializeBatch = async () => {
-    if (!initDesignId || !initBatchName) {
-      toast({ title: "Uzupełnij nazwę partii i wybierz wzór", variant: "destructive" });
+  const addStockOrderItem = () => {
+    const quantity = parseInt(initQuantity);
+    if (!initDesignId || Number.isNaN(quantity) || quantity < 1 || quantity > 10000) {
+      toast({ title: "Wybierz wzór i podaj prawidłową ilość", variant: "destructive" });
       return;
     }
 
-    const qty = parseInt(initQuantity);
-    if (isNaN(qty) || qty < 1 || qty > 10000) {
-      toast({ title: "Ilość musi być między 1 a 10000", variant: "destructive" });
+    setInitItems((current) => {
+      const existing = current.find((item) => item.designId === initDesignId);
+      if (existing) {
+        return current.map((item) => item.designId === initDesignId
+          ? { ...item, quantity: item.quantity + quantity }
+          : item);
+      }
+      return [...current, { designId: initDesignId, quantity }];
+    });
+    setInitDesignId("");
+    setInitQuantity("1");
+  };
+
+  const initializeBatch = async () => {
+    const pendingQuantity = parseInt(initQuantity);
+    const items = [...initItems];
+    if (initDesignId && !Number.isNaN(pendingQuantity) && pendingQuantity > 0) {
+      const existing = items.find((item) => item.designId === initDesignId);
+      if (existing) existing.quantity += pendingQuantity;
+      else items.push({ designId: initDesignId, quantity: pendingQuantity });
+    }
+
+    if (!initBatchName || !initPurpose || !initLocationId || items.length === 0) {
+      toast({ title: "Uzupełnij nazwę, cel, lokalizację i dodaj co najmniej jeden wzór", variant: "destructive" });
+      return;
+    }
+
+    if (initChannel === "event" && !initEventName.trim()) {
+      toast({ title: "Podaj nazwę targów lub festiwalu", variant: "destructive" });
+      return;
+    }
+
+    if (initChannel === "partner" && !initPartnerName.trim()) {
+      toast({ title: "Podaj nazwę partnera lub biura podróży", variant: "destructive" });
+      return;
+    }
+
+    const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+    if (totalQuantity < 1 || totalQuantity > 10000) {
+      toast({ title: "Łączna ilość w zamówieniu musi być między 1 a 10000", variant: "destructive" });
       return;
     }
 
     setIsInitializing(true);
 
-    // Create batch
-    const { data: batch, error: batchError } = await supabase
-      .from("stock_batches")
+    const now = new Date().toISOString();
+    const { data: productionOrder, error: productionOrderError } = await supabase
+      .from("stock_production_orders")
       .insert({
         name: initBatchName,
-        card_design_id: initDesignId,
-        quantity: qty,
+        purpose: initPurpose,
+        distribution_channel: initChannel,
+        event_name: initChannel === "event" ? initEventName.trim() : null,
+        partner_name: initChannel === "partner" ? initPartnerName.trim() : null,
+        location_id: initLocationId,
+        status: "received",
+        total_quantity: totalQuantity,
+        ordered_at: now,
+        received_at: now,
       })
-      .select("id")
+      .select("id, order_number")
       .single();
 
-    if (batchError || !batch) {
-      toast({ title: "Błąd tworzenia partii", description: batchError?.message, variant: "destructive" });
+    if (productionOrderError || !productionOrder) {
+      toast({ title: "Błąd tworzenia zamówienia magazynowego", description: productionOrderError?.message, variant: "destructive" });
       setIsInitializing(false);
       return;
     }
 
-    // Generate units in chunks of 500
-    const design = designs.find((d) => d.id === initDesignId);
-    const country = countries.find((c) => c.id === design?.country_id);
-    const prefix = `${country?.name_pl?.slice(0, 3).toUpperCase() || "XXX"}-V${design?.view_no || 0}`;
-
     const CHUNK = 500;
     let created = 0;
 
-    for (let i = 0; i < qty; i += CHUNK) {
-      const chunk = Math.min(CHUNK, qty - i);
-      const rows = Array.from({ length: chunk }, (_, j) => ({
-        stock_batch_id: batch.id,
-        card_design_id: initDesignId,
-        internal_inventory_code: `${prefix}-${String(i + j + 1).padStart(5, "0")}`,
-        fulfillment_status: "in_stock" as const,
-      }));
+    for (const item of items) {
+      const design = designs.find((candidate) => candidate.id === item.designId);
+      const country = countries.find((candidate) => candidate.id === design?.country_id);
+      const itemName = `${initBatchName} — ${country?.name_pl || "Wzór"} V${design?.view_no || 0}`;
+      const { data: batch, error: batchError } = await supabase
+        .from("stock_batches")
+        .insert({
+          name: itemName,
+          description: initPurpose,
+          card_design_id: item.designId,
+          quantity: item.quantity,
+          source_type: "stock",
+          purpose: initPurpose,
+          distribution_channel: initChannel,
+          event_name: initChannel === "event" ? initEventName.trim() : null,
+          partner_name: initChannel === "partner" ? initPartnerName.trim() : null,
+          location_id: initLocationId,
+          production_order_id: productionOrder.id,
+          production_status: "received",
+          received_at: now,
+        })
+        .select("id")
+        .single();
 
-      const { error } = await supabase.from("inventory_units").insert(rows);
-      if (error) {
-        toast({
-          title: `Błąd po ${created} sztukach`,
-          description: error.message,
-          variant: "destructive",
-        });
+      if (batchError || !batch) {
+        toast({ title: `Błąd tworzenia partii po ${created} sztukach`, description: batchError?.message, variant: "destructive" });
         setIsInitializing(false);
         return;
       }
-      created += chunk;
+
+      const prefix = `STK-${batch.id.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+      for (let i = 0; i < item.quantity; i += CHUNK) {
+        const chunk = Math.min(CHUNK, item.quantity - i);
+        const rows = Array.from({ length: chunk }, (_, j) => ({
+          stock_batch_id: batch.id,
+          card_design_id: item.designId,
+          internal_inventory_code: `${prefix}-${String(i + j + 1).padStart(5, "0")}`,
+          fulfillment_status: "in_stock" as const,
+          current_location_id: initLocationId,
+        }));
+
+        const { error } = await supabase.from("inventory_units").insert(rows);
+        if (error) {
+          toast({ title: `Błąd po ${created} sztukach`, description: error.message, variant: "destructive" });
+          setIsInitializing(false);
+          return;
+        }
+        created += chunk;
+      }
     }
 
-    toast({ title: `Utworzono ${created} sztuk w partii "${initBatchName}"` });
+    toast({ title: `Przyjęto ${created} sztuk`, description: `Zamówienie produkcyjne ${productionOrder.order_number}` });
     setShowInitDialog(false);
     setInitBatchName("");
-    setInitQuantity("5000");
+    setInitPurpose("");
+    setInitEventName("");
+    setInitPartnerName("");
+    setInitItems([]);
     setInitDesignId("");
+    setInitQuantity("5000");
     setIsInitializing(false);
     fetchUnits();
   };
@@ -304,7 +470,7 @@ const AdminInventory = () => {
   const handleVoid = async (unitId: string) => {
     const { error } = await supabase
       .from("inventory_units")
-      .update({ fulfillment_status: "voided" as Database["public"]["Enums"]["inventory_unit_fulfillment_status"] })
+      .update({ fulfillment_status: "voided" as Database["public"]["Enums"]["fulfillment_status"] })
       .eq("id", unitId);
     if (error) {
       toast({ title: "Błąd", description: error.message, variant: "destructive" });
@@ -317,7 +483,7 @@ const AdminInventory = () => {
   const handleDamaged = async (unitId: string) => {
     const { error } = await supabase
       .from("inventory_units")
-      .update({ fulfillment_status: "damaged" as Database["public"]["Enums"]["inventory_unit_fulfillment_status"] })
+      .update({ fulfillment_status: "damaged" as Database["public"]["Enums"]["fulfillment_status"] })
       .eq("id", unitId);
     if (error) {
       toast({ title: "Błąd", description: error.message, variant: "destructive" });
@@ -337,6 +503,45 @@ const AdminInventory = () => {
       fetchUnits();
     }
   };
+
+  const handleAssignToTraveler = async () => {
+    if (!selectedUnit || !assignEmail.trim()) {
+      toast({ title: "Podaj e-mail konta Podróżnika", variant: "destructive" });
+      return;
+    }
+
+    setIsAssigning(true);
+    const { error } = await supabase.rpc("admin_assign_stock_unit", {
+      _unit_id: selectedUnit.id,
+      _traveler_email: assignEmail.trim(),
+      _note: assignNote.trim() || undefined,
+    });
+    setIsAssigning(false);
+
+    if (error) {
+      const description = error.message.includes("traveler_account_not_found")
+        ? "Nie znaleziono konta o podanym adresie e-mail. Podróżnik musi najpierw założyć konto."
+        : error.message.includes("inventory_unit_already_assigned")
+          ? "Ta Podróżówka jest już przypisana."
+          : error.message;
+      toast({ title: "Nie udało się przypisać Podróżówki", description, variant: "destructive" });
+      return;
+    }
+
+    toast({ title: "Podróżówka przypisana Podróżnikowi" });
+    setAssignEmail("");
+    setAssignNote("");
+    setSelectedUnit(null);
+    await fetchUnits();
+  };
+
+  const canDeleteUnit = (unit: InventoryUnit) =>
+    !unit.order_id &&
+    !unit.public_claim_code &&
+    !unit.shipped_at &&
+    !unit.registered_at &&
+    unit.business_status !== "registered" &&
+    !["shipped", "issued"].includes(unit.fulfillment_status);
 
   const handleClearInventory = async () => {
     if (!confirm("Czy na pewno chcesz usunąć wszystkie pozycje z magazynu? Operacji nie można cofnąć.")) return;
@@ -363,6 +568,7 @@ const AdminInventory = () => {
 
       setSelectedUnit(null);
       setUnitEvents([]);
+      setMovementEvents([]);
       toast({ title: "Magazyn został wyczyszczony" });
       await fetchUnits();
     } catch (error) {
@@ -383,6 +589,8 @@ const AdminInventory = () => {
       qr_generated: "bg-primary/15 text-primary",
       qr_applied: "bg-primary/25 text-primary",
       shipped: "bg-accent/15 text-accent",
+      allocated: "bg-primary/10 text-primary",
+      issued: "bg-accent/20 text-accent",
       voided: "bg-destructive/15 text-destructive",
       damaged: "bg-destructive/25 text-destructive",
     };
@@ -397,6 +605,7 @@ const AdminInventory = () => {
     if (!status) return <span className="text-xs text-muted-foreground">—</span>;
     const colors: Record<string, string> = {
       purchased: "bg-[hsl(var(--gold))]/15 text-[hsl(var(--gold))]",
+      assigned: "bg-primary/15 text-primary",
       registered: "bg-accent/15 text-accent",
     };
     return (
@@ -430,6 +639,10 @@ const AdminInventory = () => {
             <div><span className="text-muted-foreground">Wzór:</span><p>V{selectedUnit.view_no} {selectedUnit.design_title || ""}</p></div>
             <div><span className="text-muted-foreground">Claim code:</span><p className="font-mono text-xs">{selectedUnit.public_claim_code || "—"}</p></div>
             <div><span className="text-muted-foreground">Zamówienie:</span><p className="font-mono text-xs">{selectedUnit.order_id || "—"}</p></div>
+            <div><span className="text-muted-foreground">Źródło:</span><p>{SOURCE_LABELS[selectedUnit.source_type] || selectedUnit.source_type}</p></div>
+            <div><span className="text-muted-foreground">Partia:</span><p>{selectedUnit.batch_name || "—"}</p></div>
+            <div><span className="text-muted-foreground">Kanał:</span><p>{CHANNEL_LABELS[selectedUnit.distribution_channel] || selectedUnit.distribution_channel}</p></div>
+            <div><span className="text-muted-foreground">Lokalizacja:</span><p>{selectedUnit.location_name || "—"}</p></div>
           </div>
           {selectedUnit.fulfillment_status !== 'voided' && selectedUnit.fulfillment_status !== 'damaged' && (
             <div className="flex gap-2 border-t border-border pt-4">
@@ -438,6 +651,23 @@ const AdminInventory = () => {
             </div>
           )}
         </div>
+
+        {selectedUnit.source_type === "stock" && !selectedUnit.business_status && ["in_stock", "allocated", "qr_generated", "qr_applied"].includes(selectedUnit.fulfillment_status) && (
+          <div className="bg-card rounded-xl p-6 shadow-soft space-y-4">
+            <div>
+              <h4 className="font-display font-semibold flex items-center gap-2"><UserPlus className="w-4 h-4 text-primary" /> Wydaj Podróżnikowi</h4>
+              <p className="text-sm text-muted-foreground mt-1">Przypisz fizyczną Podróżówkę wydawaną na festiwalu, targach lub przez partnera do istniejącego konta.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input type="email" value={assignEmail} onChange={(event) => setAssignEmail(event.target.value)} placeholder="E-mail konta Podróżnika" />
+              <Input value={assignNote} onChange={(event) => setAssignNote(event.target.value)} placeholder="Notatka, np. Festiwal 2026 / stoisko A" />
+            </div>
+            <Button onClick={handleAssignToTraveler} disabled={isAssigning}>
+              {isAssigning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
+              Przypisz i oznacz jako wydaną
+            </Button>
+          </div>
+        )}
 
         {/* Event timeline */}
         <div className="bg-card rounded-xl p-6 shadow-soft">
@@ -479,6 +709,30 @@ const AdminInventory = () => {
             </div>
           )}
         </div>
+
+        <div className="bg-card rounded-xl p-6 shadow-soft">
+          <h4 className="font-display font-semibold mb-4 flex items-center gap-2">
+            <Package className="w-4 h-4 text-primary" /> Ruchy magazynowe
+          </h4>
+          {movementEvents.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Brak zarejestrowanych ruchów</p>
+          ) : (
+            <div className="space-y-3">
+              {movementEvents.map((movement) => (
+                <div key={movement.id} className="rounded-lg border border-border p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">{movement.movement_type}</span>
+                    <span className="text-xs text-muted-foreground">{formatDateFull(movement.created_at)}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {movement.from_location?.name || "—"} → {movement.to_location?.name || "—"}
+                    {movement.note ? ` · ${movement.note}` : ""}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -491,12 +745,14 @@ const AdminInventory = () => {
           <p className="text-xs text-muted-foreground">System realizuje zamówienia w formule Print On Demand (POD) — bezpośrednio na zlecenie z drukarni.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="destructive" onClick={handleClearInventory} size="sm" disabled={isClearingInventory} className="gap-2">
-            {isClearingInventory ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-            Wyczyść magazyn
-          </Button>
+          {import.meta.env.DEV && (
+            <Button variant="destructive" onClick={handleClearInventory} size="sm" disabled={isClearingInventory} className="gap-2">
+              {isClearingInventory ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              Wyczyść dane testowe
+            </Button>
+          )}
           <Button onClick={() => setShowInitDialog(true)} size="sm" className="gap-2">
-            <Plus className="w-4 h-4" /> Nowa partia
+            <Plus className="w-4 h-4" /> Nowe zamówienie magazynowe
           </Button>
         </div>
       </div>
@@ -504,11 +760,12 @@ const AdminInventory = () => {
       {/* Init batch dialog */}
       {showInitDialog && (
         <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-          <h3 className="font-display text-lg font-semibold">Inicjalizacja partii magazynowej</h3>
+          <h3 className="font-display text-lg font-semibold">Nowe fizyczne zamówienie produkcyjne</h3>
+          <p className="text-sm text-muted-foreground">Dla targów, festiwali, promocji i przyszłego zatowarowania partnerów. Zamówienia sklepu tworzą partie POD automatycznie.</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="text-sm text-muted-foreground mb-1 block">Nazwa partii</label>
-              <Input value={initBatchName} onChange={(e) => setInitBatchName(e.target.value)} placeholder="np. Partia PL-01" />
+              <label className="text-sm text-muted-foreground mb-1 block">Nazwa zamówienia produkcyjnego</label>
+              <Input value={initBatchName} onChange={(e) => setInitBatchName(e.target.value)} placeholder="np. Festiwal Podróżniczy 2026" />
             </div>
             <div>
               <label className="text-sm text-muted-foreground mb-1 block">Wzór kartki</label>
@@ -530,10 +787,70 @@ const AdminInventory = () => {
               <label className="text-sm text-muted-foreground mb-1 block">Ilość sztuk</label>
               <Input type="number" value={initQuantity} onChange={(e) => setInitQuantity(e.target.value)} min={1} max={10000} />
             </div>
+            <div className="flex items-end">
+              <Button type="button" variant="outline" onClick={addStockOrderItem} className="w-full">
+                <Plus className="w-4 h-4 mr-2" /> Dodaj wzór do zamówienia
+              </Button>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground mb-1 block">Cel partii</label>
+              <Input value={initPurpose} onChange={(e) => setInitPurpose(e.target.value)} placeholder="np. Promocja portalu 2026" />
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground mb-1 block">Kanał dystrybucji</label>
+              <Select value={initChannel} onValueChange={setInitChannel}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="event">Targi / festiwal</SelectItem>
+                  <SelectItem value="promotion">Promocja</SelectItem>
+                  <SelectItem value="partner">Partner / biuro podróży</SelectItem>
+                  <SelectItem value="warehouse">Zapas magazynowy</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm text-muted-foreground mb-1 block">Lokalizacja przyjęcia</label>
+              <Select value={initLocationId} onValueChange={setInitLocationId}>
+                <SelectTrigger><SelectValue placeholder="Wybierz lokalizację" /></SelectTrigger>
+                <SelectContent>
+                  {locations.map((location) => <SelectItem key={location.id} value={location.id}>{location.name} ({location.code})</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            {initChannel === "event" && (
+              <div>
+                <label className="text-sm text-muted-foreground mb-1 block">Nazwa wydarzenia</label>
+                <Input value={initEventName} onChange={(e) => setInitEventName(e.target.value)} placeholder="np. Festiwal Podróżniczy 2026" />
+              </div>
+            )}
+            {initChannel === "partner" && (
+              <div>
+                <label className="text-sm text-muted-foreground mb-1 block">Partner</label>
+                <Input value={initPartnerName} onChange={(e) => setInitPartnerName(e.target.value)} placeholder="np. Biuro Podróży XYZ" />
+              </div>
+            )}
           </div>
+          {initItems.length > 0 && (
+            <div className="rounded-xl border border-border overflow-hidden">
+              <div className="bg-muted/50 px-4 py-2 text-sm font-medium">Pozycje zamówienia · razem {initItems.reduce((sum, item) => sum + item.quantity, 0)} szt.</div>
+              {initItems.map((item) => {
+                const design = designs.find((candidate) => candidate.id === item.designId);
+                const country = countries.find((candidate) => candidate.id === design?.country_id);
+                return (
+                  <div key={item.designId} className="flex items-center justify-between gap-3 border-t border-border px-4 py-2 text-sm">
+                    <span>{country?.name_pl || "—"} · V{design?.view_no || 0} {design?.title || ""}</span>
+                    <div className="flex items-center gap-3">
+                      <strong>{item.quantity} szt.</strong>
+                      <button type="button" className="text-destructive hover:underline" onClick={() => setInitItems((current) => current.filter((entry) => entry.designId !== item.designId))}>Usuń</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="flex gap-2">
             <Button onClick={initializeBatch} disabled={isInitializing}>
-              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Tworzę...</> : <><Package className="w-4 h-4 mr-2" /> Utwórz partię</>}
+              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Przyjmuję...</> : <><Package className="w-4 h-4 mr-2" /> Utwórz zamówienie i przyjmij stan</>}
             </Button>
             <Button variant="outline" onClick={() => setShowInitDialog(false)} disabled={isInitializing}>Anuluj</Button>
           </div>
@@ -565,6 +882,7 @@ const AdminInventory = () => {
           <SelectContent>
             <SelectItem value="all">Wszystkie</SelectItem>
             <SelectItem value="purchased">Kupiona</SelectItem>
+            <SelectItem value="assigned">Przypisana Podróżnikowi</SelectItem>
             <SelectItem value="registered">Zarejestrowana</SelectItem>
           </SelectContent>
         </Select>
@@ -579,6 +897,9 @@ const AdminInventory = () => {
                 <th className="text-left p-3 font-medium text-muted-foreground">Kod</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Kraj</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Wzór</th>
+                <th className="text-left p-3 font-medium text-muted-foreground">Źródło</th>
+                <th className="text-left p-3 font-medium text-muted-foreground">Partia / kanał</th>
+                <th className="text-left p-3 font-medium text-muted-foreground">Lokalizacja</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Realizacja</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Biznesowy</th>
                 <th className="text-left p-3 font-medium text-muted-foreground">Claim code</th>
@@ -591,15 +912,21 @@ const AdminInventory = () => {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={11} className="p-8 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" /></td></tr>
+                <tr><td colSpan={14} className="p-8 text-center"><Loader2 className="w-5 h-5 animate-spin mx-auto text-primary" /></td></tr>
               ) : filteredUnits.length === 0 ? (
-                <tr><td colSpan={11} className="p-8 text-center text-muted-foreground">Brak wyników</td></tr>
+                <tr><td colSpan={14} className="p-8 text-center text-muted-foreground">Brak wyników</td></tr>
               ) : (
                 filteredUnits.map((u) => (
                   <tr key={u.id} className="border-b border-border/50 hover:bg-muted/30 cursor-pointer" onClick={() => openUnitDetail(u)}>
                     <td className="p-3 font-mono text-xs">{u.internal_inventory_code}</td>
                     <td className="p-3">{u.country_name || "—"}</td>
                     <td className="p-3 text-muted-foreground">V{u.view_no} {u.design_title || ""}</td>
+                    <td className="p-3 text-xs font-medium">{SOURCE_LABELS[u.source_type] || u.source_type}</td>
+                    <td className="p-3 text-xs">
+                      <p>{u.batch_name || "—"}</p>
+                      <p className="text-muted-foreground">{CHANNEL_LABELS[u.distribution_channel] || u.distribution_channel}</p>
+                    </td>
+                    <td className="p-3 text-xs">{u.location_name || "—"}</td>
                     <td className="p-3">{fulfillmentBadge(u.fulfillment_status)}</td>
                     <td className="p-3">{businessBadge(u.business_status)}</td>
                     <td className="p-3 font-mono text-xs">{u.public_claim_code || "—"}</td>
@@ -623,13 +950,15 @@ const AdminInventory = () => {
                             >Uszkodzona</button>
                           </>
                         )}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDeleteUnit(u.id); }}
-                          className="p-1 rounded text-destructive hover:bg-destructive/10 transition-colors ml-1"
-                          title="Usuń pozycję z magazynu"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {canDeleteUnit(u) && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteUnit(u.id); }}
+                            className="p-1 rounded text-destructive hover:bg-destructive/10 transition-colors ml-1"
+                            title="Usuń nieużywaną pozycję testową"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

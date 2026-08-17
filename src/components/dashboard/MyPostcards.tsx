@@ -24,6 +24,7 @@ interface MyPostcardsProps {
 
 const statusLabels: Record<string, { label: string; color: string; icon: typeof Package }> = {
   purchased: { label: "Kupiona — czeka na rejestrację", color: "text-[hsl(var(--gold))]", icon: ShoppingBag },
+  assigned: { label: "Otrzymana — czeka na wręczenie", color: "text-primary", icon: Package },
   registered: { label: "Wręczona — zarejestrowana", color: "text-accent", icon: CheckCircle },
 };
 
@@ -31,6 +32,7 @@ interface MyPostcardsUnitJoin {
   id: string;
   business_status: string | null;
   registered_at: string | null;
+  order_id: string | null;
   card_designs: {
     title: string | null;
     view_no: number;
@@ -62,22 +64,23 @@ const fetchPostcards = async (userId: string): Promise<InventoryCard[]> => {
   if (paidOrdersError) throw paidOrdersError;
 
   const paidOrderIds = (paidOrders || []).map((order) => order.id);
-  if (paidOrderIds.length === 0) return [];
-
   const { data: units, error } = await supabase
     .from('inventory_units')
     .select(`
-      id, business_status, registered_at,
+      id, business_status, registered_at, order_id,
       card_designs!inner(title, view_no, countries!inner(name_pl))
     `)
     .eq('traveler_user_id', userId)
-    .in('order_id', paidOrderIds)
     .order('created_at', { ascending: false });
 
   if (error) throw error;
   if (!units) return [];
 
-  const typedUnits = units as unknown as MyPostcardsUnitJoin[];
+  const typedUnits = (units as unknown as MyPostcardsUnitJoin[]).filter((unit) =>
+    unit.order_id === null
+      ? unit.business_status === 'assigned' || unit.business_status === 'registered'
+      : paidOrderIds.includes(unit.order_id)
+  );
   const unitIds = typedUnits.filter((u) => u.business_status === 'registered').map((u) => u.id);
 
   const registrations: Record<string, { recipient_name: string; recipient_message: string | null; recipient_email: string | null; contact_opt_in: boolean }> = {};
@@ -122,7 +125,7 @@ const fetchPostcards = async (userId: string): Promise<InventoryCard[]> => {
 
 const MyPostcards = ({ userId }: MyPostcardsProps) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'purchased' | 'registered'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'registered'>('all');
 
   useEffect(() => trackEvent("dashboard_qr_instruction_view"), []);
 
@@ -131,8 +134,12 @@ const MyPostcards = ({ userId }: MyPostcardsProps) => {
     queryFn: () => fetchPostcards(userId),
   });
 
-  const filteredCards = cards.filter(c => filter === 'all' || c.business_status === filter);
-  const purchasedCount = cards.filter((card) => card.business_status === 'purchased').length;
+  const filteredCards = cards.filter((card) =>
+    filter === 'all'
+      || (filter === 'pending' && ['purchased', 'assigned'].includes(card.business_status || ''))
+      || card.business_status === filter
+  );
+  const purchasedCount = cards.filter((card) => ['purchased', 'assigned'].includes(card.business_status || '')).length;
   const registeredCount = cards.filter((card) => card.business_status === 'registered').length;
 
   const formatDate = (dateStr: string | null) => {
@@ -182,7 +189,7 @@ const MyPostcards = ({ userId }: MyPostcardsProps) => {
         <button onClick={() => setFilter('all')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'all' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
           Wszystkie ({cards.length})
         </button>
-        <button onClick={() => setFilter('purchased')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'purchased' ? 'bg-[hsl(var(--gold))] text-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
+        <button onClick={() => setFilter('pending')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'pending' ? 'bg-[hsl(var(--gold))] text-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>
           Oczekujące na rejestrację ({purchasedCount})
         </button>
         <button onClick={() => setFilter('registered')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filter === 'registered' ? 'bg-accent text-accent-foreground' : 'bg-muted text-muted-foreground hover:text-foreground'}`}>

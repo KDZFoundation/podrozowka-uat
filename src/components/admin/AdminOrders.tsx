@@ -316,67 +316,25 @@ const AdminOrders = () => {
 
   const handleDeleteOrder = async (orderId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (!confirm("Czy na pewno chcesz usunąć to zamówienie? Operacji nie można cofnąć.")) return;
+    if (!confirm("Usunąć zamówienie i wszystkie jego niewykorzystane jednostki POD? Zamówienia w produkcji, wysłane lub zarejestrowane nie mogą zostać usunięte.")) return;
 
-    const { data: qrJobs, error: qrJobsError } = await supabase
-      .from("qr_print_jobs")
-      .select("id")
-      .eq("order_id", orderId);
-
-    if (qrJobsError) {
-      toast({ title: "Błąd odczytu zadania QR", description: qrJobsError.message, variant: "destructive" });
-      return;
-    }
-
-    const qrJobIds = qrJobs.map((job) => job.id);
-    if (qrJobIds.length > 0) {
-      const { error: qrItemsError } = await supabase.from("qr_print_job_items").delete().in("print_job_id", qrJobIds);
-      if (qrItemsError) {
-        toast({ title: "Błąd usuwania pozycji QR", description: qrItemsError.message, variant: "destructive" });
-        return;
-      }
-
-      const { error: qrJobsDeleteError } = await supabase.from("qr_print_jobs").delete().in("id", qrJobIds);
-      if (qrJobsDeleteError) {
-        toast({ title: "Błąd usuwania zadania QR", description: qrJobsDeleteError.message, variant: "destructive" });
-        return;
-      }
-    }
-
-    const { error: shipmentError } = await supabase.from("shipments").delete().eq("order_id", orderId);
-    if (shipmentError) {
-      toast({ title: "Błąd usuwania wysyłki", description: shipmentError.message, variant: "destructive" });
-      return;
-    }
-
-    const { error: itemsError } = await supabase.from("order_items").delete().eq("order_id", orderId);
-    if (itemsError) {
-      toast({ title: "Błąd usuwania pozycji zamówienia", description: itemsError.message, variant: "destructive" });
-      return;
-    }
-
-    const { error: inventoryError } = await supabase
-      .from("inventory_units")
-      .update({
-        order_id: null,
-        fulfillment_status: "in_stock",
-        public_claim_code: null,
-        public_claim_token_hash: null,
-        qr_generated_at: null,
-        qr_applied_at: null,
-      })
-      .eq("order_id", orderId);
-    if (inventoryError) {
-      toast({ title: "Błąd zwalniania sztuk magazynowych", description: inventoryError.message, variant: "destructive" });
-      return;
-    }
-
-    const { error } = await supabase.from("orders").delete().eq("id", orderId);
+    const { data, error } = await supabase.rpc("delete_order_with_inventory_cleanup", {
+      _order_id: orderId,
+    });
 
     if (error) {
-      toast({ title: "Błąd usuwania zamówienia", description: error.message, variant: "destructive" });
+      const description = error.message.includes("order_already_in_production_batch")
+        ? "Zamówienie znajduje się już w paczce produkcyjnej. Zamiast usuwać, zakończ lub zarchiwizuj jego obsługę."
+        : error.message.includes("order_has_protected_inventory_units")
+          ? "Zamówienie zawiera jednostki wysłane lub zarejestrowane i stanowi część historii platformy."
+          : error.message;
+      toast({ title: "Nie można usunąć zamówienia", description, variant: "destructive" });
     } else {
-      toast({ title: "Zamówienie zostało usunięte" });
+      const result = data as { deleted_units?: number } | null;
+      toast({
+        title: "Zamówienie zostało usunięte",
+        description: `Usunięto również ${result?.deleted_units || 0} niewykorzystanych jednostek POD.`,
+      });
       if (selectedOrder?.id === orderId) {
         setSelectedOrder(null);
       }
