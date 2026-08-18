@@ -171,7 +171,7 @@ const AdminPanel = () => {
   const supportTabs: { id: TabId; label: string; icon: typeof Package }[] = [
     { id: "map", label: "Mapa Globalna", icon: MapIcon },
     { id: "categories", label: "Kategorie", icon: Tags },
-    { id: "inventory", label: "Jednostki POD", icon: Box },
+    { id: "inventory", label: "Magazyn", icon: Box },
     { id: "qr-jobs", label: "Druk QR", icon: QrCode },
     { id: "registrations", label: "Rejestracje", icon: UserCheck },
     { id: "event-log", label: "Log zdarzeń", icon: Clock },
