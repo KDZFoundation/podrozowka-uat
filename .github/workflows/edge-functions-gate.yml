@@ -1,6 +1,21 @@
 name: Edge Functions Gate
 
 on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: Środowisko docelowe
+        required: true
+        type: choice
+        default: uat
+        options:
+          - uat
+          - production
+      deploy_all:
+        description: Wdróż wszystkie funkcje z aktualnego commita
+        required: true
+        type: boolean
+        default: true
   push:
     branches:
       - main
@@ -8,6 +23,7 @@ on:
       - production
     paths:
       - 'supabase/functions/**'
+      - '.github/workflows/edge-functions-gate.yml'
   pull_request:
     branches:
       - main
@@ -40,9 +56,20 @@ jobs:
       - name: Wykryj zmienione funkcje
         id: diff
         run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.deploy_all }}" = "true" ]; then
+            CHANGED=$(find supabase/functions -mindepth 1 -maxdepth 1 -type d ! -name _shared -printf '%f\n' | sort -u | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "changed=$CHANGED" >> "$GITHUB_OUTPUT"
+            echo "has_changes=$([ "$CHANGED" != '[]' ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "shared_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Pełne wdrożenie funkcji: $CHANGED"
+            exit 0
+          fi
+
           # Ustalenie bazy do porównania
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="${{ github.event.pull_request.base.sha }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BASE="$(git rev-parse HEAD^)"
           else
             BASE="${{ github.event.before }}"
           fi
@@ -76,10 +103,10 @@ jobs:
     name: Wdrożenie i testowanie funkcji
     needs: detect-changes
     # Pull requests only validate the change; deployment happens after merge.
-    if: needs.detect-changes.outputs.has_changes == 'true' && github.event_name == 'push'
+    if: needs.detect-changes.outputs.has_changes == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: ${{ github.event_name == 'push' && github.ref_name == 'production' && 'production' || '' }}
+    environment: ${{ ((github.event_name == 'workflow_dispatch' && inputs.target_environment == 'production') || (github.event_name == 'push' && github.ref_name == 'production')) && 'production' || '' }}
     
     steps:
       - name: Checkout repo
@@ -95,6 +122,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             TARGET_BRANCH="${{ github.base_ref }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET_BRANCH="${{ inputs.target_environment }}"
           else
             TARGET_BRANCH="${{ github.ref_name }}"
           fi
@@ -112,7 +141,23 @@ jobs:
               echo "Pominięcie wdrożenia dla gałęzi: $TARGET_BRANCH"
               echo "SKIP_DEPLOY=true" >> $GITHUB_ENV
               ;;
-          esac
+            esac
+
+      - name: Weryfikacja tokenu Supabase
+        if: env.SKIP_DEPLOY != 'true'
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::Brak sekretu Supabase dla środowiska $PROJECT_REF"
+            exit 1
+          fi
+          if [[ ! "$SUPABASE_ACCESS_TOKEN" =~ ^sbp_ ]]; then
+            echo "::error::Sekret Supabase ma nieprawidłowy format. Oczekiwano tokenu sbp_."
+            exit 1
+          fi
+          supabase projects list >/dev/null || {
+            echo "::error::Supabase odrzucił token. Wygeneruj nowy Personal Access Token i zaktualizuj sekret GitHub."
+            exit 1
+          }
 
       - name: Wdrażanie zmienionych funkcji
         if: env.SKIP_DEPLOY != 'true'
