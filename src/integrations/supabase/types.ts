@@ -528,6 +528,7 @@ export type Database = {
           fulfillment_status: Database["public"]["Enums"]["fulfillment_status"]
           id: string
           internal_inventory_code: string
+          inventory_serial_no: number
           order_id: string | null
           order_item_id: string | null
           public_claim_code: string | null
@@ -553,6 +554,7 @@ export type Database = {
           fulfillment_status?: Database["public"]["Enums"]["fulfillment_status"]
           id?: string
           internal_inventory_code: string
+          inventory_serial_no?: number
           order_id?: string | null
           order_item_id?: string | null
           public_claim_code?: string | null
@@ -578,6 +580,7 @@ export type Database = {
           fulfillment_status?: Database["public"]["Enums"]["fulfillment_status"]
           id?: string
           internal_inventory_code?: string
+          inventory_serial_no?: number
           order_id?: string | null
           order_item_id?: string | null
           public_claim_code?: string | null
@@ -1575,6 +1578,14 @@ export type Database = {
           _unit_id: string
         }
         Returns: undefined
+      }
+      prepare_stock_print_batch: {
+        Args: {
+          _batch_name?: string
+          _card_design_id: string
+          _quantity: number
+        }
+        Returns: Json
       }
       reserve_inventory_for_order: {
         Args: { _order_id: string }

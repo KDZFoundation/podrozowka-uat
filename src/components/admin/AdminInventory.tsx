@@ -12,6 +12,15 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Search, Plus, Package, ArrowLeft, Clock, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { generatePodPrintPdf } from "@/lib/generatePodPrintPdf";
+
+interface PrepareStockPrintBatchResult {
+  success: boolean;
+  batch_id: string;
+  print_job_id: string;
+  quantity: number;
+  document_number: string;
+}
 
 interface InventoryUnit {
   id: string;
@@ -37,7 +46,6 @@ interface InventoryUnit {
   event_name: string | null;
   partner_name: string | null;
   production_status: string;
-  location_name: string | null;
 }
 
 interface AdminInventoryJoin {
@@ -71,9 +79,6 @@ interface AdminInventoryJoin {
     partner_name: string | null;
     production_status: string;
   } | null;
-  inventory_locations: {
-    name: string;
-  } | null;
 }
 
 interface CountryOption {
@@ -86,12 +91,6 @@ interface DesignOption {
   title: string | null;
   view_no: number;
   country_id: string;
-}
-
-interface LocationOption {
-  id: string;
-  name: string;
-  code: string;
 }
 
 const FULFILLMENT_LABELS: Record<string, string> = {
@@ -144,14 +143,12 @@ const AdminInventory = () => {
 
   const [countries, setCountries] = useState<CountryOption[]>([]);
   const [designs, setDesigns] = useState<DesignOption[]>([]);
-  const [locations, setLocations] = useState<LocationOption[]>([]);
 
   // Init batch dialog
   const [showInitDialog, setShowInitDialog] = useState(false);
   const [initDesignId, setInitDesignId] = useState("");
   const [initQuantity, setInitQuantity] = useState("5000");
   const [initBatchName, setInitBatchName] = useState("");
-  const [initLocationId, setInitLocationId] = useState("");
   const [isInitializing, setIsInitializing] = useState(false);
   const [isClearingInventory, setIsClearingInventory] = useState(false);
   const [pendingDeleteUnit, setPendingDeleteUnit] = useState<{ id: string; code: string } | null>(null);
@@ -182,17 +179,12 @@ const AdminInventory = () => {
   };
 
   const fetchFilters = useCallback(async () => {
-    const [{ data: c }, { data: d }, { data: l }] = await Promise.all([
+    const [{ data: c }, { data: d }] = await Promise.all([
       supabase.from("countries").select("id, name_pl").order("name_pl"),
       supabase.from("card_designs").select("id, title, view_no, country_id").order("view_no"),
-      supabase.from("inventory_locations").select("id, name, code").eq("active", true).order("name"),
     ]);
     if (c) setCountries(c);
     if (d) setDesigns(d);
-    if (l) {
-      setLocations(l);
-      setInitLocationId((current) => current || l[0]?.id || "");
-    }
   }, []);
 
   const fetchUnits = useCallback(async () => {
@@ -206,8 +198,7 @@ const AdminInventory = () => {
         qr_generated_at, shipped_at, registered_at, created_at,
         card_design_id, stock_batch_id, current_location_id,
         card_designs!inner(title, view_no, countries!inner(name_pl)),
-        stock_batches!inner(name, source_type, purpose, distribution_channel, event_name, partner_name, production_status),
-        inventory_locations(name)
+        stock_batches!inner(name, source_type, purpose, distribution_channel, event_name, partner_name, production_status)
       `)
       .order("created_at", { ascending: false })
       .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
@@ -251,7 +242,6 @@ const AdminInventory = () => {
           event_name: u.stock_batches?.event_name || null,
           partner_name: u.stock_batches?.partner_name || null,
           production_status: u.stock_batches?.production_status || "received",
-          location_name: u.inventory_locations?.name || null,
         }))
       );
     }
@@ -291,63 +281,42 @@ const AdminInventory = () => {
     }
 
     setIsInitializing(true);
-    const now = new Date().toISOString();
     const design = designs.find((candidate) => candidate.id === initDesignId);
     const country = countries.find((candidate) => candidate.id === design?.country_id);
     const batchName = initBatchName.trim() || `Magazyn — ${country?.name_pl || "Wzór"} V${design?.view_no || 0} — ${new Date().toLocaleDateString("pl-PL")}`;
-    const { data: batch, error: batchError } = await supabase
-      .from("stock_batches")
-      .insert({
-        name: batchName,
-        description: "Ręcznie dodany stan magazynowy",
-        card_design_id: initDesignId,
-        quantity,
-        source_type: "stock",
-        purpose: "Stan magazynowy",
-        distribution_channel: "warehouse",
-        location_id: initLocationId || null,
-        production_status: "received",
-        received_at: now,
-      })
-      .select("id")
-      .single();
+    const { data, error } = await supabase.rpc("prepare_stock_print_batch", {
+      _card_design_id: initDesignId,
+      _quantity: quantity,
+      _batch_name: batchName,
+    });
+    const result = data as unknown as PrepareStockPrintBatchResult | null;
 
-    if (batchError || !batch) {
-      toast({ title: "Nie udało się utworzyć partii magazynowej", description: batchError?.message, variant: "destructive" });
+    if (error || !result?.success || !result.print_job_id) {
+      toast({ title: "Nie udało się przygotować partii do druku", description: error?.message || "Brak zadania druku QR.", variant: "destructive" });
       setIsInitializing(false);
       return;
     }
 
-    const prefix = `STK-${batch.id.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
-    const CHUNK = 500;
-    let created = 0;
-
-    for (let i = 0; i < quantity; i += CHUNK) {
-      const chunk = Math.min(CHUNK, quantity - i);
-      const rows = Array.from({ length: chunk }, (_, index) => ({
-        stock_batch_id: batch.id,
-        card_design_id: initDesignId,
-        internal_inventory_code: `${prefix}-${String(i + index + 1).padStart(5, "0")}`,
-        fulfillment_status: "in_stock" as const,
-        current_location_id: initLocationId || null,
-      }));
-
-      const { error } = await supabase.from("inventory_units").insert(rows);
-      if (error) {
-        toast({ title: `Dodano ${created} z ${quantity} sztuk`, description: error.message, variant: "destructive" });
-        setIsInitializing(false);
-        return;
-      }
-      created += chunk;
+    try {
+      const pdf = await generatePodPrintPdf(result.print_job_id, result.document_number);
+      toast({
+        title: `Przygotowano ${result.quantity} sztuk i PDF do druku`,
+        description: pdf.fileName,
+      });
+    } catch (pdfError) {
+      toast({
+        title: `Partia ${result.quantity} sztuk została zapisana`,
+        description: `Nie udało się automatycznie pobrać PDF: ${pdfError instanceof Error ? pdfError.message : "Nieznany błąd"}. Plik możesz ponowić w menu Druk QR.`,
+        variant: "destructive",
+      });
     }
 
-    toast({ title: `Dodano ${created} sztuk na magazyn` });
     setShowInitDialog(false);
     setInitBatchName("");
     setInitDesignId("");
     setInitQuantity("5000");
     setIsInitializing(false);
-    fetchUnits();
+    await fetchUnits();
   };
 
   const handleVoid = async (unitId: string) => {
