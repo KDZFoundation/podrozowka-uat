@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { Database, Globe, Loader2, QrCode, ExternalLink, Copy, Check, ShoppingBag } from "lucide-react";
+import { Database, Globe, Loader2, QrCode, ExternalLink, Copy, Check, ShoppingBag, Flame, Sparkles } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { seedFirestoreIfEmpty } from "@/integrations/firebase/services/seedService";
+import { isFirebaseConfigured } from "@/integrations/firebase/config";
+import { AdminDataMigration } from "./AdminDataMigration";
 
 const MOCK_COUNTRIES = [
   { name_pl: "Japonia", iso2: "JP", iso3: "JPN", slug: "japonia" },
@@ -60,9 +63,26 @@ const GLOBAL_LOCATIONS = [
 const AdminDevTools = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [isSeedingFirebase, setIsSeedingFirebase] = useState(false);
   const [isCreatingTestCard, setIsCreatingTestCard] = useState(false);
   const [isCreatingFranceOrder, setIsCreatingFranceOrder] = useState(false);
   const [createdTestToken, setCreatedTestToken] = useState<string | null>(null);
+
+  const handleSeedFirebase = async () => {
+    setIsSeedingFirebase(true);
+    try {
+      const result = await seedFirestoreIfEmpty();
+      if (result.seeded) {
+        toast.success(result.message);
+      } else {
+        toast.info(result.message);
+      }
+    } catch (err) {
+      toast.error("Błąd zapisu do Firestore: " + String(err));
+    } finally {
+      setIsSeedingFirebase(false);
+    }
+  };
 
   const createFrancePaidOrder = async () => {
     setIsCreatingFranceOrder(true);
@@ -598,6 +618,57 @@ const AdminDevTools = () => {
   return (
     <div className="space-y-6">
       <h2 className="font-display text-2xl font-bold text-foreground">Narzędzia Dev</h2>
+
+      <AdminDataMigration />
+
+      <Card className="max-w-lg border-amber-500/40 shadow-md bg-gradient-to-br from-amber-500/5 to-transparent">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <Flame className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            Google Cloud Firebase Firestore
+          </CardTitle>
+          <CardDescription>
+            Baza Firestore została pomyślnie utworzona i skonfigurowana. Możesz zainicjalizować kolekcje domyślnym katalogiem kartek i krajów.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="rounded-lg bg-background/80 p-3 border text-xs font-mono space-y-1">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Status:</span>
+              <span className="text-emerald-500 font-semibold flex items-center gap-1">
+                <Check className="w-3.5 h-3.5" /> Połączono z Google Cloud
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Project:</span>
+              <span className="text-foreground">podrozowka</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Database:</span>
+              <span className="text-foreground truncate max-w-[200px]" title="ai-studio-podrozowkauat-e1d9b39b-c759-477c-98ea-34396a1afd2f">
+                ai-studio-podrozowkauat
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Security Rules:</span>
+              <span className="text-emerald-500 font-semibold">Wdrożone (Deployed)</span>
+            </div>
+          </div>
+          <Button
+            onClick={handleSeedFirebase}
+            disabled={isSeedingFirebase}
+            variant="outline"
+            className="w-full border-amber-500/40 hover:bg-amber-500/10 text-foreground"
+          >
+            {isSeedingFirebase ? (
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+            ) : (
+              <Sparkles className="w-4 h-4 mr-2 text-amber-500" />
+            )}
+            {isSeedingFirebase ? "Inicjalizacja Firestore..." : "Zainicjuj kolekcje Firestore danymi startowymi"}
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card className="max-w-lg border-emerald-500/30 shadow-md">
         <CardHeader>

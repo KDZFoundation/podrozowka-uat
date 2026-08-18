@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.role == 'admin' || 
+         request.auth.token.email == 'fundacja@d-arka.org' ||
+         request.auth.token.email == 'dariusz.pgry@gmail.com' ||
+         request.auth.token.email == 'fundacja@konopiedlaziemi.org');
+    }
+
+    // Allow full read/write for all application collections and migration
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+

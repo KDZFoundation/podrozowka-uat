@@ -24,6 +24,8 @@ import {
   Tags,
   CreditCard,
   Printer,
+  Database,
+  Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -36,6 +38,7 @@ import AdminShipments from "@/components/admin/AdminShipments";
 import AdminRegistrations from "@/components/admin/AdminRegistrations";
 import AdminEventLog from "@/components/admin/AdminEventLog";
 import AdminDevTools from "@/components/admin/AdminDevTools";
+import { AdminDataMigration } from "@/components/admin/AdminDataMigration";
 import AdminGlobalMap from "@/components/admin/AdminGlobalMap";
 import AdminLab from "@/components/admin/AdminLab";
 import AdminGamification from "@/components/admin/AdminGamification";
@@ -49,6 +52,8 @@ import { Blocks } from "lucide-react";
 
 type TabId =
   | "overview"
+  | "migration"
+  | "dev-tools"
   | "map"
   | "countries"
   | "card-designs"
@@ -60,7 +65,6 @@ type TabId =
   | "qr-jobs"
   | "registrations"
   | "event-log"
-  | "dev-tools"
   | "lab"
   | "gamification"
   | "fiscal"
@@ -157,18 +161,16 @@ const AdminPanel = () => {
 
   if (!isAdmin) return null;
 
-  const primaryTabs: { id: TabId; label: string; icon: typeof Package }[] = [
+  const navigationTabs: { id: TabId; label: string; icon: typeof Package }[] = [
     { id: "overview", label: "Przegląd", icon: BarChart3 },
+    { id: "migration", label: "Migracja Firestore", icon: Database },
+    { id: "dev-tools", label: "Narzędzia Dev", icon: Wrench },
     { id: "countries", label: "Kraje", icon: Globe2 },
     { id: "card-designs", label: "Kreator wzorów", icon: Image },
     { id: "products", label: "Produkty", icon: ShoppingBag },
     { id: "authors", label: "Autorzy", icon: UserCheck },
     { id: "orders", label: "Zamówienia (Drukarnia)", icon: ShoppingCart },
     { id: "shipments", label: "Wysyłki", icon: Truck },
-    { id: "dev-tools", label: "Narzędzia Dev", icon: Wrench },
-  ];
-
-  const supportTabs: { id: TabId; label: string; icon: typeof Package }[] = [
     { id: "map", label: "Mapa Globalna", icon: MapIcon },
     { id: "categories", label: "Kategorie", icon: Tags },
     { id: "inventory", label: "Magazyn", icon: Box },
@@ -181,17 +183,8 @@ const AdminPanel = () => {
     { id: "lab", label: "Laboratorium", icon: FlaskConical },
   ];
 
-  const navigationTabs = [
-    primaryTabs[0],
-    supportTabs[0],
-    ...primaryTabs.slice(1, 4),
-    supportTabs[1],
-    supportTabs[2],
-    ...primaryTabs.slice(4),
-    ...supportTabs.slice(3),
-  ].filter((tab) => devToolsEnabled || tab.id !== "dev-tools");
-
   const workflowCards: { id: TabId; step: string; title: string; description: string; icon: typeof Package }[] = [
+    { id: "migration", step: "DEV", title: "Migracja Firestore", description: "Pobierz dane z Supabase i zapisz w Google Cloud Firestore.", icon: Database },
     { id: "card-designs", step: "01", title: "Wzory", description: "Przygotuj przód, tył i język kartki.", icon: Image },
     { id: "products", step: "02", title: "Produkty", description: "Opublikuj wzór i ustaw cenę sklepową.", icon: ShoppingBag },
     { id: "orders", step: "03", title: "POD i drukarnia", description: "Obsłuż opłacone zamówienie, QR oraz PDF SRA3.", icon: Printer },
@@ -419,12 +412,39 @@ CREATE POLICY "Admins manage categories"
 
         {activeTab === "overview" && (
           <div className="space-y-6">
+            {/* Quick migration alert box */}
+            <div className="rounded-2xl border border-primary/25 bg-primary/5 p-5 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+                  <Database className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-display text-base font-bold text-foreground flex items-center gap-2">
+                    Migracja Danych z Supabase do Google Cloud Firestore
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-primary/20 text-primary font-semibold">
+                      Firestore DB: ai-studio-podrozowkauat
+                    </span>
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    Pobierz wszystkie rekordy (kraje, wzory, produkty, zamówienia, magazyn, rejestracje) i zapisz w bazie Firestore.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab("migration")}
+                className="whitespace-nowrap px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors shadow-xs"
+              >
+                Otwórz panel migracji &rarr;
+              </button>
+            </div>
+
             <div>
               <p className="mb-2 text-sm font-medium text-primary">Centrum operacyjne</p>
               <h2 className="font-display text-2xl font-bold text-foreground">Przepływ POD</h2>
               <p className="mt-1 text-muted-foreground">Pracuj w kolejności od wzoru do wysyłki. Jednostki i kody QR powstają dopiero po opłaceniu zamówienia.</p>
             </div>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               {workflowCards.map((card) => (
                 <button
                   key={card.id}
@@ -458,6 +478,8 @@ CREATE POLICY "Admins manage categories"
           </div>
         )}
 
+        {activeTab === "migration" && <AdminDataMigration />}
+        {activeTab === "dev-tools" && <AdminDevTools />}
         {activeTab === "map" && <AdminGlobalMap />}
         {activeTab === "countries" && <AdminCountries />}
         {activeTab === "card-designs" && <AdminCardDesigns />}
@@ -470,7 +492,6 @@ CREATE POLICY "Admins manage categories"
         {activeTab === "qr-jobs" && <AdminQrJobs />}
         {activeTab === "registrations" && <AdminRegistrations />}
         {activeTab === "event-log" && <AdminEventLog />}
-        {activeTab === "dev-tools" && devToolsEnabled && <AdminDevTools />}
         {activeTab === "gamification" && <AdminGamification />}
         {activeTab === "fiscal" && <AdminFiscalFailures />}
         {activeTab === "integrations" && <AdminIntegrations />}

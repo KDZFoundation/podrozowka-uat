@@ -1,0 +1,137 @@
+{
+  "entities": {
+    "Country": {
+      "collection": "countries",
+      "description": "Kraje docelowe oraz konfiguracja walut i widoczności",
+      "fields": {
+        "id": { "type": "string", "description": "ISO 2-letter code e.g. PL, US" },
+        "name": { "type": "string" },
+        "english_name": { "type": "string" },
+        "native_name": { "type": "string" },
+        "flag_emoji": { "type": "string" },
+        "flag_url": { "type": "string" },
+        "currency_code": { "type": "string" },
+        "currency_symbol": { "type": "string" },
+        "is_active": { "type": "boolean" },
+        "is_popular": { "type": "boolean" },
+        "created_at": { "type": "string" }
+      }
+    },
+    "Category": {
+      "collection": "categories",
+      "description": "Kategorie wzorów pocztówek",
+      "fields": {
+        "id": { "type": "string" },
+        "slug": { "type": "string" },
+        "name_pl": { "type": "string" },
+        "name_en": { "type": "string" },
+        "description_pl": { "type": "string" },
+        "icon": { "type": "string" },
+        "sort_order": { "type": "number" },
+        "is_active": { "type": "boolean" }
+      }
+    },
+    "Author": {
+      "collection": "authors",
+      "description": "Artyści i twórcy wzorów pocztówek",
+      "fields": {
+        "id": { "type": "string" },
+        "slug": { "type": "string" },
+        "name": { "type": "string" },
+        "bio": { "type": "string" },
+        "avatar_url": { "type": "string" },
+        "website_url": { "type": "string" },
+        "instagram_url": { "type": "string" },
+        "is_active": { "type": "boolean" },
+        "created_at": { "type": "string" }
+      }
+    },
+    "CardDesign": {
+      "collection": "card_designs",
+      "description": "Wzory pocztówek dostępne w sklepie",
+      "fields": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "slug": { "type": "string" },
+        "description": { "type": "string" },
+        "author_id": { "type": "string" },
+        "category_id": { "type": "string" },
+        "country_id": { "type": "string" },
+        "price_pln": { "type": "number" },
+        "image_front_url": { "type": "string" },
+        "image_back_url": { "type": "string" },
+        "is_active": { "type": "boolean" },
+        "is_featured": { "type": "boolean" },
+        "stock_quantity": { "type": "number" },
+        "created_at": { "type": "string" }
+      }
+    },
+    "User": {
+      "collection": "users",
+      "description": "Profile użytkowników i podróżników",
+      "fields": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "full_name": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string" },
+        "gamification_points": { "type": "number" },
+        "current_tier": { "type": "string" },
+        "postcards_sent_count": { "type": "number" },
+        "postcards_registered_count": { "type": "number" },
+        "created_at": { "type": "string" }
+      }
+    },
+    "Order": {
+      "collection": "orders",
+      "description": "Zamówienia klientów w sklepie",
+      "fields": {
+        "id": { "type": "string" },
+        "order_number": { "type": "string" },
+        "user_id": { "type": "string" },
+        "guest_email": { "type": "string" },
+        "status": { "type": "string" },
+        "payment_method": { "type": "string" },
+        "payment_status": { "type": "string" },
+        "total_amount_pln": { "type": "number" },
+        "shipping_cost_pln": { "type": "number" },
+        "items": { "type": "array" },
+        "shipping_address": { "type": "object" },
+        "fiscal_document_status": { "type": "string" },
+        "created_at": { "type": "string" }
+      }
+    },
+    "InventoryUnit": {
+      "collection": "inventory_units",
+      "description": "Fizyczne jednostki pocztówek z unikalnymi kodami QR i tokenami",
+      "fields": {
+        "id": { "type": "string" },
+        "card_design_id": { "type": "string" },
+        "internal_inventory_code": { "type": "string" },
+        "public_claim_token": { "type": "string" },
+        "public_claim_token_hash": { "type": "string" },
+        "status": { "type": "string" },
+        "order_id": { "type": "string" },
+        "traveler_user_id": { "type": "string" },
+        "registered_at": { "type": "string" },
+        "registered_country_id": { "type": "string" },
+        "created_at": { "type": "string" }
+      }
+    },
+    "RecipientRegistration": {
+      "collection": "recipient_registrations",
+      "description": "Rejestracje kartek przez osoby obdarowane w świecie",
+      "fields": {
+        "id": { "type": "string" },
+        "inventory_unit_id": { "type": "string" },
+        "recipient_name": { "type": "string" },
+        "recipient_country": { "type": "string" },
+        "recipient_city": { "type": "string" },
+        "coordinates": { "type": "object" },
+        "message": { "type": "string" },
+        "photo_url": { "type": "string" },
+        "registered_at": { "type": "string" }
+      }
+    }
+  }
+}
