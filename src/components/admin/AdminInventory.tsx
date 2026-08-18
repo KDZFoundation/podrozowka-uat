@@ -10,16 +10,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Search, Plus, Package, ArrowLeft, Clock, Trash2 } from "lucide-react";
+import { Loader2, Search, Plus, Package, ArrowLeft, Clock, Trash2, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { generatePodPrintPdf } from "@/lib/generatePodPrintPdf";
 
 interface PrepareStockPrintBatchResult {
   success: boolean;
   batch_id: string;
+  stock_order_id: string;
   print_job_id: string;
   quantity: number;
   document_number: string;
+}
+
+interface StockProductionOrder {
+  id: string;
+  order_number: string;
+  name: string;
+  total_quantity: number;
+  status: string;
+  created_at: string;
 }
 
 interface InventoryUnit {
@@ -153,6 +163,8 @@ const AdminInventory = () => {
   const [isClearingInventory, setIsClearingInventory] = useState(false);
   const [pendingDeleteUnit, setPendingDeleteUnit] = useState<{ id: string; code: string } | null>(null);
   const [isDeletingUnit, setIsDeletingUnit] = useState(false);
+  const [stockOrders, setStockOrders] = useState<StockProductionOrder[]>([]);
+  const [receivingOrderId, setReceivingOrderId] = useState<string | null>(null);
 
   // Detail view
   const [selectedUnit, setSelectedUnit] = useState<InventoryUnit | null>(null);
@@ -256,7 +268,21 @@ const AdminInventory = () => {
     fetchUnits();
   }, [fetchUnits]);
 
+  const fetchStockOrders = useCallback(async () => {
+    const { data } = await supabase
+      .from("stock_production_orders")
+      .select("id, order_number, name, total_quantity, status, created_at")
+      .in("status", ["draft", "ordered", "in_production"])
+      .order("created_at", { ascending: false });
+    setStockOrders((data || []) as StockProductionOrder[]);
+  }, []);
+
+  useEffect(() => {
+    fetchStockOrders();
+  }, [fetchStockOrders]);
+
   const filteredUnits = units.filter((u) => {
+    if (u.source_type === "stock" && u.production_status !== "received") return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -300,8 +326,8 @@ const AdminInventory = () => {
     try {
       const pdf = await generatePodPrintPdf(result.print_job_id, result.document_number);
       toast({
-        title: `Przygotowano ${result.quantity} sztuk i PDF do druku`,
-        description: pdf.fileName,
+        title: `PDF dla ${result.quantity} sztuk jest gotowy`,
+        description: `${pdf.fileName}. Po odbiorze wydruku potwierdź przyjęcie na magazyn.`,
       });
     } catch (pdfError) {
       toast({
@@ -317,6 +343,30 @@ const AdminInventory = () => {
     setInitQuantity("5000");
     setIsInitializing(false);
     await fetchUnits();
+    await fetchStockOrders();
+  };
+
+  const receiveStockOrder = async (stockOrder: StockProductionOrder) => {
+    setReceivingOrderId(stockOrder.id);
+    const { data, error } = await supabase.rpc("receive_stock_production_order", {
+      _stock_order_id: stockOrder.id,
+    });
+    setReceivingOrderId(null);
+
+    if (error) {
+      const description = error.message.includes("stock_order_qr_not_ready")
+        ? "Dla tego zamówienia nie przygotowano jeszcze kompletu kodów QR."
+        : error.message;
+      toast({ title: "Nie udało się przyjąć wydruku", description, variant: "destructive" });
+      return;
+    }
+
+    const result = data as { received_units?: number } | null;
+    toast({
+      title: "Wydruk przyjęty na magazyn",
+      description: `${result?.received_units || 0} szt. jest dostępnych fizycznie na magazynie.`,
+    });
+    await Promise.all([fetchUnits(), fetchStockOrders()]);
   };
 
   const handleVoid = async (unitId: string) => {
@@ -521,7 +571,7 @@ const AdminInventory = () => {
       <div className="flex flex-wrap gap-3 items-center justify-between">
         <div>
           <h2 className="font-display text-xl font-bold text-foreground">Magazyn & System POD</h2>
-          <p className="text-xs text-muted-foreground">Jednostki ze sklepu powstają automatycznie jako POD. Tutaj możesz również dodać gotowe Podróżówki na stan magazynowy.</p>
+          <p className="text-xs text-muted-foreground">Jednostki ze sklepu powstają automatycznie jako POD. Zamówienia magazynowe trafiają na stan dopiero po fizycznym odbiorze wydruku.</p>
         </div>
         <div className="flex gap-2">
           {import.meta.env.DEV && (
@@ -531,7 +581,7 @@ const AdminInventory = () => {
             </Button>
           )}
           <Button onClick={() => setShowInitDialog(true)} size="sm" className="gap-2">
-            <Plus className="w-4 h-4" /> Dodaj na magazyn
+            <Plus className="w-4 h-4" /> Nowe zamówienie do drukarni
           </Button>
         </div>
       </div>
@@ -539,11 +589,11 @@ const AdminInventory = () => {
       {/* Init batch dialog */}
       {showInitDialog && (
         <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-          <h3 className="font-display text-lg font-semibold">Dodaj Podróżówki na magazyn</h3>
-          <p className="text-sm text-muted-foreground">Wybierz wzór i liczbę gotowych sztuk. Nazwa partii jest opcjonalna.</p>
+          <h3 className="font-display text-lg font-semibold">Nowe zamówienie magazynowe</h3>
+          <p className="text-sm text-muted-foreground">System wygeneruje PDF SRA3 z QR dla drukarni. Stan magazynowy powstanie dopiero po potwierdzeniu odbioru fizycznego wydruku.</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
-              <label className="text-sm text-muted-foreground mb-1 block">Nazwa partii (opcjonalnie)</label>
+              <label className="text-sm text-muted-foreground mb-1 block">Nazwa zamówienia (opcjonalnie)</label>
               <Input value={initBatchName} onChange={(e) => setInitBatchName(e.target.value)} placeholder="np. Festiwal 2026" />
             </div>
             <div>
@@ -569,9 +619,35 @@ const AdminInventory = () => {
           </div>
           <div className="flex gap-2">
             <Button onClick={initializeBatch} disabled={isInitializing}>
-              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Dodaję...</> : <><Package className="w-4 h-4 mr-2" /> Dodaj na magazyn</>}
+              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Przygotowuję...</> : <><Package className="w-4 h-4 mr-2" /> Utwórz zamówienie i PDF</>}
             </Button>
             <Button variant="outline" onClick={() => setShowInitDialog(false)} disabled={isInitializing}>Anuluj</Button>
+          </div>
+        </div>
+      )}
+
+      {stockOrders.length > 0 && (
+        <div className="rounded-xl border border-primary/20 bg-primary/[0.04] p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Package className="h-5 w-5 text-primary" />
+            <div>
+              <h3 className="font-display text-lg font-semibold">Wydruki oczekujące na przyjęcie</h3>
+              <p className="text-sm text-muted-foreground">Potwierdź dopiero po otrzymaniu fizycznych Podróżówek od drukarni.</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {stockOrders.map((stockOrder) => (
+              <div key={stockOrder.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3">
+                <div>
+                  <p className="font-medium">{stockOrder.name}</p>
+                  <p className="text-xs text-muted-foreground">{stockOrder.order_number} · {stockOrder.total_quantity} szt. · PDF przekazany do drukarni</p>
+                </div>
+                <Button size="sm" onClick={() => receiveStockOrder(stockOrder)} disabled={receivingOrderId === stockOrder.id}>
+                  {receivingOrderId === stockOrder.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}
+                  Potwierdź przyjęcie na magazyn
+                </Button>
+              </div>
+            ))}
           </div>
         </div>
       )}

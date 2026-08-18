@@ -1587,6 +1587,10 @@ export type Database = {
         }
         Returns: Json
       }
+      receive_stock_production_order: {
+        Args: { _stock_order_id: string }
+        Returns: Json
+      }
       reserve_inventory_for_order: {
         Args: { _order_id: string }
         Returns: Json
