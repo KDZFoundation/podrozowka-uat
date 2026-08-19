@@ -313,7 +313,7 @@ CREATE TABLE IF NOT EXISTS public.categories (
 
 INSERT INTO public.categories (id, name, slug, icon_url, sort_order) VALUES
 ('d58de85b-ab9a-48c3-9315-f7bd76a404c6', 'Natura', 'natura', NULL, 10),
-('0f367839-8b75-4a73-b8bd-94017c810cbe', 'Architektura', 'architektura', 'https://bpxxycpeyocrwpaxnfvh.supabase.co/storage/v1/object/public/postcard-photos/categories/architektura-1784144956289.png', 20),
+('0f367839-8b75-4a73-b8bd-94017c810cbe', 'Architektura', 'architektura', NULL, 20),
 ('910aa227-07a3-49fe-a007-9fdf01170038', 'Sztuka', 'sztuka', NULL, 30),
 ('8889ecf8-fbdd-42ba-bc36-587177f6365c', 'Wydarzenia', 'wydarzenia', NULL, 40),
 ('8c15c469-9579-40c6-98b6-722ec0d59715', 'Postacie', 'postacie', NULL, 50)

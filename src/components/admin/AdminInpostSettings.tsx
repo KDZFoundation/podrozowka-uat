@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, Loader2, Save, XCircle } from "lucide-react";
+import { CheckCircle2, Copy, Check, Loader2, Save, XCircle, Globe } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
 type MaskedValue = { set: boolean; preview: string };
-type InpostSettings = { environment: "sandbox" | "production"; updated_at: string | null; organization: MaskedValue; api_token: MaskedValue; geowidget_token: MaskedValue };
+type InpostSettings = {
+  environment: "sandbox" | "production";
+  updated_at: string | null;
+  organization: MaskedValue;
+  api_token: MaskedValue;
+  geowidget_token: MaskedValue;
+};
 
 const errorMessage = (error: unknown, fallback: string) => {
   const message = typeof error === "object" && error && "message" in error ? String(error.message || "") : "";
@@ -27,17 +34,43 @@ const AdminInpostSettings = () => {
   const [data, setData] = useState<InpostSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [form, setForm] = useState({ organizationId: "", apiToken: "", geowidgetToken: "" });
+
+  const webhookUrl = `${window.location.origin}/api/inpost/webhook`;
 
   const load = useCallback(async () => {
     setLoading(true);
+    try {
+      // First try Node/Express API
+      const res = await fetch("/api/inpost/settings");
+      if (res.ok) {
+        const apiData = (await res.json()) as InpostSettings;
+        setData(apiData);
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // ignore
+    }
+
+    // Fallback to Supabase function
     const { data: result, error } = await supabase.functions.invoke<InpostSettings>("admin-inpost-settings", { method: "GET" });
     if (error || !result) toast.error(errorMessage(error, "Nie udało się pobrać konfiguracji InPost"));
     else setData(result);
     setLoading(false);
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedWebhook(true);
+    toast.success("Skopiowano adres Webhook do schowka");
+    setTimeout(() => setCopiedWebhook(false), 2000);
+  };
 
   const save = async () => {
     const organizationId = form.organizationId.trim();
@@ -58,23 +91,109 @@ const AdminInpostSettings = () => {
       body: { environment: "sandbox", organization_id: organizationId, api_token: apiToken, geowidget_token: geowidgetToken },
     });
     setSaving(false);
-    if (error || !result) { toast.error(errorMessage(error, "Nie udało się zapisać konfiguracji InPost")); return; }
+    if (error || !result) {
+      toast.error(errorMessage(error, "Nie udało się zapisać konfiguracji InPost"));
+      return;
+    }
     setData(result);
     setForm({ organizationId: "", apiToken: "", geowidgetToken: "" });
-    toast.success("Dane InPost zapisane w Supabase");
+    toast.success("Dane InPost zapisane pomyślnie");
   };
 
-  if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
-  return (
-    <section className="rounded-xl border border-border bg-muted/20 p-5">
-      <div className="mb-4"><h4 className="font-display text-lg font-semibold text-foreground">Dane InPost ShipX — Sandbox</h4><p className="mt-1 text-sm text-muted-foreground">Wklej dane z konta InPost Sandbox. Po zapisie tokeny są przechowywane po stronie Supabase i w panelu pozostają zamaskowane.</p></div>
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2"><Label htmlFor="inpost-organization-id">ID organizacji *</Label><Input id="inpost-organization-id" value={form.organizationId} onChange={(event) => setForm((current) => ({ ...current, organizationId: event.target.value }))} placeholder="np. 123456" autoComplete="off" /></div>
-        <div className="space-y-2"><Label htmlFor="inpost-shipx-token">Token API ShipX *</Label><Input id="inpost-shipx-token" type="password" value={form.apiToken} onChange={(event) => setForm((current) => ({ ...current, apiToken: event.target.value }))} autoComplete="new-password" /></div>
-        <div className="space-y-2 md:col-span-2"><Label htmlFor="inpost-geowidget-token">Token Geowidget *</Label><Input id="inpost-geowidget-token" type="password" value={form.geowidgetToken} onChange={(event) => setForm((current) => ({ ...current, geowidgetToken: event.target.value }))} autoComplete="new-password" /><p className="text-xs text-muted-foreground">Ten token jest przekazywany do widżetu InPost w checkoutcie — jest przeznaczony do użycia w przeglądarce.</p></div>
+  if (loading)
+    return (
+      <div className="flex justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
       </div>
-      <div className="mt-5 grid gap-2 md:grid-cols-3"><CredentialStatus label="ID organizacji" value={data?.organization ?? { set: false, preview: "" }} /><CredentialStatus label="Token ShipX" value={data?.api_token ?? { set: false, preview: "" }} /><CredentialStatus label="Token Geowidget" value={data?.geowidget_token ?? { set: false, preview: "" }} /></div>
-      <div className="mt-5 flex justify-end"><button type="button" onClick={save} disabled={saving} className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}Zapisz konfigurację InPost</button></div>
+    );
+
+  return (
+    <section className="rounded-xl border border-border bg-muted/20 p-5 space-y-6">
+      <div>
+        <h4 className="font-display text-lg font-semibold text-foreground">Integracja InPost ShipX & Geowidget</h4>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Konfiguracja przesyłek Paczkomatowych i kurierskich InPost oraz mapy odbioru w koszyku.
+        </p>
+      </div>
+
+      {/* Webhook notification URL Box */}
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+        <div className="flex items-center gap-2 mb-1.5 text-sm font-semibold text-primary">
+          <Globe className="h-4 w-4" />
+          <span>Adres Webhook dla powiadomień InPost ShipX</span>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Wklej ten adres w panelu InPost ShipX (w sekcji Powiadomienia / Webhooki organizacji), aby system automatycznie
+          odbierał zmiany statusu przesyłek.
+        </p>
+        <div className="flex items-center gap-2">
+          <Input readOnly value={webhookUrl} className="font-mono text-xs bg-background" />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => copyToClipboard(webhookUrl)}
+            className="shrink-0 gap-1.5"
+          >
+            {copiedWebhook ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+            {copiedWebhook ? "Skopiowano" : "Kopiuj"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="inpost-organization-id">ID organizacji *</Label>
+          <Input
+            id="inpost-organization-id"
+            value={form.organizationId}
+            onChange={(event) => setForm((current) => ({ ...current, organizationId: event.target.value }))}
+            placeholder="np. 123456"
+            autoComplete="off"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="inpost-shipx-token">Token API ShipX *</Label>
+          <Input
+            id="inpost-shipx-token"
+            type="password"
+            value={form.apiToken}
+            onChange={(event) => setForm((current) => ({ ...current, apiToken: event.target.value }))}
+            autoComplete="new-password"
+          />
+        </div>
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="inpost-geowidget-token">Token Geowidget *</Label>
+          <Input
+            id="inpost-geowidget-token"
+            type="password"
+            value={form.geowidgetToken}
+            onChange={(event) => setForm((current) => ({ ...current, geowidgetToken: event.target.value }))}
+            autoComplete="new-password"
+          />
+          <p className="text-xs text-muted-foreground">
+            Ten token jest przekazywany do widżetu InPost w koszyku — jest przeznaczony do użycia w przeglądarce.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-3">
+        <CredentialStatus label="ID organizacji" value={data?.organization ?? { set: false, preview: "" }} />
+        <CredentialStatus label="Token ShipX" value={data?.api_token ?? { set: false, preview: "" }} />
+        <CredentialStatus label="Token Geowidget" value={data?.geowidget_token ?? { set: false, preview: "" }} />
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+          Zapisz konfigurację InPost
+        </button>
+      </div>
     </section>
   );
 };

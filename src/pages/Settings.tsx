@@ -9,7 +9,9 @@ import { ArrowLeft, Camera, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { storage } from "@/integrations/firebase/config";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,13 +48,8 @@ const Settings = () => {
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["profile", user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("user_id", user!.id)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
+      if (!user?.id) return null;
+      return await firestoreService.getUserProfile(user.id);
     },
     enabled: !!user,
   });
@@ -78,21 +75,21 @@ const Settings = () => {
 
   const updateProfileMutation = useMutation({
     mutationFn: async (values: ProfileFormValues) => {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          first_name: values.first_name || null,
-          last_name: values.last_name || null,
-          display_name: values.display_name || null,
-        })
-        .eq("user_id", user!.id);
-      if (error) throw error;
+      if (!user?.id) throw new Error("Brak zalogowanego użytkownika");
+      await firestoreService.updateUserProfile(user.id, {
+        first_name: values.first_name || null,
+        last_name: values.last_name || null,
+        display_name: values.display_name || null,
+        full_name: [values.first_name, values.last_name].filter(Boolean).join(" ") || values.display_name || "",
+        email: user.email || "",
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["profile"] });
       toast.success("Profil zaktualizowany!");
     },
-    onError: () => {
+    onError: (err: unknown) => {
+      console.error("Profile save error:", err);
       toast.error("Nie udało się zapisać zmian.");
     },
   });
@@ -113,26 +110,26 @@ const Settings = () => {
     setIsUploading(true);
     try {
       const ext = file.name.split(".").pop() || "jpg";
-      const filePath = `${user.id}/avatar.${ext}`;
+      let avatarUrl = "";
+      
+      try {
+        const storageRef = ref(storage, `avatars/${user.id}/avatar.${ext}`);
+        await uploadBytes(storageRef, file);
+        avatarUrl = await getDownloadURL(storageRef);
+      } catch (storageErr) {
+        console.warn("Storage upload fallback to base64 data url:", storageErr);
+        // Base64 fallback in case bucket rules need auth
+        const reader = new FileReader();
+        avatarUrl = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
 
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(filePath, file, { upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      const { data: urlData } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(filePath);
-
-      const avatarUrl = `${urlData.publicUrl}?t=${Date.now()}`;
-
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({ avatar_url: avatarUrl })
-        .eq("user_id", user.id);
-
-      if (updateError) throw updateError;
+      await firestoreService.updateUserProfile(user.id, {
+        avatar_url: avatarUrl,
+      });
 
       queryClient.invalidateQueries({ queryKey: ["profile"] });
       toast.success("Awatar zaktualizowany!");

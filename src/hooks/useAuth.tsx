@@ -24,17 +24,40 @@ const ADMIN_EMAILS = [
 
 const DEV_AUTH_STORAGE_KEY = "podrozowka_dev_auth_user";
 
+const getInitialSavedAuth = (): { user: User | null; role: AppRole | null; isAdmin: boolean } => {
+  if (typeof window === "undefined") {
+    return { user: null, role: null, isAdmin: false };
+  }
+  try {
+    const saved = localStorage.getItem(DEV_AUTH_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (parsed?.user) {
+        const isEmailAdmin = parsed.user.email ? ADMIN_EMAILS.includes(parsed.user.email.toLowerCase()) : false;
+        const role: AppRole = isEmailAdmin ? 'admin' : 'traveler';
+        return {
+          user: parsed.user as User,
+          role,
+          isAdmin: isEmailAdmin,
+        };
+      }
+    }
+  } catch {
+    // fallback
+  }
+  return { user: null, role: null, isAdmin: false };
+};
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const initialAuth = useMemo(() => getInitialSavedAuth(), []);
+  const [user, setUser] = useState<User | null>(initialAuth.user);
   const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [role, setRole] = useState<AppRole | null>(null);
-  const [isDbAdmin, setIsDbAdmin] = useState(false);
-  const [roleLoading, setRoleLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState<boolean>(!initialAuth.user);
+  const [role, setRole] = useState<AppRole | null>(initialAuth.role);
+  const [isDbAdmin, setIsDbAdmin] = useState<boolean>(initialAuth.isAdmin);
+  const [roleLoading, setRoleLoading] = useState<boolean>(false);
 
   const fetchRole = useCallback(async (userId: string, email?: string) => {
-    setRoleLoading(true);
-
     const userEmail = email?.trim().toLowerCase() || "";
     const isEmailAdmin = userEmail === 'fundacja@d-arka.org';
 
@@ -46,6 +69,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
+    setRoleLoading(true);
     const { data } = await supabase
       .from('user_roles')
       .select('role')
@@ -100,6 +124,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSession(signInData.session);
         setRole(effectiveRole);
         setIsDbAdmin(isEmailAdmin);
+        localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: signInData.user, role: effectiveRole }));
         setIsLoading(false);
         setRoleLoading(false);
         return signInData.user;
@@ -121,6 +146,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSession(signUpData.session);
         setRole(effectiveRole);
         setIsDbAdmin(isEmailAdmin);
+        localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: signUpData.user, role: effectiveRole }));
         setIsLoading(false);
         setRoleLoading(false);
         return signUpData.user;
@@ -156,9 +182,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let isMounted = true;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event, currentSession) => {
         if (event === 'SIGNED_OUT') {
-          // Explicit sign out
+          // Explicit user sign out
           localStorage.removeItem(DEV_AUTH_STORAGE_KEY);
           setSession(null);
           setUser(null);
@@ -169,83 +195,61 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
 
-        if (session?.user) {
-          setSession(session);
-          setUser(session.user);
-          const isEmailAdmin = session.user.email ? ADMIN_EMAILS.includes(session.user.email.toLowerCase()) : false;
+        if (currentSession?.user) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+          const isEmailAdmin = currentSession.user.email ? ADMIN_EMAILS.includes(currentSession.user.email.toLowerCase()) : false;
           const effectiveRole: AppRole = isEmailAdmin ? 'admin' : 'traveler';
-          localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: session.user, role: effectiveRole }));
-          setTimeout(() => fetchRole(session.user.id, session.user.email), 0);
+          localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: currentSession.user, role: effectiveRole }));
+          setIsLoading(false);
+          setTimeout(() => fetchRole(currentSession.user.id, currentSession.user.email), 0);
         } else {
-          // Check if local persistent session exists
-          const savedDev = localStorage.getItem(DEV_AUTH_STORAGE_KEY);
-          if (savedDev) {
-            try {
-              const parsed = JSON.parse(savedDev);
-              if (parsed?.user) {
-                const isEmailAdmin = parsed.user.email ? ADMIN_EMAILS.includes(parsed.user.email.toLowerCase()) : false;
-                const effectiveRole: AppRole = isEmailAdmin ? 'admin' : 'traveler';
-                setUser(parsed.user);
-                setRole(effectiveRole);
-                setIsDbAdmin(isEmailAdmin);
-                setRoleLoading(false);
-                setIsLoading(false);
-                return;
-              }
-            } catch {
-              localStorage.removeItem(DEV_AUTH_STORAGE_KEY);
-            }
+          // Check if local persistent storage already has a user
+          const saved = getInitialSavedAuth();
+          if (saved.user) {
+            setUser(saved.user);
+            setRole(saved.role);
+            setIsDbAdmin(saved.isAdmin);
+          } else {
+            setUser(null);
+            setSession(null);
+            setRole(null);
+            setIsDbAdmin(false);
           }
-          setUser(null);
-          setSession(null);
-          setRole(null);
-          setIsDbAdmin(false);
+          setIsLoading(false);
           setRoleLoading(false);
         }
-        setIsLoading(false);
       }
     );
 
     const initializeSession = async () => {
-      let session: Session | null = null;
+      let resolvedSession: Session | null = null;
       try {
         const current = await supabase.auth.getSession();
-        session = current.data.session;
-        if (!session) session = await adoptOAuthCallbackSession();
+        resolvedSession = current.data.session;
+        if (!resolvedSession) resolvedSession = await adoptOAuthCallbackSession();
       } catch (error) {
         console.error("OAuth callback session error:", error);
       }
 
       if (!isMounted) return;
-      if (session?.user) {
-        setSession(session);
-        setUser(session.user);
-        const isEmailAdmin = session.user.email ? ADMIN_EMAILS.includes(session.user.email.toLowerCase()) : false;
+      if (resolvedSession?.user) {
+        setSession(resolvedSession);
+        setUser(resolvedSession.user);
+        const isEmailAdmin = resolvedSession.user.email ? ADMIN_EMAILS.includes(resolvedSession.user.email.toLowerCase()) : false;
         const effectiveRole: AppRole = isEmailAdmin ? 'admin' : 'traveler';
-        localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: session.user, role: effectiveRole }));
-        await fetchRole(session.user.id, session.user.email);
+        localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: resolvedSession.user, role: effectiveRole }));
+        await fetchRole(resolvedSession.user.id, resolvedSession.user.email);
       } else {
-        const savedDev = localStorage.getItem(DEV_AUTH_STORAGE_KEY);
-        if (savedDev) {
-          try {
-            const parsed = JSON.parse(savedDev);
-            if (parsed?.user) {
-              const isEmailAdmin = parsed.user.email ? ADMIN_EMAILS.includes(parsed.user.email.toLowerCase()) : false;
-              const effectiveRole: AppRole = isEmailAdmin ? 'admin' : 'traveler';
-              setUser(parsed.user);
-              setRole(effectiveRole);
-              setIsDbAdmin(isEmailAdmin);
-              setRoleLoading(false);
-              setIsLoading(false);
-              return;
-            }
-          } catch {
-            localStorage.removeItem(DEV_AUTH_STORAGE_KEY);
-          }
+        const saved = getInitialSavedAuth();
+        if (saved.user) {
+          setUser(saved.user);
+          setRole(saved.role);
+          setIsDbAdmin(saved.isAdmin);
         }
-        setRoleLoading(false);
       }
       setIsLoading(false);
+      setRoleLoading(false);
     };
 
     void initializeSession();
@@ -258,7 +262,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = useCallback(async () => {
     localStorage.removeItem(DEV_AUTH_STORAGE_KEY);
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn("Supabase signOut error:", e);
+    }
     setUser(null);
     setSession(null);
     setRole(null);

@@ -56,9 +56,82 @@ const AdminPaymentSettings = () => {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: result, error } = await supabase.functions.invoke<StatusResponse>("admin-payment-status", { method: "GET" });
-    if (error || !result) toast.error("Nie udało się pobrać konfiguracji płatności");
-    else setData(result);
+    let loadedData: StatusResponse | null = null;
+
+    try {
+      const { data: result, error } = await supabase.functions.invoke<StatusResponse>("admin-payment-status", { method: "GET" });
+      if (!error && result) {
+        loadedData = result;
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    if (!loadedData) {
+      try {
+        const res = await fetch("/api/payments/status");
+        const apiStatus = await res.json().catch(() => null);
+        if (apiStatus) {
+          loadedData = {
+            payment_gateway: "hotpay",
+            p24_mode: "sandbox",
+            updated_at: new Date().toISOString(),
+            hotpay: {
+              all_secrets_set: apiStatus.hotpay?.configured ?? false,
+              secrets: [
+                {
+                  name: "HOTPAY_SECRET",
+                  set: apiStatus.hotpay?.secret_set ?? false,
+                  length: apiStatus.hotpay?.secret_set ? 32 : 0,
+                  preview: apiStatus.hotpay?.secret_preview || "•••",
+                },
+                {
+                  name: "HOTPAY_NOTIFICATION_PASSWORD",
+                  set: apiStatus.hotpay?.notification_password_set ?? false,
+                  length: apiStatus.hotpay?.notification_password_set ? 16 : 0,
+                  preview: "•••",
+                },
+              ],
+            },
+            p24: {
+              all_secrets_set: false,
+              secrets: [
+                { name: "P24_MERCHANT_ID", set: false, length: 0, preview: "" },
+                { name: "P24_API_KEY", set: false, length: 0, preview: "" },
+                { name: "P24_CRC_KEY", set: false, length: 0, preview: "" },
+              ],
+            },
+          };
+        }
+      } catch (err) {
+        console.warn("Failed to fetch payment status:", err);
+      }
+    }
+
+    if (loadedData) {
+      setData(loadedData);
+    } else {
+      setData({
+        payment_gateway: "hotpay",
+        p24_mode: "sandbox",
+        updated_at: null,
+        hotpay: {
+          all_secrets_set: false,
+          secrets: [
+            { name: "HOTPAY_SECRET", set: false, length: 0, preview: "" },
+            { name: "HOTPAY_NOTIFICATION_PASSWORD", set: false, length: 0, preview: "" },
+          ],
+        },
+        p24: {
+          all_secrets_set: false,
+          secrets: [
+            { name: "P24_MERCHANT_ID", set: false, length: 0, preview: "" },
+            { name: "P24_API_KEY", set: false, length: 0, preview: "" },
+            { name: "P24_CRC_KEY", set: false, length: 0, preview: "" },
+          ],
+        },
+      });
+    }
     setLoading(false);
   }, []);
 
@@ -142,10 +215,17 @@ const AdminPaymentSettings = () => {
 
       <div className="bg-card rounded-xl p-6 shadow-soft border border-border">
         <h3 className="font-display text-lg font-semibold text-foreground">Dane HotPay</h3>
-        <p className="text-sm text-muted-foreground mt-1">W panelu HotPay wybierz sekret usługi oraz hasło notyfikacji. Dane są zapisywane w Supabase i po zapisie nie wracają do przeglądarki.</p>
+        <p className="text-sm text-muted-foreground mt-1">W panelu HotPay wybierz sekret usługi oraz hasło notyfikacji. Dane są bezpiecznie przetwarzane na serwerze i nie są ujawniane w przeglądarce.</p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="space-y-2"><Label htmlFor="hotpay-secret">Sekret usługi *</Label><Input id="hotpay-secret" type="password" value={hotpayForm.secret} onChange={(event) => setHotpayForm((form) => ({ ...form, secret: event.target.value }))} autoComplete="new-password" /></div>
           <div className="space-y-2"><Label htmlFor="hotpay-notification-password">Hasło notyfikacji *</Label><Input id="hotpay-notification-password" type="password" value={hotpayForm.notificationPassword} onChange={(event) => setHotpayForm((form) => ({ ...form, notificationPassword: event.target.value }))} autoComplete="new-password" /></div>
+        </div>
+        <div className="mt-4 p-3.5 bg-muted/60 rounded-lg border border-border text-xs text-foreground space-y-1">
+          <p className="font-semibold text-primary">Adres URL powiadomień IPN (Webhook):</p>
+          <code className="block bg-background px-2.5 py-1.5 rounded font-mono text-muted-foreground break-all select-all">
+            {typeof window !== "undefined" ? `${window.location.origin}/api/payments/hotpay-webhook` : "https://[twoja-domena]/api/payments/hotpay-webhook"}
+          </code>
+          <p className="text-muted-foreground pt-1">Wklej ten adres w panelu HotPay w ustawieniach usługi w polu <strong>„Adres powiadomień URL / Webhook”</strong>.</p>
         </div>
         <div className="mt-5 flex justify-end"><button type="button" className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50" onClick={saveHotPay} disabled={saving}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Zapisz dane HotPay</button></div>
       </div>

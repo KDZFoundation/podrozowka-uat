@@ -59,7 +59,15 @@ const AdminCategories = () => {
       supabase.from("categories").select("*").order("sort_order").order("name"),
       supabase.from("card_designs").select("category_id"),
     ]);
-    setCategories((cats as Category[]) || []);
+    const rawCategories = (cats as Category[]) || [];
+    const normalized = rawCategories.map((c) => {
+      if (c.slug === "architektura" && c.icon_url && c.icon_url.includes("architektura-1784144956289.png")) {
+        supabase.from("categories").update({ icon_url: null }).eq("id", c.id).then();
+        return { ...c, icon_url: null };
+      }
+      return c;
+    });
+    setCategories(normalized);
     const u: Record<string, number> = {};
     const typedDesigns = (designs || []) as unknown as AdminCategoryDesignJoin[];
     typedDesigns.forEach((d: AdminCategoryDesignJoin) => {

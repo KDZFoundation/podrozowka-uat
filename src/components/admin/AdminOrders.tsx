@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import type { Database } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -179,21 +180,24 @@ const AdminOrders = () => {
 
   const fetchProductionBatches = useCallback(async () => {
     setIsLoadingBatches(true);
-    const { data, error } = await supabase.functions.invoke<PodBatchApiResponse>("pod-production-batches", {
-      body: { operation: "list" },
-    });
-    if (error || data?.error) {
-      console.error("POD production batches", error || data?.error);
-      toast({
-        title: "Nie udało się wczytać paczek POD",
-        description: data?.error || error?.message || "Spróbuj ponownie za chwilę.",
-        variant: "destructive",
+    try {
+      const { data, error } = await supabase.functions.invoke<PodBatchApiResponse>("pod-production-batches", {
+        body: { operation: "list" },
       });
-    } else {
-      setProductionBatches(data?.batches ?? []);
+      if (error || data?.error) {
+        // Soft fallback for unconfigured edge functions or sandbox environments
+        console.warn("POD production batches info:", error?.message || data?.error);
+        setProductionBatches([]);
+      } else {
+        setProductionBatches(data?.batches ?? []);
+      }
+    } catch (e) {
+      console.warn("POD production batches fetch skipped:", e);
+      setProductionBatches([]);
+    } finally {
+      setIsLoadingBatches(false);
     }
-    setIsLoadingBatches(false);
-  }, [toast]);
+  }, []);
 
   useEffect(() => {
     fetchProductionBatches();
@@ -344,41 +348,69 @@ const AdminOrders = () => {
 
   const fetchOrders = useCallback(async () => {
     setIsLoading(true);
-    let query = supabase
-      .from("orders")
-      .select("id, order_number, user_id, status, payment_status, total_amount, currency, customer_email, shipping_name, shipping_city, created_at")
-      .order("created_at", { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+    try {
+      let query = supabase
+        .from("orders")
+        .select("id, order_number, user_id, status, payment_status, total_amount, currency, customer_email, shipping_name, shipping_city, created_at")
+        .order("created_at", { ascending: false })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-    if (statusFilter !== "all") query = query.eq("status", statusFilter as Database["public"]["Enums"]["order_status"]);
-    if (paymentFilter !== "all") query = query.eq("payment_status", paymentFilter as Database["public"]["Enums"]["payment_status"]);
+      if (statusFilter !== "all") query = query.eq("status", statusFilter as Database["public"]["Enums"]["order_status"]);
+      if (paymentFilter !== "all") query = query.eq("payment_status", paymentFilter as Database["public"]["Enums"]["payment_status"]);
 
-    const { data, error } = await query;
-    if (!error && data) {
-      // Fetch display names for users safely
-      const userIds = [...new Set(data.map((o) => o.user_id))].filter((id): id is string => Boolean(id));
-      let profiles: { user_id: string; display_name: string | null }[] | null = null;
-      if (userIds.length > 0) {
-        const { data: profData } = await supabase
-          .from("profiles")
-          .select("user_id, display_name")
-          .in("user_id", userIds);
-        profiles = profData;
+      const { data, error } = await query;
+      if (!error && data) {
+        // Fetch display names for users safely
+        const userIds = [...new Set(data.map((o) => o.user_id))].filter((id): id is string => Boolean(id));
+        let profiles: { user_id: string; display_name: string | null }[] | null = null;
+        if (userIds.length > 0) {
+          const { data: profData } = await supabase
+            .from("profiles")
+            .select("user_id, display_name")
+            .in("user_id", userIds);
+          profiles = profData;
+        }
+
+        const nameMap = new Map(profiles?.map((p) => [p.user_id, p.display_name]) || []);
+
+        setOrders(
+          data.map((o) => ({
+            ...o,
+            payment_method: "online",
+            display_name: o.user_id ? nameMap.get(o.user_id) || null : null,
+          }))
+        );
+      } else {
+        // Fallback to Firestore orders
+        const firestoreOrders = await firestoreService.getAllOrders();
+        if (firestoreOrders && firestoreOrders.length > 0) {
+          setOrders(
+            firestoreOrders.map((fo) => ({
+              id: fo.id,
+              order_number: fo.order_number || fo.id.slice(0, 8).toUpperCase(),
+              user_id: fo.user_id || "",
+              status: fo.status || "new",
+              payment_status: fo.payment_status || "pending",
+              payment_method: fo.payment_method || "online",
+              total_amount: fo.total_amount_pln || 0,
+              currency: "PLN",
+              customer_email: fo.guest_email || null,
+              shipping_name: null,
+              shipping_city: null,
+              created_at: typeof fo.created_at === "string" ? fo.created_at : new Date().toISOString(),
+              display_name: fo.guest_email || null,
+            }))
+          );
+        } else {
+          setOrders([]);
+        }
       }
-
-      const nameMap = new Map(profiles?.map((p) => [p.user_id, p.display_name]) || []);
-
-      setOrders(
-        data.map((o) => ({
-          ...o,
-          payment_method: "online",
-          display_name: o.user_id ? nameMap.get(o.user_id) || null : null,
-        }))
-      );
-    } else if (error) {
-      console.error("Error fetching orders:", error);
+    } catch (err) {
+      console.warn("fetchOrders handled error:", err);
+      setOrders([]);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, [statusFilter, paymentFilter, page]);
 
   useEffect(() => {

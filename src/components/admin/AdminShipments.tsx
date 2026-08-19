@@ -158,6 +158,33 @@ const AdminShipments = () => {
   const generateInpostShipment = async (orderId: string, size: string = "small") => {
     setIsGeneratingInpost(true);
     try {
+      // First try Node/Express API
+      const createRes = await fetch("/api/inpost/create-shipment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order_id: orderId, size }),
+      }).then((r) => r.json().catch(() => null));
+
+      if (createRes && (createRes.shipment || createRes.success)) {
+        const trackingNum = createRes.shipment?.tracking_number || createRes.tracking_number;
+        toast({
+          title: "Przesyłka zarejestrowana w InPost!",
+          description: `Numer przesyłki: ${trackingNum || "nadano w ShipX"}`,
+        });
+        fetchShipments();
+        if (selectedShipment) {
+          setSelectedShipment({
+            ...selectedShipment,
+            tracking_number: trackingNum,
+            carrier: "InPost",
+            inpost_shipment_id: createRes.shipment?.inpost_shipment_id || String(createRes.shipx_response?.id),
+            inpost_status: createRes.shipment?.inpost_status || createRes.shipx_status || "created",
+          });
+        }
+        return;
+      }
+
+      // Fallback to Supabase function if available
       const { data, error } = await supabase.functions.invoke("create-inpost-shipment", {
         body: { order_id: orderId, size },
       });
@@ -165,7 +192,7 @@ const AdminShipments = () => {
       if (error) {
         toast({
           title: "Błąd integracji InPost ShipX",
-          description: error.message || "Nie udało się połączyć z funkcją brzegową.",
+          description: createRes?.error || error.message || "Nie udało się połączyć z API InPost.",
           variant: "destructive",
         });
       } else if (data?.error) {
@@ -176,7 +203,7 @@ const AdminShipments = () => {
         });
       } else {
         toast({
-          title: "Przesyłka zarejestrowana w InPost Sandbox!",
+          title: "Przesyłka zarejestrowana w InPost!",
           description: `Numer przesyłki: ${data.shipment?.tracking_number || data.tracking_number}`,
         });
         fetchShipments();
@@ -205,11 +232,28 @@ const AdminShipments = () => {
     if (!selectedShipment) return;
     setIsBuyingInpost(true);
     try {
+      const shipmentId = selectedShipment.inpost_shipment_id || selectedShipment.id;
+
+      // Try Node/Express API
+      const apiRes = await fetch("/api/inpost/buy-shipment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shipment_id: shipmentId }),
+      }).then((r) => r.json().catch(() => null));
+
+      if (apiRes?.success) {
+        toast({ title: "Zakup zlecony w InPost", description: apiRes.message });
+        setSelectedShipment({ ...selectedShipment, inpost_status: "purchase_requested" });
+        fetchShipments();
+        return;
+      }
+
+      // Fallback to Supabase function
       const { data, error } = await supabase.functions.invoke("buy-inpost-shipment", {
         body: { shipment_id: selectedShipment.id },
       });
       if (error || data?.error) {
-        toast({ title: "Nie udało się kupić przesyłki InPost", description: data?.error || error?.message, variant: "destructive" });
+        toast({ title: "Nie udało się kupić przesyłki InPost", description: apiRes?.error || data?.error || error?.message, variant: "destructive" });
       } else {
         toast({ title: "Zakup zlecony w InPost", description: data?.message });
         setSelectedShipment({ ...selectedShipment, inpost_status: "purchase_requested" });
@@ -224,16 +268,33 @@ const AdminShipments = () => {
     if (!selectedShipment) return;
     setIsDownloadingLabel(true);
     try {
+      const shipmentId = selectedShipment.inpost_shipment_id || selectedShipment.id;
+
+      // Try Node/Express API first
+      const response = await fetch(`/api/inpost/label/${encodeURIComponent(shipmentId)}`);
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `inpost-${shipmentId}.pdf`;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast({ title: "Pobrano etykietę InPost" });
+        return;
+      }
+
+      // Fallback to Supabase URL
       const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch(
+      const fallbackResponse = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-inpost-label?shipment_id=${encodeURIComponent(selectedShipment.id)}`,
         { headers: { Authorization: `Bearer ${session?.access_token || ""}` } },
       );
-      if (!response.ok) {
-        const error = await response.json().catch(() => ({}));
+      if (!fallbackResponse.ok) {
+        const error = await fallbackResponse.json().catch(() => ({}));
         throw new Error(error.error || "Etykieta nie jest jeszcze dostępna w ShipX.");
       }
-      const blob = await response.blob();
+      const blob = await fallbackResponse.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;

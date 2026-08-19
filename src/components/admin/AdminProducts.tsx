@@ -18,6 +18,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { diagnoseUploadError, logUploadAttempt } from "@/lib/uploadDiagnostics";
 
 interface Country {
@@ -155,7 +156,7 @@ const AdminProducts = () => {
     const [{ data: designs }, { data: countriesData }, { data: categoriesData }, { data: units }] = await Promise.all([
       supabase
         .from("card_designs")
-        .select("*, countries!inner(name_pl), categories(name)")
+        .select("*, countries(name_pl), categories(name)")
         .order("created_at", { ascending: false }),
       supabase.from("countries").select("id, iso2, name_pl").order("name_pl"),
       supabase.from("categories").select("id, name, icon_url, sort_order").order("sort_order").order("name"),
@@ -312,6 +313,17 @@ const AdminProducts = () => {
 
     if (editingId) {
       const { error } = await supabase.from("card_designs").update(payload).eq("id", editingId);
+      // Sync to Firestore
+      await firestoreService.upsertCardDesign(editingId, {
+        title: payload.title,
+        description: payload.description || undefined,
+        price_pln: priceGrosze / 100,
+        country_id: payload.country_id,
+        category_id: payload.category_id || undefined,
+        image_front_url: payload.image_front_url || undefined,
+        is_active: payload.active,
+      });
+
       setSaving(false);
       if (error) {
         toast({ title: "Błąd zapisu", description: error.message, variant: "destructive" });
@@ -325,15 +337,27 @@ const AdminProducts = () => {
         toast({ title: "Wzór nie został odnaleziony", variant: "destructive" });
         return;
       }
+      const title = buildProductTitle(sourceDesign);
       const { error } = await supabase
         .from("card_designs")
         .update({
-          title: buildProductTitle(sourceDesign),
+          title,
           price_grosze: priceGrosze,
           currency: "PLN",
           active: true,
         })
         .eq("id", sourceDesignId);
+
+      // Sync to Firestore
+      await firestoreService.upsertCardDesign(sourceDesignId, {
+        title,
+        price_pln: priceGrosze / 100,
+        country_id: sourceDesign.country_id,
+        category_id: sourceDesign.category_id || undefined,
+        image_front_url: sourceDesign.image_front_url || undefined,
+        is_active: true,
+      });
+
       setSaving(false);
       if (error) {
         toast({ title: "Błąd dodawania", description: error.message, variant: "destructive" });

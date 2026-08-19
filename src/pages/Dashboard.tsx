@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import { User, Package, ArrowLeft, Loader2, Shield, ShoppingCart, Store } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import useRealtimeNotifications from "@/hooks/useRealtimeNotifications";
 import UserStats from "@/components/dashboard/UserStats";
 import RankCard from "@/components/dashboard/RankCard";
@@ -47,16 +47,28 @@ const Dashboard = () => {
     const fetchProfile = async () => {
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (!error && data) {
-        setProfile(data as Profile);
+      try {
+        const data = await firestoreService.getUserProfile(user.id);
+        if (data) {
+          setProfile({
+            id: data.id || user.id,
+            display_name: data.display_name || data.full_name || user.email || null,
+            first_name: data.first_name || null,
+            last_name: data.last_name || null,
+            avatar_url: data.avatar_url || null,
+            country: null,
+            city: null,
+            postcards_purchased: data.postcards_sent_count || 0,
+            postcards_received: data.postcards_registered_count || 0,
+            total_points: data.gamification_points || 0,
+            current_rank: data.current_tier || "Początkujący Podróżnik",
+          });
+        }
+      } catch (err) {
+        console.warn("Dashboard fetchProfile error:", err);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     if (user) fetchProfile();
@@ -93,16 +105,16 @@ const Dashboard = () => {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-4">
-              <a href="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
+              <Link to="/" className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors">
                 <ArrowLeft className="w-4 h-4" /><span className="hidden sm:inline">Powrót</span>
-              </a>
+              </Link>
               <h1 className="font-display text-xl font-semibold text-foreground">Panel podróżnika</h1>
             </div>
             <div className="flex items-center gap-3">
               {isAdmin && (
-                <a href="/admin" className="flex items-center gap-1 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-sm font-medium hover:bg-primary/20 transition-colors">
+                <Link to="/admin" className="flex items-center gap-1 px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-sm font-medium hover:bg-primary/20 transition-colors">
                   <Shield className="w-4 h-4" />Admin
-                </a>
+                </Link>
               )}
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium text-foreground">{profile?.display_name || user.email}</p>

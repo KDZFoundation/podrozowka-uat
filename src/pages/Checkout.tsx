@@ -36,7 +36,7 @@ const formatPln = (grosze: number) =>
 
 const Checkout = () => {
   const { user, isLoading: authLoading } = useAuth();
-  const { items: cartItems } = useCart();
+  const { items: cartItems, clear: clearCart } = useCart();
   const { pickupPoint, setPickupPoint } = useCheckout();
   const { items, subtotalGrosze, isLoading } = useCartItems();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -147,28 +147,55 @@ const Checkout = () => {
           : { requested: false },
       };
       const { supabase } = await import("@/integrations/supabase/client");
-      // Pass the current access token explicitly. This keeps the checkout
-      // request authenticated even when the Functions client has not yet
-      // picked up a restored OAuth session after a page refresh.
+      const { firestoreService } = await import("@/integrations/firebase/services/firestoreService");
+      
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
-      if (!accessToken) {
-        toast.error("Sesja wygasła", { description: "Zaloguj się ponownie przed przejściem do płatności." });
-        setIsSubmitting(false);
-        return;
-      }
-      const { data, error } = await supabase.functions.invoke("create-payment", {
-        body: payload,
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (error) throw error;
-      interface CreatePaymentResponse {
+      const userEmail = sessionData.session?.user?.email || "";
+      const userId = sessionData.session?.user?.id || "";
+
+      // Call our backend API to initialize HotPay payment
+      let responseData: {
         error?: string;
         payment_method?: string;
         order_number?: string;
         redirect_url?: string;
+      } | null = null;
+
+      try {
+        const apiRes = await fetch("/api/payments/create-hotpay", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          },
+          body: JSON.stringify({
+            ...payload,
+            customer_email: userEmail,
+            origin_url: window.location.origin,
+          }),
+        });
+        responseData = await apiRes.json().catch(() => null);
+      } catch (apiErr) {
+        console.warn("[HotPay API direct error, trying fallback]:", apiErr);
       }
-      const responseData = data as CreatePaymentResponse | null;
+
+      // If backend API returned a valid response
+      if (!responseData || responseData.error) {
+        // Try fallback via client/supabase function if API wasn't available
+        try {
+          const { data, error } = await supabase.functions.invoke("create-payment", {
+            body: payload,
+            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+          });
+          if (!error && data) {
+            responseData = data;
+          }
+        } catch (_) {
+          // ignore
+        }
+      }
+
       const errCode = responseData?.error;
       if (errCode === "out_of_stock") {
         toast.error("Zabrakło sztuk w magazynie", {
@@ -187,7 +214,48 @@ const Checkout = () => {
         setIsSubmitting(false);
         return;
       }
-      if (responseData?.payment_method === "cod") {
+
+      // Save order to Firestore as well for complete persistence
+      if (responseData?.order_number) {
+        try {
+          await firestoreService.createOrder({
+            order_number: responseData.order_number,
+            user_id: userId,
+            guest_email: userEmail,
+            status: paymentMethod === "cod" ? "pending" : "new",
+            payment_method: paymentMethod === "cod" ? "cod" : "hotpay",
+            payment_status: paymentMethod === "cod" ? "pending" : "pending",
+            total_amount_pln: totalGrosze / 100,
+            shipping_cost_pln: (shippingCostGrosze || 0) / 100,
+            items: items.map((it) => ({
+              card_design_id: it.card_design_id,
+              quantity: it.quantity,
+              unit_price_pln: 1.20,
+              total_price_pln: it.quantity * 1.20,
+            })),
+            shipping_address: pickupPoint ? {
+              type: pickupPoint.provider === "inpost" ? "inpost_paczkomat" : "orlen_paczka",
+              name: pickupPoint.name,
+              address: pickupPoint.address,
+              city: pickupPoint.city,
+            } : {
+              type: "courier",
+              name: courierAddress.name,
+              street: courierAddress.street,
+              city: courierAddress.city,
+              postal_code: courierAddress.postal_code,
+              phone: courierAddress.phone,
+            },
+            fiscal_document_status: "pending",
+          });
+        } catch (fsErr) {
+          console.warn("[Firestore order backup notice]:", fsErr);
+        }
+      }
+
+      clearCart();
+
+      if (responseData?.payment_method === "cod" || paymentMethod === "cod") {
         const orderNumber = responseData?.order_number || "";
         toast.success("Zamówienie złożone", { description: "Zapłacisz przy odbiorze." });
         window.location.href = `/checkout/potwierdzenie?order=${encodeURIComponent(orderNumber)}&cod=1`;

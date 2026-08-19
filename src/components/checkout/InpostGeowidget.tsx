@@ -120,16 +120,58 @@ const InpostGeowidget = ({ onSelect }: Props) => {
   useEffect(() => {
     if (configuredToken) return;
     let cancelled = false;
-    supabase.functions.invoke<{ token: string | null; environment?: GeowidgetEnvironment }>("inpost-geowidget-config", { method: "GET" })
-      .then(({ data, error }) => {
+
+    // Fetch from Node/Express API with fallback
+    fetch("/api/inpost/geowidget-config")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((apiData: { token?: string | null; environment?: GeowidgetEnvironment } | null) => {
         if (cancelled) return;
-        if (error || !data?.token) { setStatus("no-token"); return; }
-        setToken(data.token);
-        setEnvironment(data.environment === "production" ? "production" : "sandbox");
-        setStatus("loading");
+        if (apiData?.token) {
+          setToken(apiData.token);
+          setEnvironment(apiData.environment === "production" ? "production" : "sandbox");
+          setStatus("loading");
+          return;
+        }
+
+        // Fallback to Supabase function or env
+        const envToken = import.meta.env.VITE_INPOST_GEOWIDGET_TOKEN;
+        if (envToken) {
+          setToken(envToken);
+          setEnvironment("sandbox");
+          setStatus("loading");
+          return;
+        }
+
+        supabase.functions
+          .invoke<{ token: string | null; environment?: GeowidgetEnvironment }>("inpost-geowidget-config", { method: "GET" })
+          .then(({ data, error }) => {
+            if (cancelled) return;
+            if (error || !data?.token) {
+              setStatus("no-token");
+              return;
+            }
+            setToken(data.token);
+            setEnvironment(data.environment === "production" ? "production" : "sandbox");
+            setStatus("loading");
+          })
+          .catch(() => {
+            if (!cancelled) setStatus("no-token");
+          });
       })
-      .catch(() => { if (!cancelled) setStatus("no-token"); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (cancelled) return;
+        const envToken = import.meta.env.VITE_INPOST_GEOWIDGET_TOKEN;
+        if (envToken) {
+          setToken(envToken);
+          setStatus("loading");
+        } else {
+          setStatus("no-token");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [configuredToken]);
 
   useEffect(() => {

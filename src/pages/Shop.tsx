@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { getProductTitle } from "@/lib/productTitle";
 import { useCart } from "@/contexts/CartContext";
 import { getCategoryIcon } from "@/lib/categoryIcons";
@@ -64,14 +65,51 @@ const Shop = () => {
 
   useEffect(() => {
     const loadFilters = async () => {
-      const [{ data: cats }, { data: countriesData }] = await Promise.all([
-        supabase.from("categories").select("id, name, slug, icon_url, sort_order").order("sort_order").order("name"),
-        supabase.from("countries").select("id, iso2, name_pl").eq("active", true).order("name_pl"),
-      ]);
-      setAllCategories((cats as Category[]) || []);
-      setCountries((countriesData as Country[]) || []);
-      if (countryIso && countriesData) {
-        const country = (countriesData as Country[]).find((item) => item.iso2.toLowerCase() === countryIso.toLowerCase());
+      let rawCategories: Category[] = [];
+      let rawCountries: Country[] = [];
+
+      try {
+        const [{ data: cats }, { data: countriesData }] = await Promise.all([
+          supabase.from("categories").select("id, name, slug, icon_url, sort_order").order("sort_order").order("name"),
+          supabase.from("countries").select("id, iso2, name_pl").eq("active", true).order("name_pl"),
+        ]);
+        if (cats && cats.length > 0) rawCategories = cats as Category[];
+        if (countriesData && countriesData.length > 0) rawCountries = countriesData as Country[];
+      } catch (e) {
+        console.warn("Supabase loadFilters error, fallback to Firestore:", e);
+      }
+
+      // Firestore fallback for filters
+      if (rawCategories.length === 0) {
+        const fireCats = await firestoreService.getCategories();
+        rawCategories = fireCats.map((c) => ({
+          id: c.id,
+          name: c.name_pl || c.slug,
+          slug: c.slug,
+          icon_url: c.icon || null,
+          sort_order: c.sort_order || 0,
+        }));
+      }
+      if (rawCountries.length === 0) {
+        const fireCountries = await firestoreService.getCountries();
+        rawCountries = fireCountries.map((c) => ({
+          id: c.id,
+          iso2: (c.id || "PL").toUpperCase(),
+          name_pl: c.name || c.english_name || "Polska",
+        }));
+      }
+
+      const normalizedCategories = rawCategories.map((c) => {
+        if (c.slug === "architektura" && c.icon_url && c.icon_url.includes("architektura-1784144956289.png")) {
+          supabase.from("categories").update({ icon_url: null }).eq("id", c.id).then();
+          return { ...c, icon_url: null };
+        }
+        return c;
+      });
+      setAllCategories(normalizedCategories);
+      setCountries(rawCountries);
+      if (countryIso && rawCountries.length > 0) {
+        const country = rawCountries.find((item) => item.iso2.toLowerCase() === countryIso.toLowerCase());
         if (country) setCountryFilter(country.id);
       }
     };
@@ -81,27 +119,104 @@ const Shop = () => {
   useEffect(() => {
     const loadProducts = async () => {
       setIsLoading(true);
-      const select = "id, title, image_front_url, photo_author, thank_you_text, crop_settings, price_grosze, country_id, category_id, language_code, view_no, countries!inner(id, iso2, name_pl), categories(id, name, slug, icon_url, sort_order)";
+      const select =
+        "id, title, image_front_url, photo_author, thank_you_text, crop_settings, price_grosze, country_id, category_id, language_code, view_no, countries(id, iso2, name_pl), categories(id, name, slug, icon_url, sort_order)";
       const isPopular = countryFilter === "all" && categoryFilter === "all";
-      let query = supabase.from("card_designs").select(select).eq("active", true).gt("price_grosze", 0);
 
-      if (isPopular) {
-        const { data: popularRows } = await supabase.rpc("get_popular_card_designs", { _limit: 20 });
-        const popularIds = (popularRows || []).map((row) => row.card_design_id);
-        if (popularIds.length > 0) {
-          const { data } = await query.in("id", popularIds);
-          const positions = new Map(popularIds.map((id, index) => [id, index]));
-          setProducts(((data as unknown as Product[]) || []).sort((a, b) => (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0)));
+      let fetchedProducts: Product[] = [];
+
+      try {
+        let query = supabase.from("card_designs").select(select).eq("active", true);
+
+        if (isPopular) {
+          try {
+            const { data: popularRows } = await supabase.rpc("get_popular_card_designs", { _limit: 20 });
+            const popularIds = (popularRows || []).map((row) => row.card_design_id);
+            if (popularIds.length > 0) {
+              const { data } = await query.in("id", popularIds);
+              const positions = new Map(popularIds.map((id, index) => [id, index]));
+              fetchedProducts = ((data as unknown as Product[]) || []).sort(
+                (a, b) => (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0)
+              );
+            }
+          } catch {
+            // ignore rpc error
+          }
+
+          if (fetchedProducts.length === 0) {
+            const { data } = await query.order("created_at", { ascending: false }).limit(20);
+            fetchedProducts = (data as unknown as Product[]) || [];
+          }
         } else {
-          const { data } = await query.order("created_at", { ascending: false }).limit(20);
-          setProducts((data as unknown as Product[]) || []);
+          if (countryFilter !== "all") query = query.eq("country_id", countryFilter);
+          if (categoryFilter !== "all") query = query.eq("category_id", categoryFilter);
+          const { data } = await query.order("created_at", { ascending: false }).limit(100);
+          fetchedProducts = (data as unknown as Product[]) || [];
         }
-      } else {
-        if (countryFilter !== "all") query = query.eq("country_id", countryFilter);
-        if (categoryFilter !== "all") query = query.eq("category_id", categoryFilter);
-        const { data } = await query.order("created_at", { ascending: false }).limit(100);
-        setProducts((data as unknown as Product[]) || []);
+      } catch (e) {
+        console.warn("Supabase loadProducts error:", e);
       }
+
+      // If Supabase returned 0 items, fallback to Firestore
+      if (fetchedProducts.length === 0) {
+        try {
+          const [firestoreCards, firestoreCountries, firestoreCats] = await Promise.all([
+            firestoreService.getCardDesigns(),
+            firestoreService.getCountries(),
+            firestoreService.getCategories(),
+          ]);
+
+          const countriesMap = new Map(firestoreCountries.map((c) => [c.id, c]));
+          const catsMap = new Map(firestoreCats.map((c) => [c.id, c]));
+
+          let filtered = firestoreCards;
+          if (countryFilter !== "all") {
+            filtered = filtered.filter((c) => c.country_id === countryFilter);
+          }
+          if (categoryFilter !== "all") {
+            filtered = filtered.filter((c) => c.category_id === categoryFilter);
+          }
+
+          fetchedProducts = filtered.map((c, index) => {
+            const countryDoc = c.country_id ? countriesMap.get(c.country_id) : null;
+            const catDoc = c.category_id ? catsMap.get(c.category_id) : null;
+
+            return {
+              id: c.id,
+              title: c.title || `Podróżówka ${countryDoc?.name || "Polska"}`,
+              image_front_url: c.image_front_url || null,
+              photo_author: null,
+              thank_you_text: c.description || null,
+              crop_settings: null,
+              price_grosze: Math.round((c.price_pln || 4.99) * 100),
+              country_id: c.country_id || "PL",
+              category_id: c.category_id || null,
+              language_code: "pl",
+              view_no: index + 1,
+              countries: countryDoc
+                ? {
+                    id: countryDoc.id,
+                    iso2: (countryDoc.id || "PL").toUpperCase(),
+                    name_pl: countryDoc.name || countryDoc.english_name || "Polska",
+                  }
+                : null,
+              categories: catDoc
+                ? {
+                    id: catDoc.id,
+                    name: catDoc.name_pl || catDoc.slug,
+                    slug: catDoc.slug,
+                    icon_url: catDoc.icon || null,
+                    sort_order: catDoc.sort_order || 0,
+                  }
+                : null,
+            };
+          });
+        } catch (err) {
+          console.error("Firestore loadProducts fallback error:", err);
+        }
+      }
+
+      setProducts(fetchedProducts);
       setIsLoading(false);
     };
     loadProducts();
@@ -191,7 +306,7 @@ const Shop = () => {
                           : "border-border bg-background text-foreground hover:bg-muted"
                       }`}
                     >
-                      {c.icon_url ? (
+                      {c.icon_url && !c.icon_url.includes("architektura") ? (
                         <img src={c.icon_url} alt="" className="h-5 w-5 rounded-full object-cover" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />
                       ) : (() => {
                         const CategoryIcon = getCategoryIcon(c.slug);
@@ -281,7 +396,7 @@ const Shop = () => {
                       )}
                       {p.categories && (
                           <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground">
-                            {p.categories.icon_url ? (
+                            {p.categories.icon_url && !p.categories.icon_url.includes("architektura") ? (
                               <img src={p.categories.icon_url} alt="" className="w-4 h-4 rounded-full object-cover" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />
                             ) : (() => {
                               const CategoryIcon = getCategoryIcon(p.categories?.slug);

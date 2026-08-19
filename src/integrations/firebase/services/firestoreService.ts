@@ -26,34 +26,82 @@ export const firestoreService = {
   // --- Katalog i Kraje ---
   async getCountries(): Promise<FirestoreCountry[]> {
     if (!isFirebaseConfigured) return [];
-    const snap = await getDocs(query(collection(db, "countries"), where("is_active", "==", true)));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreCountry));
+    try {
+      const snap = await getDocs(collection(db, "countries"));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreCountry));
+    } catch {
+      return [];
+    }
   },
 
   async getCategories(): Promise<FirestoreCategory[]> {
     if (!isFirebaseConfigured) return [];
-    const snap = await getDocs(query(collection(db, "categories"), where("is_active", "==", true), orderBy("sort_order", "asc")));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreCategory));
+    try {
+      const snap = await getDocs(collection(db, "categories"));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreCategory));
+    } catch {
+      return [];
+    }
   },
 
   async getAuthors(): Promise<FirestoreAuthor[]> {
     if (!isFirebaseConfigured) return [];
-    const snap = await getDocs(query(collection(db, "authors"), where("is_active", "==", true)));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreAuthor));
+    try {
+      const snap = await getDocs(collection(db, "authors"));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreAuthor));
+    } catch {
+      return [];
+    }
   },
 
   async getCardDesigns(): Promise<FirestoreCardDesign[]> {
     if (!isFirebaseConfigured) return [];
-    const snap = await getDocs(query(collection(db, "card_designs"), where("is_active", "==", true)));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreCardDesign));
+    try {
+      const snap = await getDocs(collection(db, "card_designs"));
+      return snap.docs
+        .map((d) => {
+          const data = d.data();
+          const isActive =
+            data.is_active !== undefined
+              ? Boolean(data.is_active)
+              : data.active !== undefined
+                ? Boolean(data.active)
+                : true;
+          return { id: d.id, ...data, is_active: isActive } as FirestoreCardDesign;
+        })
+        .filter((c) => c.is_active);
+    } catch {
+      return [];
+    }
   },
 
   async getCardDesignById(id: string): Promise<FirestoreCardDesign | null> {
     if (!isFirebaseConfigured) return null;
-    const docRef = doc(db, "card_designs", id);
-    const snap = await getDoc(docRef);
-    if (!snap.exists()) return null;
-    return { id: snap.id, ...snap.data() } as FirestoreCardDesign;
+    try {
+      const docRef = doc(db, "card_designs", id);
+      const snap = await getDoc(docRef);
+      if (!snap.exists()) return null;
+      const data = snap.data();
+      const isActive =
+        data.is_active !== undefined
+          ? Boolean(data.is_active)
+          : data.active !== undefined
+            ? Boolean(data.active)
+            : true;
+      return { id: snap.id, ...data, is_active: isActive } as FirestoreCardDesign;
+    } catch {
+      return null;
+    }
+  },
+
+  async upsertCardDesign(id: string, data: Partial<FirestoreCardDesign> & Record<string, unknown>): Promise<void> {
+    if (!isFirebaseConfigured) return;
+    try {
+      const docRef = doc(db, "card_designs", id);
+      await setDoc(docRef, { ...data, updated_at: new Date().toISOString() }, { merge: true });
+    } catch (e) {
+      console.warn("Firestore upsertCardDesign error:", e);
+    }
   },
 
   // --- Zamówienia ---
@@ -72,10 +120,42 @@ export const firestoreService = {
 
   async getOrdersByUser(userId: string): Promise<FirestoreOrder[]> {
     if (!isFirebaseConfigured) return [];
-    const snap = await getDocs(
-      query(collection(db, "orders"), where("user_id", "==", userId), orderBy("created_at", "desc"))
-    );
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreOrder));
+    try {
+      const snap = await getDocs(
+        query(collection(db, "orders"), where("user_id", "==", userId), orderBy("created_at", "desc"))
+      );
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreOrder));
+    } catch (e) {
+      console.warn("Firestore getOrdersByUser error:", e);
+      return [];
+    }
+  },
+
+  async getAllOrders(): Promise<FirestoreOrder[]> {
+    if (!isFirebaseConfigured) return [];
+    try {
+      const snap = await getDocs(
+        query(collection(db, "orders"), orderBy("created_at", "desc"), limit(100))
+      );
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreOrder));
+    } catch (e) {
+      console.warn("Firestore getAllOrders error:", e);
+      return [];
+    }
+  },
+
+  async getOrderByNumber(orderNumber: string): Promise<FirestoreOrder | null> {
+    if (!isFirebaseConfigured) return null;
+    try {
+      const snap = await getDocs(
+        query(collection(db, "orders"), where("order_number", "==", orderNumber), limit(1))
+      );
+      if (snap.empty) return null;
+      return { id: snap.docs[0].id, ...snap.docs[0].data() } as FirestoreOrder;
+    } catch (e) {
+      console.warn("Firestore getOrderByNumber error:", e);
+      return null;
+    }
   },
 
   // --- Rejestracja obdarowanych ---
@@ -99,14 +179,79 @@ export const firestoreService = {
 
   // --- Profile i Grywalizacja ---
   async getUserProfile(userId: string): Promise<FirestoreUserProfile | null> {
-    if (!isFirebaseConfigured) return null;
-    const snap = await getDoc(doc(db, "users", userId));
-    if (!snap.exists()) return null;
-    return { id: snap.id, ...snap.data() } as FirestoreUserProfile;
+    if (!isFirebaseConfigured || !userId) return null;
+    try {
+      const userRef = doc(db, "users", userId);
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        return {
+          id: snap.id,
+          user_id: snap.id,
+          email: data.email || "",
+          first_name: data.first_name ?? null,
+          last_name: data.last_name ?? null,
+          display_name: data.display_name ?? data.full_name ?? data.username ?? null,
+          full_name: data.full_name ?? "",
+          username: data.username ?? "",
+          avatar_url: data.avatar_url ?? null,
+          role: data.role || "traveler",
+          gamification_points: data.gamification_points || 0,
+          current_tier: data.current_tier || "Początkujący Podróżnik",
+          postcards_sent_count: data.postcards_sent_count || 0,
+          postcards_registered_count: data.postcards_registered_count || 0,
+          created_at: data.created_at || "",
+          updated_at: data.updated_at || "",
+        } as FirestoreUserProfile;
+      }
+
+      // Check profiles collection fallback
+      const profRef = doc(db, "profiles", userId);
+      const profSnap = await getDoc(profRef);
+      if (profSnap.exists()) {
+        const data = profSnap.data();
+        return {
+          id: profSnap.id,
+          user_id: profSnap.id,
+          email: data.email || "",
+          first_name: data.first_name ?? null,
+          last_name: data.last_name ?? null,
+          display_name: data.display_name ?? null,
+          full_name: data.full_name ?? "",
+          username: data.username ?? "",
+          avatar_url: data.avatar_url ?? null,
+          role: data.role || "traveler",
+          gamification_points: data.gamification_points || 0,
+          current_tier: data.current_tier || "Początkujący Podróżnik",
+          postcards_sent_count: data.postcards_sent_count || 0,
+          postcards_registered_count: data.postcards_registered_count || 0,
+        } as FirestoreUserProfile;
+      }
+      return null;
+    } catch (e) {
+      console.warn("Firestore getUserProfile error:", e);
+      return null;
+    }
+  },
+
+  async updateUserProfile(userId: string, profileData: Partial<FirestoreUserProfile>): Promise<void> {
+    if (!isFirebaseConfigured || !userId) return;
+    const userRef = doc(db, "users", userId);
+    const profRef = doc(db, "profiles", userId);
+    
+    const cleanData = {
+      ...profileData,
+      updated_at: new Date().toISOString(),
+    };
+
+    await Promise.allSettled([
+      setDoc(userRef, cleanData, { merge: true }),
+      setDoc(profRef, cleanData, { merge: true }),
+    ]);
   },
 
   async updateUserPoints(userId: string, addedPoints: number): Promise<void> {
-    if (!isFirebaseConfigured) return;
+    if (!isFirebaseConfigured || !userId) return;
     const userRef = doc(db, "users", userId);
     const snap = await getDoc(userRef);
     if (snap.exists()) {

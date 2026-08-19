@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { useCart } from "@/contexts/CartContext";
 import { getProductTitle } from "@/lib/productTitle";
@@ -69,36 +70,102 @@ const ShopProduct = () => {
     if (!id) return;
     const load = async () => {
       setIsLoading(true);
-      const [{ data: p }, { data: imgs }] = await Promise.all([
-        supabase
-          .from("card_designs")
-          .select("id, title, description, image_front_url, price_grosze, country_id, language_code, view_no, active, countries!inner(id, iso2, name_pl), categories(id, name, slug, icon_url)")
-          .eq("id", id)
-          .eq("active", true)
-          .gt("price_grosze", 0)
-          .maybeSingle(),
-        supabase
-          .from("card_design_images")
-          .select("id, url, sort_order")
-          .eq("card_design_id", id)
-          .order("sort_order", { ascending: true }),
-      ]);
+      let foundProduct: Product | null = null;
+      let extraImages: ExtraImage[] = [];
 
-      if (!p) {
+      try {
+        const [{ data: p }, { data: imgs }] = await Promise.all([
+          supabase
+            .from("card_designs")
+            .select(
+              "id, title, description, image_front_url, price_grosze, country_id, language_code, view_no, active, countries(id, iso2, name_pl), categories(id, name, slug, icon_url)"
+            )
+            .eq("id", id)
+            .maybeSingle(),
+          supabase
+            .from("card_design_images")
+            .select("id, url, sort_order")
+            .eq("card_design_id", id)
+            .order("sort_order", { ascending: true }),
+        ]);
+
+        if (p) {
+          foundProduct = p as unknown as Product;
+        }
+        if (imgs) {
+          extraImages = (imgs as ExtraImage[]) || [];
+        }
+      } catch (e) {
+        console.warn("Supabase load product error:", e);
+      }
+
+      // Firestore fallback if not in Supabase
+      if (!foundProduct) {
+        try {
+          const [cardDoc, countriesList, catsList] = await Promise.all([
+            firestoreService.getCardDesignById(id),
+            firestoreService.getCountries(),
+            firestoreService.getCategories(),
+          ]);
+
+          if (cardDoc) {
+            const countryDoc = cardDoc.country_id ? countriesList.find((c) => c.id === cardDoc.country_id) : null;
+            const catDoc = cardDoc.category_id ? catsList.find((c) => c.id === cardDoc.category_id) : null;
+
+            foundProduct = {
+              id: cardDoc.id,
+              title: cardDoc.title || `Podróżówka ${countryDoc?.name || "Polska"}`,
+              description: cardDoc.description || null,
+              image_front_url: cardDoc.image_front_url || null,
+              price_grosze: Math.round((cardDoc.price_pln || 4.99) * 100),
+              country_id: cardDoc.country_id || "PL",
+              language_code: "pl",
+              view_no: 1,
+              active: true,
+              countries: countryDoc
+                ? {
+                    id: countryDoc.id,
+                    iso2: (countryDoc.id || "PL").toUpperCase(),
+                    name_pl: countryDoc.name || countryDoc.english_name || "Polska",
+                  }
+                : null,
+              categories: catDoc
+                ? {
+                    id: catDoc.id,
+                    name: catDoc.name_pl || catDoc.slug,
+                    slug: catDoc.slug,
+                    icon_url: catDoc.icon || null,
+                  }
+                : null,
+            };
+          }
+        } catch (err) {
+          console.error("Firestore getCardDesignById error:", err);
+        }
+      }
+
+      if (!foundProduct) {
         toast.error("Produkt niedostępny");
         navigate("/sklep", { replace: true });
         return;
       }
-      setProduct(p as unknown as Product);
-      const { data: templates } = await supabase
-        .from("card_language_templates")
-        .select("language_code, language_name, front_thank_you_text")
-        .eq("country_id", (p as Product).country_id)
-        .neq("language_code", (p as Product).language_code)
-        .order("language_name");
-      setLanguageTemplates((templates as LanguageTemplate[] | null) || []);
-      setImages((imgs as ExtraImage[]) || []);
-      setActiveImage((p as unknown as Product).image_front_url || (imgs && imgs[0]?.url) || null);
+
+      setProduct(foundProduct);
+
+      try {
+        const { data: templates } = await supabase
+          .from("card_language_templates")
+          .select("language_code, language_name, front_thank_you_text")
+          .eq("country_id", foundProduct.country_id)
+          .neq("language_code", foundProduct.language_code)
+          .order("language_name");
+        setLanguageTemplates((templates as LanguageTemplate[] | null) || []);
+      } catch {
+        setLanguageTemplates([]);
+      }
+
+      setImages(extraImages);
+      setActiveImage(foundProduct.image_front_url || (extraImages[0]?.url) || null);
       setIsLoading(false);
     };
     load();
@@ -213,8 +280,8 @@ const ShopProduct = () => {
               )}
               {product.categories && (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-card border border-border text-foreground">
-                  {product.categories.icon_url ? (
-                    <img src={product.categories.icon_url} alt="" className="w-4 h-4 rounded-full object-cover" referrerPolicy="no-referrer" />
+                  {product.categories.icon_url && !product.categories.icon_url.includes("architektura") ? (
+                    <img src={product.categories.icon_url} alt="" className="w-4 h-4 rounded-full object-cover" referrerPolicy="no-referrer" onError={(event) => { event.currentTarget.style.display = "none"; }} />
                   ) : (() => {
                     const CategoryIcon = getCategoryIcon(product.categories?.slug);
                     return <CategoryIcon className="h-4 w-4" aria-hidden="true" />;

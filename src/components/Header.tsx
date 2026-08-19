@@ -16,7 +16,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import NotificationsBell from "@/components/NotificationsBell";
 import podrozowkaLogo from "@/assets/podrozowka-logo.png";
 
@@ -38,12 +38,8 @@ const Header = () => {
   const { data: profile } = useQuery({
     queryKey: ["profile", user?.id],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("profiles")
-        .select("display_name, first_name, last_name, avatar_url")
-        .eq("user_id", user!.id)
-        .maybeSingle();
-      return data;
+      if (!user?.id) return null;
+      return await firestoreService.getUserProfile(user.id);
     },
     enabled: !!user,
   });
@@ -148,7 +144,7 @@ const Header = () => {
                   <DropdownMenuTrigger asChild>
                     <button
                       aria-label={displayName ? `Menu użytkownika: ${displayName}` : "Menu użytkownika"}
-                      className="hidden md:flex items-center gap-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      className="flex items-center gap-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                     >
                       <Avatar className="w-8 h-8 border border-border">
                         <AvatarImage src={profile?.avatar_url ?? undefined} alt={displayName} />
@@ -160,7 +156,7 @@ const Header = () => {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-52">
                     <DropdownMenuLabel className="font-normal">
-                      <p className="text-sm font-medium truncate">{displayName}</p>
+                      <p className="text-sm font-medium truncate">{displayName || user.email}</p>
                       <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
@@ -197,11 +193,11 @@ const Header = () => {
                 <Button
                   variant="default"
                   size="sm"
-                  className="hidden md:flex"
+                  className="flex items-center"
                   onClick={() => navigate("/logowanie")}
                 >
-                  <LogIn className="w-4 h-4 mr-2" />
-                  Zaloguj się
+                  <LogIn className="w-4 h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Zaloguj się</span>
                 </Button>
               )
             )}
@@ -223,16 +219,16 @@ const Header = () => {
           <nav className="md:hidden py-4 border-t border-border animate-fade-in">
             <div className="flex flex-col gap-4">
               {/* Mobile user info */}
-              {user && profile && (
-                <div className="flex items-center gap-3 pb-2">
+              {user && (
+                <div className="flex items-center gap-3 pb-2 border-b border-border">
                   <Avatar className="w-10 h-10 border border-border">
-                    <AvatarImage src={profile.avatar_url ?? undefined} />
+                    <AvatarImage src={profile?.avatar_url ?? undefined} />
                     <AvatarFallback className="text-sm font-semibold bg-primary/10 text-primary">
                       {getInitials()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{displayName}</p>
+                    <p className="text-sm font-medium truncate">{displayName || user.email}</p>
                     <p className="text-xs text-muted-foreground truncate">{user.email}</p>
                   </div>
                 </div>

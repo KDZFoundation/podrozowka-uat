@@ -65,15 +65,21 @@ export interface FirestoreLanguageTemplate {
 
 export interface FirestoreUserProfile {
   id: string;
+  user_id?: string;
   email: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  display_name?: string | null;
   full_name?: string;
   username?: string;
+  avatar_url?: string | null;
   role: "admin" | "user" | "traveler";
   gamification_points: number;
   current_tier: string;
   postcards_sent_count: number;
   postcards_registered_count: number;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface FirestoreOrderItem {
