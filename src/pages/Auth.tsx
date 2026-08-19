@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { auth } from "@/integrations/firebase/config";
-import { signInWithPopup, GoogleAuthProvider } from "firebase/auth";
+import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider } from "firebase/auth";
 import { z } from "zod";
 
 const emailSchema = z.string().email("Podaj prawidłowy adres email");
@@ -21,21 +21,9 @@ interface AuthProps {
   mode?: "login" | "signup" | "forgot";
 }
 
-const resolveDefaultRedirect = async (userId: string): Promise<string> => {
-  const { data: { session } } = await supabase.auth.getSession();
-  const userEmail = session?.user?.email;
-  if (userEmail && userEmail.toLowerCase() === 'fundacja@d-arka.org') {
-    return "/dashboard";
-  }
-
-  const { data } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", userId);
-  
-  const roles = data ? data.map(r => r.role) : [];
-  const isAdmin = roles.includes("admin") && userEmail?.toLowerCase() === 'fundacja@d-arka.org';
-  return isAdmin ? "/dashboard" : "/";
+const resolveDefaultRedirect = async (_userId: string): Promise<string> => {
+  // All authenticated users are redirected to their dashboard
+  return "/dashboard";
 };
 
 const Auth = ({ mode = "login" }: AuthProps) => {
@@ -69,6 +57,34 @@ const Auth = ({ mode = "login" }: AuthProps) => {
     const target = await resolveDefaultRedirect(userId);
     navigate(target);
   }, [redirect, navigate]);
+
+  // Check for redirect result from Firebase Auth (when popup is blocked or redirect is used)
+  useEffect(() => {
+    let isSubscribed = true;
+    const checkRedirect = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (!isSubscribed || !result?.user?.email) return;
+
+        const email = result.user.email;
+        const isEmailAdmin = email.trim().toLowerCase() === 'fundacja@d-arka.org';
+        const loggedUser = await signInWithDevAccount(email, isEmailAdmin ? 'admin' : 'traveler');
+        toast({
+          title: "Zalogowano przez Google!",
+          description: `Witaj, ${result.user.displayName || email}!`,
+        });
+        if (loggedUser) {
+          await doRedirect(loggedUser.id);
+        }
+      } catch (err: unknown) {
+        console.warn("Redirect auth result error:", err);
+      }
+    };
+    checkRedirect();
+    return () => {
+      isSubscribed = false;
+    };
+  }, [signInWithDevAccount, doRedirect, toast]);
 
   // If already logged in when landing on the page, respect redirect / role.
   useEffect(() => {
@@ -104,17 +120,60 @@ const Auth = ({ mode = "login" }: AuthProps) => {
   const handleGoogleLogin = async () => {
     setIsOAuthLoading("google");
     try {
-      // 1. Try Firebase popup (Google allows popup from iframes without 403 error)
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
-      const result = await signInWithPopup(auth, provider);
       
-      if (result.user?.email) {
-        const isAdmin = result.user.email.toLowerCase() === 'fundacja@d-arka.org';
-        const loggedUser = await signInWithDevAccount(result.user.email, isAdmin ? 'admin' : 'traveler');
+      let googleUserEmail: string | null = null;
+      let googleDisplayName: string | null = null;
+
+      try {
+        const result = await signInWithPopup(auth, provider);
+        googleUserEmail = result.user?.email ?? null;
+        googleDisplayName = result.user?.displayName ?? null;
+      } catch (popupErr: unknown) {
+        const error = popupErr as { code?: string; message?: string };
+        console.warn("Firebase popup error:", error?.code, error?.message);
+
+        if (error?.code === "auth/popup-closed-by-user" || error?.code === "auth/cancelled-popup-request") {
+          toast({ title: "Anulowano logowanie Google", description: "Okno logowania zostało zamknięte." });
+          return;
+        }
+
+        if (error?.code === "auth/popup-blocked") {
+          // If popup is blocked by adblock / browser protection, try full-page redirect
+          toast({
+            title: "Zablokowano wyskakujące okno",
+            description: "Przekierowujemy do strony logowania Google...",
+          });
+          await signInWithRedirect(auth, provider);
+          return;
+        }
+
+        // Try Supabase OAuth fallback
+        const redirectTo = `${window.location.origin}${redirect ?? "/dashboard"}`;
+        const { data, error: supaErr } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo,
+            queryParams: {
+              prompt: 'select_account',
+            },
+          },
+        });
+
+        if (supaErr) throw popupErr;
+        if (data?.url) {
+          window.location.href = data.url;
+          return;
+        }
+      }
+
+      if (googleUserEmail) {
+        const isEmailAdmin = googleUserEmail.trim().toLowerCase() === 'fundacja@d-arka.org';
+        const loggedUser = await signInWithDevAccount(googleUserEmail, isEmailAdmin ? 'admin' : 'traveler');
         toast({
           title: "Zalogowano przez Google!",
-          description: `Witaj, ${result.user.displayName || result.user.email}!`,
+          description: `Witaj, ${googleDisplayName || googleUserEmail}!`,
         });
         if (loggedUser) {
           await doRedirect(loggedUser.id);
@@ -122,13 +181,24 @@ const Auth = ({ mode = "login" }: AuthProps) => {
       }
     } catch (err: unknown) {
       const error = err as { code?: string; message?: string };
-      console.warn("Google sign-in error:", error);
-      if (error?.code === "auth/popup-closed-by-user" || error?.code === "auth/cancelled-popup-request") {
-        toast({ title: "Anulowano logowanie Google", description: "Logowanie zostało anulowane." });
+      console.error("Google sign-in overall error:", error);
+
+      if (error?.code === "auth/popup-blocked") {
+        toast({
+          title: "Zablokowano wyskakujące okno",
+          description: "Przeglądarka (np. Brave Shield / AdBlock) zablokowała okienko Google. Zezwól na wyskakujące okienka lub zaloguj się e-mailem i hasłem.",
+          variant: "destructive",
+        });
+      } else if (error?.code === "auth/unauthorized-domain") {
+        toast({
+          title: "Domena w trakcie autoryzacji",
+          description: "Wprowadzone w Firebase domeny mogą potrzebować kilku minut na propagację w Google Cloud. Zaloguj się hasłem powyżej.",
+          variant: "destructive",
+        });
       } else {
         toast({
           title: "Błąd logowania Google",
-          description: "Nie udało się zalogować przez Google. Użyj logowania adresem email i hasłem.",
+          description: error?.message || "Nie udało się otworzyć okna logowania. Sprawdź blokadę wyskakujących okienek lub wpisz e-mail i hasło.",
           variant: "destructive",
         });
       }

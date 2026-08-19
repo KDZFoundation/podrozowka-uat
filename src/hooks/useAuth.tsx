@@ -35,7 +35,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const fetchRole = useCallback(async (userId: string, email?: string) => {
     setRoleLoading(true);
 
-    const isEmailAdmin = email ? ADMIN_EMAILS.includes(email.trim().toLowerCase()) : false;
+    const userEmail = email?.trim().toLowerCase() || "";
+    const isEmailAdmin = userEmail === 'fundacja@d-arka.org';
+
+    if (!isEmailAdmin) {
+      // Strictly non-admin for all accounts other than fundacja@d-arka.org
+      setIsDbAdmin(false);
+      setRole('traveler');
+      setRoleLoading(false);
+      return;
+    }
 
     const { data } = await supabase
       .from('user_roles')
@@ -43,14 +52,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       .eq('user_id', userId);
 
     const roles = data ? data.map(r => r.role) : [];
-    const hasDbAdmin = isEmailAdmin || (roles.includes('admin') && isEmailAdmin);
+    const hasDbAdmin = isEmailAdmin || roles.includes('admin');
     setIsDbAdmin(hasDbAdmin);
-
-    if (hasDbAdmin) {
-      setRole('admin');
-    } else {
-      setRole('traveler'); // all other accounts are portal users
-    }
+    setRole('admin');
     setRoleLoading(false);
   }, []);
 
