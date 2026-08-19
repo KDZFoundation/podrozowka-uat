@@ -38,9 +38,9 @@ if (typeof window !== "undefined") {
   
   if (hostname === "podrozowka.pl" || hostname === "www.podrozowka.pl" || currentEnv === "production" || currentEnv === "prod") {
     currentEnv = "production";
-    activeUrl = envUrl || CONFIGS.prod.url;
-    activeKey = envKey || CONFIGS.prod.anonKey;
-  } else if (hostname.includes("uat") || currentEnv === "uat") {
+    activeUrl = envUrl || (CONFIGS.prod.anonKey ? CONFIGS.prod.url : CONFIGS.dev.url);
+    activeKey = envKey || CONFIGS.prod.anonKey || CONFIGS.dev.anonKey;
+  } else if ((hostname.includes("uat") || currentEnv === "uat") && (CONFIGS.uat.anonKey || envKey)) {
     currentEnv = "uat";
     activeUrl = envUrl || CONFIGS.uat.url;
     activeKey = envKey || CONFIGS.uat.anonKey;
@@ -52,8 +52,8 @@ if (typeof window !== "undefined") {
   }
 }
 
-// Ensure we have fallbacks even if window is undefined (SSR/static build)
-if (!activeUrl) {
+// Ensure we have fallbacks even if window is undefined or key was missing
+if (!activeUrl || !activeKey) {
   activeUrl = CONFIGS.dev.url;
   activeKey = CONFIGS.dev.anonKey;
 }

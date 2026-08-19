@@ -189,6 +189,12 @@ const Auth = ({ mode = "login" }: AuthProps) => {
           description: "Przeglądarka (np. Brave Shield / AdBlock) zablokowała okienko Google. Zezwól na wyskakujące okienka lub zaloguj się e-mailem i hasłem.",
           variant: "destructive",
         });
+      } else if (error?.code === "auth/invalid-credential" || error?.message?.includes("client secret")) {
+        toast({
+          title: "Błędny Client Secret w Firebase",
+          description: "W konsoli Firebase (Sign-in method -> Google) skonfigurowano nieprawidłowy lub wygasły klucz tajny klienta (Client Secret). Zaloguj się adresem e-mail i hasłem.",
+          variant: "destructive",
+        });
       } else if (error?.code === "auth/unauthorized-domain") {
         toast({
           title: "Domena w trakcie autoryzacji",
@@ -198,7 +204,7 @@ const Auth = ({ mode = "login" }: AuthProps) => {
       } else {
         toast({
           title: "Błąd logowania Google",
-          description: error?.message || "Nie udało się otworzyć okna logowania. Sprawdź blokadę wyskakujących okienek lub wpisz e-mail i hasło.",
+          description: error?.message || "Nie udało się zalogować przez Google. Użyj formularza e-mail i hasło.",
           variant: "destructive",
         });
       }

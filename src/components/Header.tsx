@@ -73,7 +73,7 @@ const Header = () => {
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16 md:h-20">
           {/* Logo */}
-          <a href="/" className="rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+          <Link to="/" className="rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
             <span className="relative block h-14 w-36 overflow-hidden md:h-16 md:w-44">
               <img
                 src={podrozowkaLogo}
@@ -81,7 +81,7 @@ const Header = () => {
                 className="h-full max-w-none origin-center scale-[1.85] translate-y-[7%]"
               />
             </span>
-          </a>
+          </Link>
 
           {/* Desktop Navigation */}
           <nav className="hidden items-center gap-1 rounded-xl bg-muted/50 p-1 md:flex">

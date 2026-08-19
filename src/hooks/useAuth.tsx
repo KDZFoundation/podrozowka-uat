@@ -157,14 +157,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
+        if (event === 'SIGNED_OUT') {
+          // Explicit sign out
+          localStorage.removeItem(DEV_AUTH_STORAGE_KEY);
+          setSession(null);
+          setUser(null);
+          setRole(null);
+          setIsDbAdmin(false);
+          setIsLoading(false);
+          setRoleLoading(false);
+          return;
+        }
+
         if (session?.user) {
-          // Defer role fetch to avoid deadlock with auth state
+          setSession(session);
+          setUser(session.user);
+          const isEmailAdmin = session.user.email ? ADMIN_EMAILS.includes(session.user.email.toLowerCase()) : false;
+          const effectiveRole: AppRole = isEmailAdmin ? 'admin' : 'traveler';
+          localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: session.user, role: effectiveRole }));
           setTimeout(() => fetchRole(session.user.id, session.user.email), 0);
         } else {
-          // Check if local dev session exists
+          // Check if local persistent session exists
           const savedDev = localStorage.getItem(DEV_AUTH_STORAGE_KEY);
           if (savedDev) {
             try {
@@ -183,7 +196,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               localStorage.removeItem(DEV_AUTH_STORAGE_KEY);
             }
           }
+          setUser(null);
+          setSession(null);
           setRole(null);
+          setIsDbAdmin(false);
           setRoleLoading(false);
         }
         setIsLoading(false);
@@ -204,6 +220,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (session?.user) {
         setSession(session);
         setUser(session.user);
+        const isEmailAdmin = session.user.email ? ADMIN_EMAILS.includes(session.user.email.toLowerCase()) : false;
+        const effectiveRole: AppRole = isEmailAdmin ? 'admin' : 'traveler';
+        localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: session.user, role: effectiveRole }));
         await fetchRole(session.user.id, session.user.email);
       } else {
         const savedDev = localStorage.getItem(DEV_AUTH_STORAGE_KEY);
