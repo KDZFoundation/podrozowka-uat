@@ -24,11 +24,7 @@ interface AuthProps {
 const resolveDefaultRedirect = async (userId: string): Promise<string> => {
   const { data: { session } } = await supabase.auth.getSession();
   const userEmail = session?.user?.email;
-  if (userEmail && (
-    userEmail.toLowerCase() === 'dariusz.pgry@gmail.com' || 
-    userEmail.toLowerCase() === 'fundacja@konopiedlaziemi.org' ||
-    userEmail.toLowerCase() === 'fundacja@d-arka.org'
-  )) {
+  if (userEmail && userEmail.toLowerCase() === 'fundacja@d-arka.org') {
     return "/dashboard";
   }
 
@@ -38,7 +34,8 @@ const resolveDefaultRedirect = async (userId: string): Promise<string> => {
     .eq("user_id", userId);
   
   const roles = data ? data.map(r => r.role) : [];
-  return roles.includes("admin") ? "/dashboard" : "/";
+  const isAdmin = roles.includes("admin") && userEmail?.toLowerCase() === 'fundacja@d-arka.org';
+  return isAdmin ? "/dashboard" : "/";
 };
 
 const Auth = ({ mode = "login" }: AuthProps) => {
@@ -80,20 +77,22 @@ const Auth = ({ mode = "login" }: AuthProps) => {
     }
   }, [user, isForgot, doRedirect]);
 
-  const handleQuickStudioLogin = async (targetEmail: string, role: 'admin' | 'traveler' = 'admin') => {
+  const handleQuickStudioLogin = async (targetEmail: string, role: 'admin' | 'traveler' = 'traveler') => {
     setIsLoading(true);
     try {
-      const loggedUser = await signInWithDevAccount(targetEmail, role);
+      const isEmailAdmin = targetEmail.trim().toLowerCase() === 'fundacja@d-arka.org';
+      const effectiveRole: 'admin' | 'traveler' = isEmailAdmin ? 'admin' : 'traveler';
+      const loggedUser = await signInWithDevAccount(targetEmail, effectiveRole);
       if (loggedUser) {
         toast({
-          title: "Zalogowano w AI Studio!",
-          description: `Zalogowano jako ${targetEmail} (${role === 'admin' ? 'Administrator' : 'Podróżnik'}).`,
+          title: "Zalogowano pomyślnie!",
+          description: `Zalogowano jako ${targetEmail} (${effectiveRole === 'admin' ? 'Administrator' : 'Użytkownik portalu'}).`,
         });
         await doRedirect(loggedUser.id);
       }
     } catch (e) {
       toast({
-        title: "Błąd szybkiego logowania",
+        title: "Błąd logowania",
         description: String(e),
         variant: "destructive",
       });
@@ -111,7 +110,8 @@ const Auth = ({ mode = "login" }: AuthProps) => {
       const result = await signInWithPopup(auth, provider);
       
       if (result.user?.email) {
-        const loggedUser = await signInWithDevAccount(result.user.email, 'admin');
+        const isAdmin = result.user.email.toLowerCase() === 'fundacja@d-arka.org';
+        const loggedUser = await signInWithDevAccount(result.user.email, isAdmin ? 'admin' : 'traveler');
         toast({
           title: "Zalogowano przez Google!",
           description: `Witaj, ${result.user.displayName || result.user.email}!`,
@@ -122,19 +122,15 @@ const Auth = ({ mode = "login" }: AuthProps) => {
       }
     } catch (err: unknown) {
       const error = err as { code?: string; message?: string };
-      console.warn("Firebase popup sign-in fallback:", error);
-      // Fallback: If popup was blocked or denied, sign in with fundacja@d-arka.org directly in studio
+      console.warn("Google sign-in error:", error);
       if (error?.code === "auth/popup-closed-by-user" || error?.code === "auth/cancelled-popup-request") {
-        toast({ title: "Anulowano logowanie Google", description: "Możesz zalogować się poniższym przyciskiem 1 kliknięciem." });
+        toast({ title: "Anulowano logowanie Google", description: "Logowanie zostało anulowane." });
       } else {
-        const loggedUser = await signInWithDevAccount("fundacja@d-arka.org", "admin");
         toast({
-          title: "Zalogowano w oknie AI Studio!",
-          description: "Witaj z powrotem!",
+          title: "Błąd logowania Google",
+          description: "Nie udało się zalogować przez Google. Użyj logowania adresem email i hasłem.",
+          variant: "destructive",
         });
-        if (loggedUser) {
-          await doRedirect(loggedUser.id);
-        }
       }
     } finally {
       setIsOAuthLoading(null);
@@ -446,36 +442,7 @@ const Auth = ({ mode = "login" }: AuthProps) => {
             </div>
           ) : (
             <>
-              {/* Quick AI Studio 1-click login */}
-              {isLogin && (
-                <div className="mb-6 p-4 rounded-xl border border-primary/20 bg-primary/5 space-y-3">
-                  <div className="flex items-center gap-2 text-primary font-medium text-xs">
-                    <Sparkles className="w-4 h-4" />
-                    <span>Szybkie logowanie w oknie AI Studio</span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="sm"
-                    className="w-full font-semibold shadow-sm"
-                    disabled={isLoading}
-                    onClick={() => handleQuickStudioLogin("fundacja@d-arka.org", "admin")}
-                  >
-                    <ShieldCheck className="w-4 h-4 mr-2" />
-                    Zaloguj jako Administrator (fundacja@d-arka.org)
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="w-full text-xs"
-                    disabled={isLoading}
-                    onClick={() => handleQuickStudioLogin("podroznik@podrozowka.pl", "traveler")}
-                  >
-                    Zaloguj jako Podróżnik (Konto testowe)
-                  </Button>
-                </div>
-              )}
+              {/* Quick AI Studio 1-click login - REMOVED per user request */}
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 {!isLogin && !isForgot && (

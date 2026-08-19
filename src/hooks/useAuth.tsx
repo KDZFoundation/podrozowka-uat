@@ -19,8 +19,6 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const ADMIN_EMAILS = [
-  'dariusz.pgry@gmail.com',
-  'fundacja@konopiedlaziemi.org',
   'fundacja@d-arka.org',
 ];
 
@@ -37,7 +35,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const fetchRole = useCallback(async (userId: string, email?: string) => {
     setRoleLoading(true);
 
-    const isEmailAdmin = email ? ADMIN_EMAILS.includes(email.toLowerCase()) : false;
+    const isEmailAdmin = email ? ADMIN_EMAILS.includes(email.trim().toLowerCase()) : false;
 
     const { data } = await supabase
       .from('user_roles')
@@ -45,15 +43,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       .eq('user_id', userId);
 
     const roles = data ? data.map(r => r.role) : [];
-    const hasDbAdmin = roles.includes('admin') || isEmailAdmin;
+    const hasDbAdmin = isEmailAdmin || (roles.includes('admin') && isEmailAdmin);
     setIsDbAdmin(hasDbAdmin);
 
     if (hasDbAdmin) {
       setRole('admin');
-    } else if (roles.includes('traveler')) {
-      setRole('traveler');
     } else {
-      setRole('traveler'); // default
+      setRole('traveler'); // all other accounts are portal users
     }
     setRoleLoading(false);
   }, []);
@@ -81,10 +77,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return data.session;
   }, []);
 
-  const signInWithDevAccount = useCallback(async (email: string, targetRole: AppRole = 'admin'): Promise<User | null> => {
+  const signInWithDevAccount = useCallback(async (email: string, targetRole?: AppRole): Promise<User | null> => {
     setIsLoading(true);
     const cleanEmail = email.trim().toLowerCase();
-    const isEmailAdmin = ADMIN_EMAILS.includes(cleanEmail) || targetRole === 'admin';
+    const isEmailAdmin = ADMIN_EMAILS.includes(cleanEmail);
+    const effectiveRole: AppRole = isEmailAdmin ? 'admin' : 'traveler';
     const devPassword = "DevAdminPassword123!";
 
     try {
@@ -97,7 +94,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!signInError && signInData.user) {
         setUser(signInData.user);
         setSession(signInData.session);
-        setRole(isEmailAdmin ? 'admin' : 'traveler');
+        setRole(effectiveRole);
         setIsDbAdmin(isEmailAdmin);
         setIsLoading(false);
         setRoleLoading(false);
@@ -118,7 +115,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!signUpError && signUpData.user) {
         setUser(signUpData.user);
         setSession(signUpData.session);
-        setRole(isEmailAdmin ? 'admin' : 'traveler');
+        setRole(effectiveRole);
         setIsDbAdmin(isEmailAdmin);
         setIsLoading(false);
         setRoleLoading(false);
@@ -142,9 +139,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       updated_at: new Date().toISOString(),
     };
 
-    localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: fallbackUser, role: isEmailAdmin ? 'admin' : 'traveler' }));
+    localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: fallbackUser, role: effectiveRole }));
     setUser(fallbackUser);
-    setRole(isEmailAdmin ? 'admin' : 'traveler');
+    setRole(effectiveRole);
     setIsDbAdmin(isEmailAdmin);
     setIsLoading(false);
     setRoleLoading(false);
@@ -169,9 +166,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             try {
               const parsed = JSON.parse(savedDev);
               if (parsed?.user) {
+                const isEmailAdmin = parsed.user.email ? ADMIN_EMAILS.includes(parsed.user.email.toLowerCase()) : false;
+                const effectiveRole: AppRole = isEmailAdmin ? 'admin' : 'traveler';
                 setUser(parsed.user);
-                setRole(parsed.role || 'admin');
-                setIsDbAdmin(parsed.role === 'admin');
+                setRole(effectiveRole);
+                setIsDbAdmin(isEmailAdmin);
                 setRoleLoading(false);
                 setIsLoading(false);
                 return;
@@ -208,9 +207,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           try {
             const parsed = JSON.parse(savedDev);
             if (parsed?.user) {
+              const isEmailAdmin = parsed.user.email ? ADMIN_EMAILS.includes(parsed.user.email.toLowerCase()) : false;
+              const effectiveRole: AppRole = isEmailAdmin ? 'admin' : 'traveler';
               setUser(parsed.user);
-              setRole(parsed.role || 'admin');
-              setIsDbAdmin(parsed.role === 'admin');
+              setRole(effectiveRole);
+              setIsDbAdmin(isEmailAdmin);
               setRoleLoading(false);
               setIsLoading(false);
               return;

@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1250" width="900" height="1250">
+  <defs>
+    <style>
+      .line { fill: none; stroke: #000000; stroke-width: 17; stroke-linecap: round; stroke-linejoin: round; }
+      .solid-black { fill: #000000; stroke: #000000; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+      .hat-fill { fill: #BA8B2B; stroke: #000000; stroke-width: 17; stroke-linecap: round; stroke-linejoin: round; }
+      .backpack-fill { fill: #3E823E; stroke: #000000; stroke-width: 17; stroke-linecap: round; stroke-linejoin: round; }
+      .backpack-dark { fill: #2E622E; stroke: #000000; stroke-width: 14; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <!-- BACKPACK -->
+  <g id="backpack">
+    <path d="M 290 380 C 230 400, 150 470, 155 580 C 160 660, 220 665, 300 645 C 365 630, 420 530, 390 440 C 370 390, 330 370, 290 380 Z" class="backpack-fill" />
+    <!-- Backpack left patch -->
+    <path d="M 175 520 C 165 540, 160 580, 170 610 C 185 625, 205 605, 200 560 C 195 530, 185 515, 175 520 Z" class="backpack-dark" />
+    <!-- Backpack right pocket -->
+    <path d="M 255 525 C 250 560, 255 605, 280 610 C 315 605, 335 565, 330 525 C 310 535, 275 535, 255 525 Z" class="backpack-dark" />
+    <!-- Backpack inner seam line -->
+    <path d="M 240 430 Q 200 480 220 530" class="line" style="stroke-width: 14;" />
+  </g>
+
+  <!-- BODY / TORSO (Transparent loop with black outline) -->
+  <g id="torso">
+    <path d="M 390 410 C 470 410, 520 480, 520 530 C 520 600, 440 680, 390 680 C 340 680, 330 590, 350 510 C 365 440, 380 410, 390 410 Z" class="line" />
+    <!-- Shoulder strap / back arm loop -->
+    <path d="M 355 460 C 420 405, 525 435, 525 510 C 525 585, 390 625, 335 605" class="line" />
+  </g>
+
+  <!-- HEAD (Transparent circle with black outline) -->
+  <g id="head">
+    <circle cx="585" cy="335" r="125" class="line" />
+  </g>
+
+  <!-- HAT (Sitting on head) -->
+  <g id="hat">
+    <!-- Hat Crown -->
+    <path d="M 455 245 C 470 180, 520 120, 615 110 C 705 100, 775 165, 805 200 C 730 220, 620 235, 455 245 Z" class="hat-fill" />
+    <!-- Hat Crease / Patch on Crown -->
+    <path d="M 525 210 C 530 190, 570 190, 575 205 C 560 215, 545 220, 525 210 Z" class="solid-black" />
+    <path d="M 530 150 Q 640 135 690 165" class="line" style="stroke-width: 12;" />
+    <!-- Hat Brim -->
+    <path d="M 370 325 C 490 280, 670 200, 890 225 C 800 285, 600 325, 370 325 Z" class="hat-fill" />
+  </g>
+
+  <!-- FRONT ARM & HAND (Transparent loop) -->
+  <g id="front-arm">
+    <path d="M 505 530 C 530 560, 575 580, 620 575" class="line" />
+    <!-- Hand circle outline (transparent fill) -->
+    <circle cx="660" cy="555" r="38" class="line" />
+  </g>
+
+  <!-- LEGS -->
+  <g id="legs">
+    <!-- Back leg (left) -->
+    <path d="M 365 675 L 155 965" class="line" />
+    <!-- Front leg (right) -->
+    <path d="M 430 670 L 635 940" class="line" />
+  </g>
+
+  <!-- SHOES (Solid black ovals) -->
+  <g id="shoes">
+    <!-- Left shoe -->
+    <ellipse cx="150" cy="980" rx="78" ry="40" transform="rotate(-15 150 980)" class="solid-black" />
+    <!-- Right shoe -->
+    <ellipse cx="695" cy="940" rx="82" ry="46" transform="rotate(22 695 940)" class="solid-black" />
+  </g>
+</svg>

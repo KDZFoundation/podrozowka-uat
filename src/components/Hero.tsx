@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, Check } from "lucide-react";
+import travelerHeroImg from "@/assets/images/traveler-hero.png";
 
 const Hero = () => (
   <section className="relative flex min-h-[580px] items-center overflow-hidden bg-[linear-gradient(90deg,_#3b3632_0%,_#655e58_35%,_#968e88_70%,_#857d77_100%)] pt-16 md:min-h-[660px] md:pt-20">
@@ -31,10 +32,12 @@ const Hero = () => (
         </div>
       </div>
       <div aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 hidden w-[min(31vw,360px)] -translate-y-1/2 md:block lg:right-10">
+        <div className="absolute inset-[14%] rounded-full bg-[#111111]/20 blur-3xl"></div>
         <img
-          src="/assets/traveler-hero.png"
-          alt=""
-          className="relative w-full animate-traveler-walk drop-shadow-[0_20px_30px_rgba(0,0,0,0.35)]"
+          src={travelerHeroImg}
+          alt="Wędrownik Podróżówka"
+          referrerPolicy="no-referrer"
+          className="relative w-full animate-traveler-walk drop-shadow-[0_18px_24px_rgba(0,0,0,0.38)]"
         />
       </div>
     </div>
