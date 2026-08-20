@@ -54,7 +54,7 @@ jobs:
   deploy:
     name: Deploy Firebase Hosting UAT
     needs: quality
-    if: github.ref == 'refs/heads/main' && secrets.FIREBASE_TOKEN_UAT != ''
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: uat
     steps:
@@ -65,6 +65,15 @@ jobs:
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Verify Firebase deployment token
+        env:
+          FIREBASE_TOKEN_UAT: ${{ secrets.FIREBASE_TOKEN_UAT }}
+        run: |
+          test -n "$FIREBASE_TOKEN_UAT" || {
+            echo "Missing GitHub secret FIREBASE_TOKEN_UAT"
+            exit 1
+          }
 
       - name: Build Firebase Hosting bundle
         run: |
@@ -77,9 +86,11 @@ jobs:
           node-version: 22
 
       - name: Deploy Firebase Hosting and Firestore rules
+        env:
+          FIREBASE_TOKEN_UAT: ${{ secrets.FIREBASE_TOKEN_UAT }}
         run: |
           npx --yes firebase-tools@latest deploy \
             --project "$FIREBASE_PROJECT_ID" \
             --only hosting,firestore:rules \
-            --token "${{ secrets.FIREBASE_TOKEN_UAT }}" \
+            --token "$FIREBASE_TOKEN_UAT" \
             --non-interactive
