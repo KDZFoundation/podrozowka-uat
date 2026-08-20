@@ -1,23 +1,105 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    function isAuthenticated() {
+    function signedIn() {
       return request.auth != null;
     }
-    
+
     function isAdmin() {
-      return isAuthenticated() && 
-        (request.auth.token.role == 'admin' || 
-         request.auth.token.email == 'fundacja@d-arka.org' ||
-         request.auth.token.email == 'dariusz.pgry@gmail.com' ||
-         request.auth.token.email == 'fundacja@konopiedlaziemi.org');
+      return signedIn() && (
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'admin' ||
+        request.auth.token.email in [
+          'fundacja@d-arka.org',
+          'dariusz.pgry@gmail.com',
+          'fundacja@konopiedlaziemi.org'
+        ]
+      );
     }
 
-    // Allow full read/write for all application collections and migration
+    function ownsUser(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    match /countries/{countryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /authors/{authorId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /card_designs/{designId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if ownsUser(userId) || isAdmin();
+      allow create, update: if ownsUser(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /profiles/{userId} {
+      allow read: if ownsUser(userId) || isAdmin();
+      allow create, update: if ownsUser(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow read: if isAdmin() || (
+        signedIn() && resource.data.user_id == request.auth.uid
+      );
+      allow create: if isAdmin() || (
+        signedIn() && request.resource.data.user_id == request.auth.uid
+      ) || (
+        !signedIn() && request.resource.data.guest_email is string
+      );
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /recipient_registrations/{registrationId} {
+      allow read: if isAdmin();
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /inventory_units/{unitId} {
+      allow read: if isAdmin() || (
+        signedIn() && resource.data.traveler_user_id == request.auth.uid
+      );
+      allow write: if isAdmin();
+    }
+
+    match /{collection}/{documentId} {
+      allow read, write: if isAdmin()
+        && collection in [
+          'stock_batches',
+          'stock_production_orders',
+          'inventory_locations',
+          'inventory_movements',
+          'inventory_unit_events',
+          'qr_print_jobs',
+          'qr_print_job_items',
+          'notifications',
+          'config',
+          'platform_stats',
+          'gamification_config',
+          'gamification_tiers'
+        ];
+    }
+
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
-
