@@ -1,4 +1,4 @@
-name: Firebase Hosting and Cloud Run
+name: Firebase Hosting
 
 on:
   pull_request:
@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: firebase-cloudrun-${{ github.ref }}
@@ -16,8 +15,6 @@ concurrency:
 
 env:
   FIREBASE_PROJECT_ID: podrozowka
-  CLOUD_RUN_SERVICE: podrozowka-uat
-  CLOUD_RUN_REGION: us-west1
 
 jobs:
   quality:
@@ -51,11 +48,11 @@ jobs:
       - name: Tests
         run: bun run test
 
-      - name: Build UAT frontend and Cloud Run server
+      - name: Build UAT frontend
         run: bun run build
 
   deploy:
-    name: Deploy UAT
+    name: Deploy Firebase Hosting UAT
     needs: quality
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -64,40 +61,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate deployment configuration
-        run: |
-          test -n "${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}" || { echo "Missing GCP_WORKLOAD_IDENTITY_PROVIDER"; exit 1; }
-          test -n "${{ secrets.GCP_SERVICE_ACCOUNT }}" || { echo "Missing GCP_SERVICE_ACCOUNT"; exit 1; }
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Deploy Cloud Run
-        run: |
-          gcloud run deploy "$CLOUD_RUN_SERVICE" \
-            --source . \
-            --project "$FIREBASE_PROJECT_ID" \
-            --region "$CLOUD_RUN_REGION" \
-            --allow-unauthenticated \
-            --set-env-vars NODE_ENV=production
-
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Verify Firebase deployment token
+        env:
+          FIREBASE_TOKEN_UAT: ${{ secrets.FIREBASE_TOKEN_UAT }}
+        run: |
+          test -n "$FIREBASE_TOKEN_UAT" || {
+            echo "Missing GitHub secret FIREBASE_TOKEN_UAT"
+            exit 1
+          }
 
       - name: Build Firebase Hosting bundle
         run: |
           bun install --frozen-lockfile
           bun run build:uat
 
+      - name: Setup Node.js for Firebase CLI
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Deploy Firebase Hosting and Firestore rules
+        env:
+          FIREBASE_TOKEN_UAT: ${{ secrets.FIREBASE_TOKEN_UAT }}
         run: |
-          npm install --global firebase-tools
-          firebase deploy --project "$FIREBASE_PROJECT_ID" --only hosting,firestore:rules --non-interactive
+          npx --yes firebase-tools@latest deploy \
+            --project "$FIREBASE_PROJECT_ID" \
+            --only hosting,firestore:rules \
+            --token "$FIREBASE_TOKEN_UAT" \
+            --non-interactive
