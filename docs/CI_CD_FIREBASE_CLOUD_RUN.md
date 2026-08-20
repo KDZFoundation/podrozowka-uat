@@ -22,10 +22,11 @@ Potwierdzone parametry UAT są wpisane w workflow i konfigurację Hostingu:
 Sekret (Actions → Secrets):
 
 - `FIREBASE_TOKEN_UAT` — token Firebase CLI z uprawnieniem do Firebase Hosting
-  i Firestore Rules dla projektu `podrozowka`.
+  dla projektu `podrozowka`.
 
 Jeśli sekret nie jest ustawiony, workflow wykonuje Quality Gate, ale pomija
-publikację. Nie dodawaj klucza JSON konta serwisowego do repozytorium.
+publikację. Reguły Firestore są wdrażane osobno po skonfigurowaniu dedykowanego
+uwierzytelnienia Google Cloud. Nie dodawaj klucza JSON konta serwisowego do repozytorium.
 
 ## Blockery przed pierwszym deployem
 
