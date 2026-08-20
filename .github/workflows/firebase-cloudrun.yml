@@ -87,5 +87,5 @@ jobs:
         run: |
           npx --yes firebase-tools@latest deploy \
             --project "$FIREBASE_PROJECT_ID" \
-            --only hosting \
+            --only hosting,firestore:rules \
             --non-interactive
