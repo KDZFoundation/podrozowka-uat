@@ -85,12 +85,12 @@ jobs:
         with:
           node-version: 22
 
-      - name: Deploy Firebase Hosting and Firestore rules
+      - name: Deploy Firebase Hosting
         env:
           FIREBASE_TOKEN_UAT: ${{ secrets.FIREBASE_TOKEN_UAT }}
         run: |
           npx --yes firebase-tools@latest deploy \
             --project "$FIREBASE_PROJECT_ID" \
-            --only hosting,firestore:rules \
+            --only hosting \
             --token "$FIREBASE_TOKEN_UAT" \
             --non-interactive
