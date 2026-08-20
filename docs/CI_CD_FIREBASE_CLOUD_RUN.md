@@ -3,8 +3,9 @@
 ## Stan
 
 Repozytorium UAT używa gałęzi `main`. Frontend buduje Vite i jest publikowany
-przez Firebase Hosting. Serwer Express z `server.ts` jest wdrażany jako usługa
-Cloud Run. Google AI Studio/Firebase Studio pozostaje narzędziem developerskim.
+przez Firebase Hosting. Backend Cloud Run `podrozowka-uat` pozostaje na razie
+zarządzany przez Google AI Studio/Firebase Studio, bez automatycznego deployu z
+GitHub — dzięki temu nie jest wymagane rozliczanie Cloud Build.
 
 Workflow `.github/workflows/firebase-cloudrun.yml` wykonuje kontrolę jakości na
 PR i po pushu do `main`. Wdrożenie uruchamia się dopiero po udanym buildzie.
@@ -18,13 +19,13 @@ Potwierdzone parametry UAT są wpisane w workflow i konfigurację Hostingu:
 - Cloud Run service: `podrozowka-uat`,
 - Cloud Run region: `us-west1`.
 
-Sekrety (Actions → Secrets):
+Sekret (Actions → Secrets):
 
-- `GCP_WORKLOAD_IDENTITY_PROVIDER`,
-- `GCP_SERVICE_ACCOUNT`.
+- `FIREBASE_TOKEN_UAT` — token Firebase CLI z uprawnieniem do Firebase Hosting
+  i Firestore Rules dla projektu `podrozowka`.
 
-Uwierzytelnianie korzysta z Workload Identity Federation. Nie należy dodawać
-klucza JSON konta serwisowego do repozytorium ani do sekretów.
+Jeśli sekret nie jest ustawiony, workflow wykonuje Quality Gate, ale pomija
+publikację. Nie dodawaj klucza JSON konta serwisowego do repozytorium.
 
 ## Blockery przed pierwszym deployem
 
@@ -33,9 +34,7 @@ Supabase Auth i stare Edge Functions). Workflow może zbudować i opublikować
 frontend, ale nie oznacza to zakończenia migracji backendu. Przed przełączeniem
 UAT trzeba:
 
-1. ustawić sekrety runtime Cloud Run (HotPay, InPost, Resend itd.) w Secret Manager;
+1. ustawić sekret `FIREBASE_TOKEN_UAT`;
 2. zastąpić odwołania do Supabase odpowiednimi endpointami Cloud Run/Firebase;
-3. zaostrzyć `firestore.rules` — obecna reguła `allow read, write: if true` jest
-   niedopuszczalna dla UAT ani produkcji;
-4. dodać test smoke dla `/api/health`, logowania, koszyka i webhooka płatności;
-5. dopiero wtedy włączyć automatyczny deploy na `main`.
+3. dodać test smoke dla `/api/health`, logowania, koszyka i webhooka płatności;
+4. po włączeniu rozliczania Cloud Build rozważyć automatyczny deploy Cloud Run.
