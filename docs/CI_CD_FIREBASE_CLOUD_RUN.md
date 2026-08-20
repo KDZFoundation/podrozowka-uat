@@ -19,14 +19,14 @@ Potwierdzone parametry UAT są wpisane w workflow i konfigurację Hostingu:
 - Cloud Run service: `podrozowka-uat`,
 - Cloud Run region: `us-west1`.
 
-Sekret (Actions → Secrets):
+Sekrety (Actions → Secrets):
 
-- `FIREBASE_TOKEN_UAT` — token Firebase CLI z uprawnieniem do Firebase Hosting
-  dla projektu `podrozowka`.
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`,
+- `GCP_SERVICE_ACCOUNT`.
 
-Jeśli sekret nie jest ustawiony, workflow wykonuje Quality Gate, ale pomija
-publikację. Reguły Firestore są wdrażane osobno po skonfigurowaniu dedykowanego
-uwierzytelnienia Google Cloud. Nie dodawaj klucza JSON konta serwisowego do repozytorium.
+Workflow używa bezkluczowego Workload Identity Federation. Nie używamy tokena
+Firebase CLI ani klucza JSON konta serwisowego. Reguły Firestore są wdrażane
+osobno po skonfigurowaniu dedykowanego uwierzytelnienia Google Cloud.
 
 ## Blockery przed pierwszym deployem
 
@@ -35,7 +35,7 @@ Supabase Auth i stare Edge Functions). Workflow może zbudować i opublikować
 frontend, ale nie oznacza to zakończenia migracji backendu. Przed przełączeniem
 UAT trzeba:
 
-1. ustawić sekret `FIREBASE_TOKEN_UAT`;
+1. utrzymać bindingi Workload Identity dla repozytorium UAT;
 2. zastąpić odwołania do Supabase odpowiednimi endpointami Cloud Run/Firebase;
 3. dodać test smoke dla `/api/health`, logowania, koszyka i webhooka płatności;
 4. po włączeniu rozliczania Cloud Build rozważyć automatyczny deploy Cloud Run.
