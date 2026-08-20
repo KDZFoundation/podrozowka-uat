@@ -1,0 +1,104 @@
+name: Firebase Hosting and Cloud Run
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: firebase-cloudrun-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FIREBASE_PROJECT_ID: podrozowka
+  CLOUD_RUN_SERVICE: podrozowka-uat
+  CLOUD_RUN_REGION: us-west1
+
+jobs:
+  quality:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Reject insecure Firestore rules
+        run: |
+          if grep -Fq 'allow read, write: if true' firestore.rules; then
+            echo 'Firestore rules allow anonymous full read/write access.'
+            exit 1
+          fi
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Tests
+        run: bun run test
+
+      - name: Build UAT frontend and Cloud Run server
+        run: bun run build
+
+  deploy:
+    name: Deploy UAT
+    needs: quality
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: uat
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        run: |
+          test -n "${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}" || { echo "Missing GCP_WORKLOAD_IDENTITY_PROVIDER"; exit 1; }
+          test -n "${{ secrets.GCP_SERVICE_ACCOUNT }}" || { echo "Missing GCP_SERVICE_ACCOUNT"; exit 1; }
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy Cloud Run
+        run: |
+          gcloud run deploy "$CLOUD_RUN_SERVICE" \
+            --source . \
+            --project "$FIREBASE_PROJECT_ID" \
+            --region "$CLOUD_RUN_REGION" \
+            --allow-unauthenticated \
+            --set-env-vars NODE_ENV=production
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build Firebase Hosting bundle
+        run: |
+          bun install --frozen-lockfile
+          bun run build:uat
+
+      - name: Deploy Firebase Hosting and Firestore rules
+        run: |
+          npm install --global firebase-tools
+          firebase deploy --project "$FIREBASE_PROJECT_ID" --only hosting,firestore:rules --non-interactive
