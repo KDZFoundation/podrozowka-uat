@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+.github
+*.log
+.env*
+supabase_schema_full.sql
+supabase/migrations
+supabase/migrations-archive
+tmp
