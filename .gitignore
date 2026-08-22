@@ -4,6 +4,7 @@ logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+package-lock.json
 pnpm-debug.log*
 lerna-debug.log*
 
@@ -40,3 +41,8 @@ supabase/baselines/*.sql
 # Local PDF previews and development-server output.
 tmp/
 output/
+
+# Lokalnie wygenerowane artefakty ETL. Eksport źródłowy i wynik migracji mogą
+# zawierać dane katalogowe, więc nie trafiają automatycznie do repozytorium.
+migration-data/generated/
+migration-data/supabase-*.json

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, createContext, useContext, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut, type User as FirebaseUser } from "firebase/auth";
 import { supabase } from "@/integrations/supabase/client";
+import { auth, isUsingFirebaseEmulators } from "@/integrations/firebase/config";
 
 type AppRole = 'traveler' | 'admin';
 
@@ -23,6 +25,19 @@ const ADMIN_EMAILS = [
 ];
 
 const DEV_AUTH_STORAGE_KEY = "podrozowka_dev_auth_user";
+
+const toAppUser = (firebaseUser: FirebaseUser): User => ({
+  id: firebaseUser.uid,
+  app_metadata: { provider: "email", providers: ["email"] },
+  user_metadata: { display_name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "podrozowka" },
+  aud: "authenticated",
+  confirmation_sent_at: firebaseUser.emailVerified ? new Date().toISOString() : undefined,
+  created_at: firebaseUser.metadata.creationTime || new Date().toISOString(),
+  email: firebaseUser.email || "",
+  phone: "",
+  role: "authenticated",
+  updated_at: firebaseUser.metadata.lastSignInTime || new Date().toISOString(),
+});
 
 const getInitialSavedAuth = (): { user: User | null; role: AppRole | null; isAdmin: boolean } => {
   if (typeof window === "undefined") {
@@ -52,7 +67,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const initialAuth = useMemo(() => getInitialSavedAuth(), []);
   const [user, setUser] = useState<User | null>(initialAuth.user);
   const [session, setSession] = useState<Session | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(!initialAuth.user);
+  // In local Firebase mode ignore an old Supabase browser session until the
+  // Auth Emulator resolves the local administrator identity.
+  const [isLoading, setIsLoading] = useState<boolean>(isUsingFirebaseEmulators || !initialAuth.user);
   const [role, setRole] = useState<AppRole | null>(initialAuth.role);
   const [isDbAdmin, setIsDbAdmin] = useState<boolean>(initialAuth.isAdmin);
   const [roleLoading, setRoleLoading] = useState<boolean>(false);
@@ -111,6 +128,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const isEmailAdmin = ADMIN_EMAILS.includes(cleanEmail);
     const effectiveRole: AppRole = isEmailAdmin ? 'admin' : 'traveler';
     const devPassword = "DevAdminPassword123!";
+
+    if (isUsingFirebaseEmulators) {
+      try {
+        const credential = await signInWithEmailAndPassword(auth, cleanEmail, devPassword);
+        const localUser = toAppUser(credential.user);
+        setUser(localUser);
+        setSession(null);
+        setRole(effectiveRole);
+        setIsDbAdmin(isEmailAdmin);
+        localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: localUser, role: effectiveRole }));
+        return localUser;
+      } finally {
+        setIsLoading(false);
+        setRoleLoading(false);
+      }
+    }
 
     try {
       // 1. Try signing in with Supabase first
@@ -179,6 +212,40 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
+    if (!isUsingFirebaseEmulators) return;
+    let isMounted = true;
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (!isMounted) return;
+      if (!firebaseUser) {
+        setUser(null);
+        setSession(null);
+        setRole(null);
+        setIsDbAdmin(false);
+        setIsLoading(false);
+        return;
+      }
+      const localUser = toAppUser(firebaseUser);
+      const isEmailAdmin = ADMIN_EMAILS.includes((firebaseUser.email || "").toLowerCase());
+      setUser(localUser);
+      setSession(null);
+      setRole(isEmailAdmin ? "admin" : "traveler");
+      setIsDbAdmin(isEmailAdmin);
+      localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: localUser, role: isEmailAdmin ? "admin" : "traveler" }));
+      setIsLoading(false);
+      setRoleLoading(false);
+    });
+
+    void signInWithEmailAndPassword(auth, "fundacja@d-arka.org", "DevAdminPassword123!").catch(() => {
+      setIsLoading(false);
+    });
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isUsingFirebaseEmulators) return;
     let isMounted = true;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -262,6 +329,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = useCallback(async () => {
     localStorage.removeItem(DEV_AUTH_STORAGE_KEY);
+    if (isUsingFirebaseEmulators) {
+      await firebaseSignOut(auth);
+      setUser(null);
+      setSession(null);
+      setRole(null);
+      setIsDbAdmin(false);
+      return;
+    }
     try {
       await supabase.auth.signOut();
     } catch (e) {

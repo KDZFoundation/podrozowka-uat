@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { AdminCardCreator } from "./AdminCardCreator";
 import { AdminLanguageTemplates } from "./AdminLanguageTemplates";
 import { deleteCardDesignCascade } from "@/lib/cardDesignUtils";
@@ -65,6 +67,39 @@ const AdminCardDesigns = () => {
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
+    if (isUsingFirebaseEmulators) {
+      const [firestoreDesigns, firestoreCountries, firestoreCategories] = await Promise.all([
+        firestoreService.getCardDesigns({ includeInactive: true }),
+        firestoreService.getCountries(),
+        firestoreService.getCategories(),
+      ]);
+      const countriesById = new Map(firestoreCountries.map((country) => [country.id, country]));
+      const categoriesById = new Map(firestoreCategories.map((category) => [category.id, category]));
+      setDesigns(firestoreDesigns.map((design) => ({
+        id: design.id,
+        country_id: design.country_id || "",
+        author_id: design.author_id || null,
+        category_id: design.category_id || null,
+        language_code: design.language_code,
+        view_no: design.view_no,
+        title: design.title,
+        thank_you_text: design.thank_you_text || null,
+        image_front_url: design.image_front_url || null,
+        photo_author: design.photo_author || null,
+        back_qr_label: design.back_qr_label || null,
+        crop_settings: design.crop_settings,
+        active: design.active,
+        country_name: countriesById.get(design.country_id || "")?.name_pl || countriesById.get(design.country_id || "")?.name,
+        category_name: categoriesById.get(design.category_id || "")?.name_pl || categoriesById.get(design.category_id || "")?.name,
+      })));
+      setCountries(firestoreCountries.map((country) => ({
+        id: country.id,
+        iso2: country.iso2 || "",
+        name_pl: country.name_pl || country.name,
+      })));
+      setIsLoading(false);
+      return;
+    }
     const [{ data: designsData }, { data: countriesData }] = await Promise.all([
       supabase
         .from("card_designs")
@@ -94,6 +129,16 @@ const AdminCardDesigns = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć ten wzór kartki?")) return;
+    if (isUsingFirebaseEmulators) {
+      try {
+        await firestoreService.deleteCardDesign(id);
+        toast({ title: "Wzór usunięty lokalnie z Firestore" });
+        fetchData();
+      } catch (error) {
+        toast({ title: "Błąd usuwania", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      }
+      return;
+    }
     const res = await deleteCardDesignCascade(id);
     if (!res.success) {
       toast({ title: "Błąd usuwania", description: res.error, variant: "destructive" });
@@ -104,6 +149,11 @@ const AdminCardDesigns = () => {
   };
 
   const toggleActive = async (id: string, active: boolean) => {
+    if (isUsingFirebaseEmulators) {
+      await firestoreService.setCardDesignActive(id, !active);
+      fetchData();
+      return;
+    }
     await supabase.from("card_designs").update({ active: !active }).eq("id", id);
     fetchData();
   };

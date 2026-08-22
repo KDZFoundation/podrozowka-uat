@@ -4,6 +4,7 @@ import {
   getDocs,
   getDoc,
   setDoc,
+  deleteDoc,
   updateDoc,
   query,
   where,
@@ -11,7 +12,8 @@ import {
   limit,
   serverTimestamp,
 } from "firebase/firestore";
-import { db, isFirebaseConfigured } from "../config";
+import { getDownloadURL, ref } from "firebase/storage";
+import { db, isFirebaseConfigured, storage } from "../config";
 import type {
   FirestoreCardDesign,
   FirestoreCountry,
@@ -20,7 +22,39 @@ import type {
   FirestoreOrder,
   FirestoreRecipientRegistration,
   FirestoreUserProfile,
+  FirestoreLanguageTemplate,
 } from "../types";
+
+async function resolveCardImage(design: FirestoreCardDesign): Promise<FirestoreCardDesign> {
+  if (design.image_front_url || !design.image_front_storage_path) return design;
+  try {
+    return { ...design, image_front_url: await getDownloadURL(ref(storage, design.image_front_storage_path)) };
+  } catch {
+    return design;
+  }
+}
+
+function normalizeCardDesign(id: string, raw: Record<string, unknown>): FirestoreCardDesign {
+  const active = raw.active !== undefined
+    ? Boolean(raw.active)
+    : raw.is_active !== undefined
+      ? Boolean(raw.is_active)
+      : true;
+  const legacyPrice = typeof raw.price_pln === "number" ? Math.round(raw.price_pln * 100) : 0;
+
+  return {
+    ...raw,
+    id,
+    title: typeof raw.title === "string" ? raw.title : "",
+    slug: typeof raw.slug === "string" ? raw.slug : id,
+    price_grosze: typeof raw.price_grosze === "number" ? raw.price_grosze : legacyPrice,
+    currency: "PLN",
+    language_code: typeof raw.language_code === "string" ? raw.language_code : "pl",
+    view_no: typeof raw.view_no === "number" ? raw.view_no : 1,
+    active,
+    is_active: active,
+  } as FirestoreCardDesign;
+}
 
 export const firestoreService = {
   // --- Katalog i Kraje ---
@@ -54,22 +88,14 @@ export const firestoreService = {
     }
   },
 
-  async getCardDesigns(): Promise<FirestoreCardDesign[]> {
+  async getCardDesigns(options: { includeInactive?: boolean } = {}): Promise<FirestoreCardDesign[]> {
     if (!isFirebaseConfigured) return [];
     try {
       const snap = await getDocs(collection(db, "card_designs"));
-      return snap.docs
-        .map((d) => {
-          const data = d.data();
-          const isActive =
-            data.is_active !== undefined
-              ? Boolean(data.is_active)
-              : data.active !== undefined
-                ? Boolean(data.active)
-                : true;
-          return { id: d.id, ...data, is_active: isActive } as FirestoreCardDesign;
-        })
-        .filter((c) => c.is_active);
+      const designs = snap.docs
+        .map((d) => normalizeCardDesign(d.id, d.data()))
+        .filter((design) => options.includeInactive || design.active);
+      return Promise.all(designs.map(resolveCardImage));
     } catch {
       return [];
     }
@@ -81,16 +107,23 @@ export const firestoreService = {
       const docRef = doc(db, "card_designs", id);
       const snap = await getDoc(docRef);
       if (!snap.exists()) return null;
-      const data = snap.data();
-      const isActive =
-        data.is_active !== undefined
-          ? Boolean(data.is_active)
-          : data.active !== undefined
-            ? Boolean(data.active)
-            : true;
-      return { id: snap.id, ...data, is_active: isActive } as FirestoreCardDesign;
+      return resolveCardImage(normalizeCardDesign(snap.id, snap.data()));
     } catch {
       return null;
+    }
+  },
+
+  async getLanguageTemplatesForCountry(countryId: string): Promise<FirestoreLanguageTemplate[]> {
+    if (!isFirebaseConfigured || !countryId) return [];
+    try {
+      const snap = await getDocs(
+        query(collection(db, "card_language_templates"), where("country_id", "==", countryId))
+      );
+      return snap.docs
+        .map((item) => ({ id: item.id, ...item.data() } as FirestoreLanguageTemplate))
+        .sort((left, right) => left.language_name.localeCompare(right.language_name, "pl"));
+    } catch {
+      return [];
     }
   },
 
@@ -98,10 +131,26 @@ export const firestoreService = {
     if (!isFirebaseConfigured) return;
     try {
       const docRef = doc(db, "card_designs", id);
-      await setDoc(docRef, { ...data, updated_at: new Date().toISOString() }, { merge: true });
+      const active = data.active ?? data.is_active ?? true;
+      await setDoc(docRef, {
+        ...data,
+        active,
+        is_active: active,
+        currency: "PLN",
+        updated_at: new Date().toISOString(),
+      }, { merge: true });
     } catch (e) {
       console.warn("Firestore upsertCardDesign error:", e);
     }
+  },
+
+  async setCardDesignActive(id: string, active: boolean): Promise<void> {
+    await this.upsertCardDesign(id, { active, is_active: active });
+  },
+
+  async deleteCardDesign(id: string): Promise<void> {
+    if (!isFirebaseConfigured) return;
+    await deleteDoc(doc(db, "card_designs", id));
   },
 
   // --- Zamówienia ---

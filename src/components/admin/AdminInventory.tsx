@@ -1,5 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
+import { inventoryService, type LocalInventoryBatch, type LocalInventoryCountry, type LocalInventoryDesign, type LocalInventoryUnit, type LocalStockOrder } from "@/integrations/firebase/services/inventoryService";
+import { useAuth } from "@/hooks/useAuth";
 import type { Database } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -143,6 +146,7 @@ const PAGE_SIZE = 50;
 
 const AdminInventory = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [units, setUnits] = useState<InventoryUnit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -181,6 +185,12 @@ const AdminInventory = () => {
   const openUnitDetail = async (unit: InventoryUnit) => {
     setSelectedUnit(unit);
     setEventsLoading(true);
+    if (isUsingFirebaseEmulators) {
+      const events = await inventoryService.getUnitEvents(unit.id);
+      setUnitEvents(events as typeof unitEvents);
+      setEventsLoading(false);
+      return;
+    }
     const { data } = await supabase
       .from("inventory_unit_events")
       .select("id, event_type, actor_type, actor_id, payload_json, created_at")
@@ -191,6 +201,12 @@ const AdminInventory = () => {
   };
 
   const fetchFilters = useCallback(async () => {
+    if (isUsingFirebaseEmulators) {
+      const snapshot = await inventoryService.getInventorySnapshot();
+      setCountries(snapshot.countries.map((country: LocalInventoryCountry) => ({ id: country.id, name_pl: country.name_pl || country.name || "" })));
+      setDesigns(snapshot.designs.map((design: LocalInventoryDesign) => ({ id: design.id, title: design.title || null, view_no: design.view_no || 1, country_id: design.country_id || "" })));
+      return;
+    }
     const [{ data: c }, { data: d }] = await Promise.all([
       supabase.from("countries").select("id, name_pl").order("name_pl"),
       supabase.from("card_designs").select("id, title, view_no, country_id").order("view_no"),
@@ -201,6 +217,36 @@ const AdminInventory = () => {
 
   const fetchUnits = useCallback(async () => {
     setIsLoading(true);
+    if (isUsingFirebaseEmulators) {
+      const snapshot = await inventoryService.getInventorySnapshot();
+      const countriesById = new Map<string, LocalInventoryCountry>(snapshot.countries.map((country) => [country.id, country]));
+      const designsById = new Map<string, LocalInventoryDesign>(snapshot.designs.map((design) => [design.id, design]));
+      const batchesById = new Map<string, LocalInventoryBatch>(snapshot.batches.map((batch) => [batch.id, batch]));
+      let localUnits = snapshot.units.map((unit: LocalInventoryUnit) => {
+        const design = designsById.get(unit.card_design_id || "");
+        const country = countriesById.get(design?.country_id || "");
+        const batch = batchesById.get(unit.stock_batch_id || "");
+        return {
+          ...unit,
+          design_title: design?.title || null,
+          country_name: country?.name_pl || country?.name || null,
+          view_no: design?.view_no || null,
+          batch_name: batch?.name || null,
+          source_type: batch?.source_type || "stock",
+          distribution_channel: batch?.distribution_channel || "warehouse",
+          purpose: batch?.purpose || null,
+          event_name: batch?.event_name || null,
+          partner_name: batch?.partner_name || null,
+          production_status: batch?.production_status || "received",
+        } as InventoryUnit;
+      });
+      if (fulfillmentFilter !== "all") localUnits = localUnits.filter((unit) => unit.fulfillment_status === fulfillmentFilter);
+      if (businessFilter !== "all") localUnits = localUnits.filter((unit) => unit.business_status === businessFilter);
+      if (countryFilter !== "all") localUnits = localUnits.filter((unit) => designsById.get(unit.card_design_id)?.country_id === countryFilter);
+      setUnits(localUnits.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE));
+      setIsLoading(false);
+      return;
+    }
 
     let query = supabase
       .from("inventory_units")
@@ -269,6 +315,13 @@ const AdminInventory = () => {
   }, [fetchUnits]);
 
   const fetchStockOrders = useCallback(async () => {
+    if (isUsingFirebaseEmulators) {
+      const snapshot = await inventoryService.getInventorySnapshot();
+      setStockOrders(snapshot.orders
+        .filter((order: LocalStockOrder) => ["draft", "ordered", "in_production"].includes(order.status || ""))
+        .map((order: LocalStockOrder) => ({ id: order.id, order_number: order.order_number || "", name: order.name || "", total_quantity: order.total_quantity || 0, status: order.status || "draft", created_at: order.created_at || "" })));
+      return;
+    }
     const { data } = await supabase
       .from("stock_production_orders")
       .select("id, order_number, name, total_quantity, status, created_at")
@@ -310,6 +363,27 @@ const AdminInventory = () => {
     const design = designs.find((candidate) => candidate.id === initDesignId);
     const country = countries.find((candidate) => candidate.id === design?.country_id);
     const batchName = initBatchName.trim() || `Magazyn — ${country?.name_pl || "Wzór"} V${design?.view_no || 0} — ${new Date().toLocaleDateString("pl-PL")}`;
+    if (isUsingFirebaseEmulators) {
+      try {
+        const result = await inventoryService.prepareStockPrintOrder({
+          cardDesignId: initDesignId,
+          quantity,
+          name: batchName,
+          adminUid: user?.id || "local-admin",
+        });
+        toast({ title: `Partia ${result.quantity} sztuk jest gotowa`, description: `${result.documentNumber}; wygenerowano jednostki i zadanie QR.` });
+        setShowInitDialog(false);
+        setInitBatchName("");
+        setInitDesignId("");
+        setInitQuantity("5000");
+        await Promise.all([fetchUnits(), fetchStockOrders()]);
+      } catch (error) {
+        toast({ title: "Nie udało się przygotować partii do druku", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      } finally {
+        setIsInitializing(false);
+      }
+      return;
+    }
     const { data, error } = await supabase.rpc("prepare_stock_print_batch", {
       _card_design_id: initDesignId,
       _quantity: quantity,
@@ -348,6 +422,18 @@ const AdminInventory = () => {
 
   const receiveStockOrder = async (stockOrder: StockProductionOrder) => {
     setReceivingOrderId(stockOrder.id);
+    if (isUsingFirebaseEmulators) {
+      try {
+        const receivedUnits = await inventoryService.receiveStockProductionOrder(stockOrder.id);
+        toast({ title: "Wydruk przyjęty na magazyn", description: `${receivedUnits} szt. jest dostępnych fizycznie na magazynie.` });
+        await Promise.all([fetchUnits(), fetchStockOrders()]);
+      } catch (error) {
+        toast({ title: "Nie udało się przyjąć wydruku", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      } finally {
+        setReceivingOrderId(null);
+      }
+      return;
+    }
     const { data, error } = await supabase.rpc("receive_stock_production_order", {
       _stock_order_id: stockOrder.id,
     });
@@ -370,6 +456,12 @@ const AdminInventory = () => {
   };
 
   const handleVoid = async (unitId: string) => {
+    if (isUsingFirebaseEmulators) {
+      await inventoryService.setUnitStatus(unitId, "voided");
+      toast({ title: "Sztuka unieważniona" });
+      fetchUnits();
+      return;
+    }
     const { error } = await supabase
       .from("inventory_units")
       .update({ fulfillment_status: "voided" as Database["public"]["Enums"]["fulfillment_status"] })
@@ -383,6 +475,12 @@ const AdminInventory = () => {
   };
 
   const handleDamaged = async (unitId: string) => {
+    if (isUsingFirebaseEmulators) {
+      await inventoryService.setUnitStatus(unitId, "damaged");
+      toast({ title: "Sztuka oznaczona jako uszkodzona" });
+      fetchUnits();
+      return;
+    }
     const { error } = await supabase
       .from("inventory_units")
       .update({ fulfillment_status: "damaged" as Database["public"]["Enums"]["fulfillment_status"] })
@@ -397,6 +495,19 @@ const AdminInventory = () => {
 
   const handleDeleteUnit = async (unitId: string) => {
     setIsDeletingUnit(true);
+    if (isUsingFirebaseEmulators) {
+      try {
+        await inventoryService.deleteUnit(unitId);
+        toast({ title: "Pozycja usunięta z magazynu" });
+        setPendingDeleteUnit(null);
+        await fetchUnits();
+      } catch (error) {
+        toast({ title: "Błąd usuwania z magazynu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      } finally {
+        setIsDeletingUnit(false);
+      }
+      return;
+    }
     const { error } = await supabase.from("inventory_units").delete().eq("id", unitId);
     setIsDeletingUnit(false);
     if (error) {
@@ -590,7 +701,11 @@ const AdminInventory = () => {
       {showInitDialog && (
         <div className="bg-card border border-border rounded-xl p-6 space-y-4">
           <h3 className="font-display text-lg font-semibold">Nowe zamówienie magazynowe</h3>
-          <p className="text-sm text-muted-foreground">System wygeneruje PDF SRA3 z QR dla drukarni. Stan magazynowy powstanie dopiero po potwierdzeniu odbioru fizycznego wydruku.</p>
+          <p className="text-sm text-muted-foreground">
+            {isUsingFirebaseEmulators
+              ? "System przygotuje jednostki i kody QR. Generator PDF SRA3 zostanie podłączony w kolejnym etapie backendu."
+              : "System wygeneruje PDF SRA3 z QR dla drukarni. Stan magazynowy powstanie dopiero po potwierdzeniu odbioru fizycznego wydruku."}
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="text-sm text-muted-foreground mb-1 block">Nazwa zamówienia (opcjonalnie)</label>
@@ -619,7 +734,7 @@ const AdminInventory = () => {
           </div>
           <div className="flex gap-2">
             <Button onClick={initializeBatch} disabled={isInitializing}>
-              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Przygotowuję...</> : <><Package className="w-4 h-4 mr-2" /> Utwórz zamówienie i PDF</>}
+              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Przygotowuję...</> : <><Package className="w-4 h-4 mr-2" /> {isUsingFirebaseEmulators ? "Utwórz zamówienie i kody QR" : "Utwórz zamówienie i PDF"}</>}
             </Button>
             <Button variant="outline" onClick={() => setShowInitDialog(false)} disabled={isInitializing}>Anuluj</Button>
           </div>
@@ -640,7 +755,9 @@ const AdminInventory = () => {
               <div key={stockOrder.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card p-3">
                 <div>
                   <p className="font-medium">{stockOrder.name}</p>
-                  <p className="text-xs text-muted-foreground">{stockOrder.order_number} · {stockOrder.total_quantity} szt. · PDF przekazany do drukarni</p>
+                  <p className="text-xs text-muted-foreground">
+                    {stockOrder.order_number} · {stockOrder.total_quantity} szt. · {isUsingFirebaseEmulators ? "kody QR gotowe — PDF SRA3 jeszcze nie wygenerowany" : "PDF przekazany do drukarni"}
+                  </p>
                 </div>
                 <Button size="sm" onClick={() => receiveStockOrder(stockOrder)} disabled={receivingOrderId === stockOrder.id}>
                   {receivingOrderId === stockOrder.id ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-2 h-4 w-4" />}

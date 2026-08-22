@@ -1,6 +1,8 @@
 export interface FirestoreCountry {
   id: string; // ISO 2-letter e.g. "PL"
   name: string;
+  iso2?: string;
+  name_pl?: string;
   english_name?: string;
   native_name?: string;
   flag_emoji?: string;
@@ -16,6 +18,8 @@ export interface FirestoreCategory {
   id: string;
   slug: string;
   name_pl: string;
+  name?: string;
+  icon_url?: string | null;
   name_en?: string;
   description_pl?: string;
   icon?: string;
@@ -37,30 +41,63 @@ export interface FirestoreAuthor {
 
 export interface FirestoreCardDesign {
   id: string;
-  title: string;
+  title: string | null;
   slug: string;
   description?: string;
   author_id?: string;
   category_id?: string;
   country_id?: string;
-  price_pln: number;
-  image_front_url?: string;
+  /** Cena jest przechowywana w groszach, aby nie tracić precyzji waluty. */
+  price_grosze: number;
+  currency: "PLN";
+  /** Pozostawione dla zgodności z pierwszymi dokumentami Firebase. */
+  price_pln?: number;
+  image_front_url?: string | null;
+  image_front_storage_path?: string;
   image_back_url?: string;
-  is_active: boolean;
+  images?: FirestoreCardDesignImage[];
+  language_code: string;
+  view_no: number;
+  thank_you_text?: string | null;
+  back_qr_label?: string | null;
+  photo_author?: string | null;
+  crop_settings?: {
+    fit: "auto" | "crop";
+    zoom: number;
+    x: number;
+    y: number;
+  } | null;
+  /** `active` jest kanoniczne; `is_active` obsługuje dane zasiane wcześniej. */
+  active: boolean;
+  is_active?: boolean;
   is_featured?: boolean;
   stock_quantity?: number;
   inventory_type?: "stock" | "pod" | "hybrid";
+  product_code?: string;
+  firmino_article_id?: number | null;
+  firmino_synced_at?: string | null;
+  firmino_sync_error?: string | null;
   created_at?: string;
+  updated_at?: string;
+  schema_version?: 1;
+  migration_source?: "supabase";
+}
+
+export interface FirestoreCardDesignImage {
+  id: string;
+  url: string;
+  sort_order: number;
+  alt?: string | null;
 }
 
 export interface FirestoreLanguageTemplate {
   id: string;
-  card_design_id: string;
+  country_id: string;
+  card_design_id?: string;
   language_code: string;
   language_name: string;
-  greeting_text: string;
-  story_text: string;
-  gratitude_text: string;
+  front_thank_you_text: string;
+  back_qr_label: string;
 }
 
 export interface FirestoreUserProfile {
