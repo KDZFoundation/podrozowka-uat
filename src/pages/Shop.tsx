@@ -6,7 +6,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { getProductTitle } from "@/lib/productTitle";
 import { useCart } from "@/contexts/CartContext";
 import { getCategoryIcon } from "@/lib/categoryIcons";
@@ -69,7 +69,7 @@ const Shop = () => {
       let rawCategories: Category[] = [];
       let rawCountries: Country[] = [];
 
-      if (!isUsingFirebaseEmulators) {
+      if (!isFirestoreCatalogEnabled) {
         try {
           const [{ data: cats }, { data: countriesData }] = await Promise.all([
             supabase.from("categories").select("id, name, slug, icon_url, sort_order").order("sort_order").order("name"),
@@ -104,7 +104,7 @@ const Shop = () => {
 
       const normalizedCategories = rawCategories.map((c) => {
         if (c.slug === "architektura" && c.icon_url && c.icon_url.includes("architektura-1784144956289.png")) {
-          if (!isUsingFirebaseEmulators) {
+          if (!isFirestoreCatalogEnabled) {
             supabase.from("categories").update({ icon_url: null }).eq("id", c.id).then();
           }
           return { ...c, icon_url: null };
@@ -130,7 +130,7 @@ const Shop = () => {
 
       let fetchedProducts: Product[] = [];
 
-      if (!isUsingFirebaseEmulators) {
+      if (!isFirestoreCatalogEnabled) {
         try {
         let query = supabase.from("card_designs").select(select).eq("active", true);
 
