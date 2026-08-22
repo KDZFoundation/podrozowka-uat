@@ -42,6 +42,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /card_language_templates/{templateId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     match /users/{userId} {
       allow read: if ownsUser(userId) || isAdmin();
       allow create, update: if ownsUser(userId) || isAdmin();

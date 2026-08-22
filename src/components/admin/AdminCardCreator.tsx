@@ -27,6 +27,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { deleteCardDesignCascade } from "@/lib/cardDesignUtils";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { isUsingFirebaseEmulators, storage } from "@/integrations/firebase/config";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import type { FirestoreCardDesign } from "@/integrations/firebase/types";
+import type { Json } from "@/integrations/supabase/types";
 
 interface Country {
   id: string;
@@ -73,6 +78,7 @@ interface CardCreatorProps {
     photo_author: string | null;
     back_qr_label: string | null;
     price_grosze?: number;
+    active?: boolean;
     crop_settings?: CropSettings | unknown;
   };
   onSaveSuccess: () => void;
@@ -123,6 +129,32 @@ export const AdminCardCreator = ({
 
   // Fetch Countries, Categories & Templates
   const loadData = useCallback(async () => {
+    if (isUsingFirebaseEmulators) {
+      const [fireCountries, fireTemplates, fireCategories, fireAuthors] = await Promise.all([
+        firestoreService.getCountries(),
+        // Templates are filtered after country selection, but load all once for the local creator.
+        firestoreService.getLanguageTemplatesForCountry(countryId),
+        firestoreService.getCategories(),
+        firestoreService.getAuthors(),
+      ]);
+      setCountries(fireCountries.map((country) => ({
+        id: country.id,
+        iso2: country.iso2 || "",
+        name_pl: country.name_pl || country.name,
+        flag_url: country.flag_url || null,
+      })));
+      setLangTemplates(fireTemplates.map((template) => ({
+        id: template.id,
+        country_id: template.country_id,
+        language_code: template.language_code,
+        language_name: template.language_name,
+        front_thank_you_text: template.front_thank_you_text,
+        back_qr_label: template.back_qr_label,
+      })));
+      setCategories(fireCategories.map((category) => ({ id: category.id, name: category.name_pl || category.name || category.slug, slug: category.slug })));
+      setAuthors(fireAuthors.map((author) => ({ id: author.id, display_name: author.name, agreement_status: "zaakceptowana", active: author.is_active })));
+      return;
+    }
     const [{ data: cData }, { data: tData }, { data: catData }, { data: aData }] = await Promise.all([
       supabase.from("countries").select("*").order("name_pl"),
       supabase.from("card_language_templates").select("*").order("country_id"),
@@ -130,11 +162,11 @@ export const AdminCardCreator = ({
       supabase.from("authors").select("id, display_name, agreement_status, active").eq("active", true).order("display_name"),
     ]);
 
-    if (cData) setCountries(cData as Country[]);
+    if (cData) setCountries(cData as unknown as Country[]);
     if (tData) setLangTemplates(tData as unknown as LanguageTemplate[]);
     if (catData) setCategories(catData as Category[]);
     if (aData) setAuthors(aData as Author[]);
-  }, []);
+  }, [countryId]);
 
   useEffect(() => {
     loadData();
@@ -146,8 +178,26 @@ export const AdminCardCreator = ({
   const handleCountrySelect = async (cId: string) => {
     setCountryId(cId);
     setSelectedTemplateId("");
+    if (isUsingFirebaseEmulators) {
+      const templates = await firestoreService.getLanguageTemplatesForCountry(cId);
+      setLangTemplates(templates.map((template) => ({
+        id: template.id,
+        country_id: template.country_id,
+        language_code: template.language_code,
+        language_name: template.language_name,
+        front_thank_you_text: template.front_thank_you_text,
+        back_qr_label: template.back_qr_label,
+      })));
+      const firstTpl = templates[0];
+      if (firstTpl) {
+        setSelectedTemplateId(firstTpl.id);
+        setLanguageCode(firstTpl.language_code);
+        setThankYouText(firstTpl.front_thank_you_text);
+        setBackQrLabel(firstTpl.back_qr_label);
+      }
+    }
     // Find first template for this country
-    const firstTpl = langTemplates.find((t) => t.country_id === cId);
+    const firstTpl = !isUsingFirebaseEmulators ? langTemplates.find((t) => t.country_id === cId) : undefined;
     if (firstTpl) {
       setSelectedTemplateId(firstTpl.id);
       setLanguageCode(firstTpl.language_code);
@@ -155,7 +205,11 @@ export const AdminCardCreator = ({
       setBackQrLabel(firstTpl.back_qr_label);
     }
 
-    if (cId && categoryId && !initialDesign?.id) {
+    if (cId && categoryId && !initialDesign?.id && isUsingFirebaseEmulators) {
+      const designs = await firestoreService.getCardDesigns({ includeInactive: true });
+      const matching = designs.filter((design) => design.country_id === cId && design.category_id === categoryId);
+      setViewNo(Math.max(0, ...matching.map((design) => design.view_no || 0)) + 1);
+    } else if (cId && categoryId && !initialDesign?.id) {
       const { data } = await supabase
         .from("card_designs")
         .select("view_no")
@@ -174,7 +228,11 @@ export const AdminCardCreator = ({
 
   const handleCategorySelect = async (catId: string) => {
     setCategoryId(catId);
-    if (countryId && catId && !initialDesign?.id) {
+    if (countryId && catId && !initialDesign?.id && isUsingFirebaseEmulators) {
+      const designs = await firestoreService.getCardDesigns({ includeInactive: true });
+      const matching = designs.filter((design) => design.country_id === countryId && design.category_id === catId);
+      setViewNo(Math.max(0, ...matching.map((design) => design.view_no || 0)) + 1);
+    } else if (countryId && catId && !initialDesign?.id) {
       const { data } = await supabase
         .from("card_designs")
         .select("view_no")
@@ -217,6 +275,13 @@ export const AdminCardCreator = ({
       const fileName = `postcard_front_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
       const filePath = `card-designs/${fileName}`;
 
+      if (isUsingFirebaseEmulators) {
+        const storagePath = `card-designs/drafts/${fileName}`;
+        const uploadRef = ref(storage, storagePath);
+        await uploadBytes(uploadRef, file, { contentType: file.type });
+        setImageUrl(await getDownloadURL(uploadRef));
+        toast({ title: "Przesłano zdjęcie lokalnie do Firebase Storage" });
+      } else {
       const { error: uploadError } = await supabase.storage
         .from("postcards")
         .upload(filePath, file, { upsert: true });
@@ -236,6 +301,7 @@ export const AdminCardCreator = ({
 
         setImageUrl(publicUrlData.publicUrl);
         toast({ title: "Przesłano zdjęcie" });
+      }
       }
     } catch (err) {
       toast({ title: "Błąd przesyłania", description: (err as Error).message, variant: "destructive" });
@@ -281,22 +347,35 @@ export const AdminCardCreator = ({
       image_front_url: imageUrl.trim() || null,
       // A design is only a template. Price and shop publication are set later in Products.
       price_grosze: initialDesign?.price_grosze || 0,
-      currency: "PLN",
+          currency: "PLN" as const,
       crop_settings: cropSettingsObj,
-      ...(initialDesign?.id ? {} : { active: false }),
+      active: initialDesign?.active ?? false,
     };
+    const supabasePayload = { ...payload, crop_settings: cropSettingsObj as unknown as Json };
 
     try {
+      if (isUsingFirebaseEmulators) {
+        const id = initialDesign?.id || crypto.randomUUID();
+        await firestoreService.upsertCardDesign(id, {
+          ...payload,
+          id,
+          slug: id,
+          is_active: initialDesign?.active ?? false,
+        } as Partial<FirestoreCardDesign> & Record<string, unknown>);
+        toast({ title: initialDesign?.id ? "Wzór zaktualizowany lokalnie" : "Nowy wzór utworzony lokalnie" });
+        onSaveSuccess();
+        return;
+      }
       if (initialDesign?.id) {
         const { error } = await supabase
           .from("card_designs")
-          .update(payload)
+          .update(supabasePayload)
           .eq("id", initialDesign.id);
 
         if (error) throw error;
         toast({ title: "Wzór zaktualizowany w kreatorze" });
       } else {
-        const { error } = await supabase.from("card_designs").insert(payload);
+        const { error } = await supabase.from("card_designs").insert(supabasePayload);
         if (error) throw error;
         toast({ title: "Nowy wzór utworzony pomyślnie" });
       }
@@ -313,6 +392,12 @@ export const AdminCardCreator = ({
     if (!confirm(`Czy na pewno chcesz usunąć ten wzór kartki (Widok #${initialDesign.view_no})?`)) return;
     setIsSaving(true);
     try {
+      if (isUsingFirebaseEmulators) {
+        await firestoreService.deleteCardDesign(initialDesign.id);
+        toast({ title: "Wzór usunięty lokalnie" });
+        onSaveSuccess();
+        return;
+      }
       const res = await deleteCardDesignCascade(initialDesign.id);
       if (!res.success) {
         toast({ title: "Błąd usuwania", description: res.error, variant: "destructive" });

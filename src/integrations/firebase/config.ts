@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { connectAuthEmulator, getAuth } from "firebase/auth";
+import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
+import { connectStorageEmulator, getStorage } from "firebase/storage";
 import firebaseAppletConfig from "../../../firebase-applet-config.json";
 
 const firebaseConfig = {
@@ -20,6 +20,17 @@ export const db = firebaseAppletConfig.firestoreDatabaseId && firebaseAppletConf
   ? getFirestore(app, firebaseAppletConfig.firestoreDatabaseId)
   : getFirestore(app);
 export const storage = getStorage(app);
+
+// Local catalog migration is tested against emulators only when explicitly
+// enabled. This flag is never set in Firebase Hosting production builds.
+export const isUsingFirebaseEmulators =
+  import.meta.env.DEV && import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true";
+
+if (isUsingFirebaseEmulators) {
+  connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+  connectFirestoreEmulator(db, "127.0.0.1", 8080);
+  connectStorageEmulator(storage, "127.0.0.1", 9199);
+}
 
 export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
 

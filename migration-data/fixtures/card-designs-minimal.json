@@ -1,0 +1,30 @@
+{
+  "collections": {
+    "card_designs": [
+      {
+        "id": "design-es-n-0001",
+        "country_id": "country-es",
+        "category_id": "category-nature",
+        "language_code": "es",
+        "view_no": 1,
+        "title": "Podróżówka Hiszpania, N V01 ES",
+        "thank_you_text": "Gracias por ser parte de mi viaje",
+        "back_qr_label": "Escanea el código QR y sigue mis viajes",
+        "image_front_url": "https://example.invalid/front.jpg",
+        "price_grosze": 499,
+        "currency": "PLN",
+        "active": true,
+        "crop_settings": { "fit": "crop", "zoom": 120, "x": 48, "y": 52 }
+      }
+    ],
+    "card_design_images": [
+      {
+        "id": "image-es-n-0001",
+        "card_design_id": "design-es-n-0001",
+        "url": "https://example.invalid/gallery.jpg",
+        "sort_order": 1,
+        "alt": "Alternatywne ujęcie wzoru"
+      }
+    ]
+  }
+}

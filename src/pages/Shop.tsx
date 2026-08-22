@@ -6,6 +6,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
 import { getProductTitle } from "@/lib/productTitle";
 import { useCart } from "@/contexts/CartContext";
 import { getCategoryIcon } from "@/lib/categoryIcons";
@@ -68,15 +69,17 @@ const Shop = () => {
       let rawCategories: Category[] = [];
       let rawCountries: Country[] = [];
 
-      try {
-        const [{ data: cats }, { data: countriesData }] = await Promise.all([
-          supabase.from("categories").select("id, name, slug, icon_url, sort_order").order("sort_order").order("name"),
-          supabase.from("countries").select("id, iso2, name_pl").eq("active", true).order("name_pl"),
-        ]);
-        if (cats && cats.length > 0) rawCategories = cats as Category[];
-        if (countriesData && countriesData.length > 0) rawCountries = countriesData as Country[];
-      } catch (e) {
-        console.warn("Supabase loadFilters error, fallback to Firestore:", e);
+      if (!isUsingFirebaseEmulators) {
+        try {
+          const [{ data: cats }, { data: countriesData }] = await Promise.all([
+            supabase.from("categories").select("id, name, slug, icon_url, sort_order").order("sort_order").order("name"),
+            supabase.from("countries").select("id, iso2, name_pl").eq("active", true).order("name_pl"),
+          ]);
+          if (cats && cats.length > 0) rawCategories = cats as Category[];
+          if (countriesData && countriesData.length > 0) rawCountries = countriesData as Country[];
+        } catch (e) {
+          console.warn("Supabase loadFilters error, fallback to Firestore:", e);
+        }
       }
 
       // Firestore fallback for filters
@@ -84,9 +87,9 @@ const Shop = () => {
         const fireCats = await firestoreService.getCategories();
         rawCategories = fireCats.map((c) => ({
           id: c.id,
-          name: c.name_pl || c.slug,
+          name: c.name_pl || c.name || c.slug,
           slug: c.slug,
-          icon_url: c.icon || null,
+          icon_url: c.icon || c.icon_url || null,
           sort_order: c.sort_order || 0,
         }));
       }
@@ -94,14 +97,16 @@ const Shop = () => {
         const fireCountries = await firestoreService.getCountries();
         rawCountries = fireCountries.map((c) => ({
           id: c.id,
-          iso2: (c.id || "PL").toUpperCase(),
-          name_pl: c.name || c.english_name || "Polska",
+          iso2: c.iso2 || (c.id || "PL").toUpperCase(),
+          name_pl: c.name_pl || c.name || c.english_name || "Polska",
         }));
       }
 
       const normalizedCategories = rawCategories.map((c) => {
         if (c.slug === "architektura" && c.icon_url && c.icon_url.includes("architektura-1784144956289.png")) {
-          supabase.from("categories").update({ icon_url: null }).eq("id", c.id).then();
+          if (!isUsingFirebaseEmulators) {
+            supabase.from("categories").update({ icon_url: null }).eq("id", c.id).then();
+          }
           return { ...c, icon_url: null };
         }
         return c;
@@ -125,12 +130,16 @@ const Shop = () => {
 
       let fetchedProducts: Product[] = [];
 
-      try {
+      if (!isUsingFirebaseEmulators) {
+        try {
         let query = supabase.from("card_designs").select(select).eq("active", true);
 
         if (isPopular) {
           try {
-            const { data: popularRows } = await supabase.rpc("get_popular_card_designs", { _limit: 20 });
+            const { data: popularRows } = await (supabase.rpc as unknown as (
+              fn: string,
+              args: Record<string, unknown>
+            ) => Promise<{ data: Array<{ card_design_id: string }> | null }>)("get_popular_card_designs", { _limit: 20 });
             const popularIds = (popularRows || []).map((row) => row.card_design_id);
             if (popularIds.length > 0) {
               const { data } = await query.in("id", popularIds);
@@ -153,8 +162,9 @@ const Shop = () => {
           const { data } = await query.order("created_at", { ascending: false }).limit(100);
           fetchedProducts = (data as unknown as Product[]) || [];
         }
-      } catch (e) {
-        console.warn("Supabase loadProducts error:", e);
+        } catch (e) {
+          console.warn("Supabase loadProducts error:", e);
+        }
       }
 
       // If Supabase returned 0 items, fallback to Firestore
@@ -185,27 +195,27 @@ const Shop = () => {
               id: c.id,
               title: c.title || `Podróżówka ${countryDoc?.name || "Polska"}`,
               image_front_url: c.image_front_url || null,
-              photo_author: null,
-              thank_you_text: c.description || null,
-              crop_settings: null,
-              price_grosze: Math.round((c.price_pln || 4.99) * 100),
+              photo_author: c.photo_author || null,
+              thank_you_text: c.thank_you_text || c.description || null,
+              crop_settings: c.crop_settings || null,
+              price_grosze: c.price_grosze || Math.round((c.price_pln || 4.99) * 100),
               country_id: c.country_id || "PL",
               category_id: c.category_id || null,
-              language_code: "pl",
-              view_no: index + 1,
+              language_code: c.language_code || "pl",
+              view_no: c.view_no || index + 1,
               countries: countryDoc
                 ? {
                     id: countryDoc.id,
-                    iso2: (countryDoc.id || "PL").toUpperCase(),
-                    name_pl: countryDoc.name || countryDoc.english_name || "Polska",
+                    iso2: countryDoc.iso2 || (countryDoc.id || "PL").toUpperCase(),
+                    name_pl: countryDoc.name_pl || countryDoc.name || countryDoc.english_name || "Polska",
                   }
                 : null,
               categories: catDoc
                 ? {
                     id: catDoc.id,
-                    name: catDoc.name_pl || catDoc.slug,
+                    name: catDoc.name_pl || catDoc.name || catDoc.slug,
                     slug: catDoc.slug,
-                    icon_url: catDoc.icon || null,
+                    icon_url: catDoc.icon || catDoc.icon_url || null,
                     sort_order: catDoc.sort_order || 0,
                   }
                 : null,

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Archive, Check, X, ShoppingBag, Upload, ArrowUp, ArrowDown, Search, ArrowUpDown, Copy, RefreshCw } from "lucide-react";
+import { Plus, Pencil, Archive, Check, X, ShoppingBag, Upload, ArrowUp, ArrowDown, Search, ArrowUpDown, Copy, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
 import { diagnoseUploadError, logUploadAttempt } from "@/lib/uploadDiagnostics";
 
 interface Country {
@@ -153,6 +154,48 @@ const AdminProducts = () => {
 
   const fetchAll = useCallback(async () => {
     setIsLoading(true);
+    if (isUsingFirebaseEmulators) {
+      const [firestoreDesigns, firestoreCountries, firestoreCategories] = await Promise.all([
+        firestoreService.getCardDesigns({ includeInactive: true }),
+        firestoreService.getCountries(),
+        firestoreService.getCategories(),
+      ]);
+      const countriesById = new Map(firestoreCountries.map((country) => [country.id, country]));
+      const categoriesById = new Map(firestoreCategories.map((category) => [category.id, category]));
+      const localRows = firestoreDesigns.map((design) => ({
+        id: design.id,
+        country_id: design.country_id || "",
+        category_id: design.category_id || null,
+        language_code: design.language_code,
+        view_no: design.view_no,
+        title: design.title,
+        description: design.description || null,
+        thank_you_text: design.thank_you_text || null,
+        image_front_url: design.image_front_url || null,
+        price_grosze: design.price_grosze,
+        currency: design.currency,
+        active: design.active,
+        created_at: design.created_at || "",
+        updated_at: design.updated_at || "",
+        product_code: typeof design.product_code === "string" ? design.product_code : "",
+        firmino_article_id: typeof design.firmino_article_id === "number" ? design.firmino_article_id : null,
+        firmino_synced_at: typeof design.firmino_synced_at === "string" ? design.firmino_synced_at : null,
+        firmino_sync_error: typeof design.firmino_sync_error === "string" ? design.firmino_sync_error : null,
+        countries: countriesById.get(design.country_id || "")
+          ? { name_pl: countriesById.get(design.country_id || "")!.name_pl || countriesById.get(design.country_id || "")!.name }
+          : null,
+        categories: categoriesById.get(design.category_id || "")
+          ? { name: categoriesById.get(design.category_id || "")!.name_pl || categoriesById.get(design.category_id || "")!.name || "" }
+          : null,
+      })) as CardDesignRowWithCountry[];
+      setDesigns(localRows);
+      setProducts(localRows.map((design) => ({ ...design, country_name: design.countries?.name_pl || undefined })));
+      setCountries(firestoreCountries.map((country) => ({ id: country.id, iso2: country.iso2 || "", name_pl: country.name_pl || country.name })));
+      setCategories(firestoreCategories.map((category) => ({ id: category.id, name: category.name_pl || category.name || category.slug, icon_url: category.icon_url || category.icon || null, sort_order: category.sort_order || 0 })));
+      setStockMap({});
+      setIsLoading(false);
+      return;
+    }
     const [{ data: designs }, { data: countriesData }, { data: categoriesData }, { data: units }] = await Promise.all([
       supabase
         .from("card_designs")
@@ -220,6 +263,16 @@ const AdminProducts = () => {
     setErrors({});
     setShowDialog(true);
 
+    if (isUsingFirebaseEmulators) {
+      const design = await firestoreService.getCardDesignById(p.id);
+      setExtraImages((design?.images || []).map((image) => ({
+        id: image.id,
+        card_design_id: p.id,
+        url: image.url,
+        sort_order: image.sort_order,
+      })));
+      return;
+    }
     const { data } = await supabase
       .from("card_design_images")
       .select("*")
@@ -312,6 +365,19 @@ const AdminProducts = () => {
     };
 
     if (editingId) {
+      if (isUsingFirebaseEmulators) {
+        await firestoreService.upsertCardDesign(editingId, {
+          ...payload,
+          currency: "PLN",
+          price_grosze: priceGrosze,
+          active: form.active,
+        });
+        setSaving(false);
+        toast({ title: "Produkt zaktualizowany lokalnie" });
+        closeDialog();
+        fetchAll();
+        return;
+      }
       const { error } = await supabase.from("card_designs").update(payload).eq("id", editingId);
       // Sync to Firestore
       await firestoreService.upsertCardDesign(editingId, {
@@ -338,6 +404,20 @@ const AdminProducts = () => {
         return;
       }
       const title = buildProductTitle(sourceDesign);
+      if (isUsingFirebaseEmulators) {
+        await firestoreService.upsertCardDesign(sourceDesignId, {
+          title,
+          price_grosze: priceGrosze,
+          currency: "PLN",
+          active: true,
+          is_active: true,
+        });
+        setSaving(false);
+        toast({ title: "Produkt opublikowany lokalnie w sklepie" });
+        closeDialog();
+        fetchAll();
+        return;
+      }
       const { error } = await supabase
         .from("card_designs")
         .update({
@@ -468,6 +548,13 @@ const AdminProducts = () => {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
+    if (isUsingFirebaseEmulators) {
+      await firestoreService.setCardDesignActive(deleteTarget.id, false);
+      toast({ title: "Produkt wycofany lokalnie ze sklepu. Wzór pozostał w kreatorze." });
+      fetchAll();
+      setDeleteTarget(null);
+      return;
+    }
     const { error } = await supabase
       .from("card_designs")
       .update({ active: false })
@@ -482,6 +569,11 @@ const AdminProducts = () => {
   };
 
   const toggleActive = async (p: ProductRow) => {
+    if (isUsingFirebaseEmulators) {
+      await firestoreService.setCardDesignActive(p.id, !p.active);
+      fetchAll();
+      return;
+    }
     const { error } = await supabase.from("card_designs").update({ active: !p.active }).eq("id", p.id);
     if (error) {
       toast({ title: "Błąd", description: error.message, variant: "destructive" });

@@ -7,6 +7,7 @@ import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { useCart } from "@/contexts/CartContext";
 import { getProductTitle } from "@/lib/productTitle";
@@ -73,7 +74,8 @@ const ShopProduct = () => {
       let foundProduct: Product | null = null;
       let extraImages: ExtraImage[] = [];
 
-      try {
+      if (!isUsingFirebaseEmulators) {
+        try {
         const [{ data: p }, { data: imgs }] = await Promise.all([
           supabase
             .from("card_designs")
@@ -95,8 +97,9 @@ const ShopProduct = () => {
         if (imgs) {
           extraImages = (imgs as ExtraImage[]) || [];
         }
-      } catch (e) {
-        console.warn("Supabase load product error:", e);
+        } catch (e) {
+          console.warn("Supabase load product error:", e);
+        }
       }
 
       // Firestore fallback if not in Supabase
@@ -117,24 +120,24 @@ const ShopProduct = () => {
               title: cardDoc.title || `Podróżówka ${countryDoc?.name || "Polska"}`,
               description: cardDoc.description || null,
               image_front_url: cardDoc.image_front_url || null,
-              price_grosze: Math.round((cardDoc.price_pln || 4.99) * 100),
+              price_grosze: cardDoc.price_grosze || Math.round((cardDoc.price_pln || 4.99) * 100),
               country_id: cardDoc.country_id || "PL",
-              language_code: "pl",
-              view_no: 1,
-              active: true,
+              language_code: cardDoc.language_code || "pl",
+              view_no: cardDoc.view_no || 1,
+              active: cardDoc.active,
               countries: countryDoc
                 ? {
                     id: countryDoc.id,
-                    iso2: (countryDoc.id || "PL").toUpperCase(),
-                    name_pl: countryDoc.name || countryDoc.english_name || "Polska",
+                    iso2: countryDoc.iso2 || (countryDoc.id || "PL").toUpperCase(),
+                    name_pl: countryDoc.name_pl || countryDoc.name || countryDoc.english_name || "Polska",
                   }
                 : null,
               categories: catDoc
                 ? {
                     id: catDoc.id,
-                    name: catDoc.name_pl || catDoc.slug,
+                    name: catDoc.name_pl || catDoc.name || catDoc.slug,
                     slug: catDoc.slug,
-                    icon_url: catDoc.icon || null,
+                    icon_url: catDoc.icon || catDoc.icon_url || null,
                   }
                 : null,
             };
@@ -152,16 +155,29 @@ const ShopProduct = () => {
 
       setProduct(foundProduct);
 
-      try {
-        const { data: templates } = await supabase
-          .from("card_language_templates")
-          .select("language_code, language_name, front_thank_you_text")
-          .eq("country_id", foundProduct.country_id)
-          .neq("language_code", foundProduct.language_code)
-          .order("language_name");
-        setLanguageTemplates((templates as LanguageTemplate[] | null) || []);
-      } catch {
-        setLanguageTemplates([]);
+      if (isUsingFirebaseEmulators) {
+        const templates = await firestoreService.getLanguageTemplatesForCountry(foundProduct.country_id);
+        setLanguageTemplates(
+          templates
+            .filter((template) => template.language_code !== foundProduct.language_code)
+            .map((template) => ({
+              language_code: template.language_code,
+              language_name: template.language_name,
+              front_thank_you_text: template.front_thank_you_text,
+            }))
+        );
+      } else {
+        try {
+          const { data: templates } = await supabase
+            .from("card_language_templates")
+            .select("language_code, language_name, front_thank_you_text")
+            .eq("country_id", foundProduct.country_id)
+            .neq("language_code", foundProduct.language_code)
+            .order("language_name");
+          setLanguageTemplates((templates as LanguageTemplate[] | null) || []);
+        } catch {
+          setLanguageTemplates([]);
+        }
       }
 
       setImages(extraImages);

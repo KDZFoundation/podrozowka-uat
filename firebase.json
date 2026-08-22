@@ -3,6 +3,9 @@
     "database": "ai-studio-podrozowkauat-e1d9b39b-c759-477c-98ea-34396a1afd2f",
     "rules": "firestore.rules"
   },
+  "storage": {
+    "rules": "storage.rules"
+  },
   "hosting": {
     "site": "podrozowka",
     "public": "dist",
@@ -25,5 +28,21 @@
         "destination": "/index.html"
       }
     ]
+  },
+  "emulators": {
+    "firestore": {
+      "port": 8080
+    },
+    "storage": {
+      "port": 9199
+    },
+    "auth": {
+      "port": 9099
+    },
+    "ui": {
+      "enabled": true,
+      "port": 4003
+    },
+    "singleProjectMode": true
   }
 }
