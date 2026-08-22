@@ -45,6 +45,7 @@ interface FirestoreCardDesignDocument extends Omit<SupabaseDesign, "active" | "c
     y: number;
   };
   image_front_storage_path?: string;
+  image_thumb_url?: string;
   images: Array<{ id: string; url: string; sort_order: number; alt: string | null }>;
   schema_version: 1;
   migration_source: "supabase";
@@ -140,8 +141,8 @@ export function transformCardDesigns(payload: SourcePayload): FirestoreCardDesig
       description: design.description ?? null,
       // Firestore documents must stay below 1 MB. Base64 source files are
       // extracted locally and later uploaded to Firebase Storage.
-      image_front_url: frontDataUri ? null : frontImage,
-      ...(frontDataUri ? { image_front_storage_path: `card-designs/${design.id}/front.${frontDataUri.extension}` } : {}),
+      image_front_url: frontDataUri ? `/card-designs/${design.id}/front.webp` : frontImage,
+      ...(frontDataUri ? { image_thumb_url: `/card-designs/${design.id}/thumb.webp` } : {}),
       language_code: design.language_code?.trim() || "pl",
       view_no: Math.max(1, Math.trunc(design.view_no ?? 1)),
       price_grosze: Math.max(0, Math.trunc(design.price_grosze ?? 0)),

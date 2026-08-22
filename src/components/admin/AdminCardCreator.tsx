@@ -27,9 +27,8 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { deleteCardDesignCascade } from "@/lib/cardDesignUtils";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { isUsingFirebaseEmulators, storage } from "@/integrations/firebase/config";
+import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import type { FirestoreCardDesign } from "@/integrations/firebase/types";
 import type { Json } from "@/integrations/supabase/types";
 
@@ -269,19 +268,20 @@ export const AdminCardCreator = ({
       return;
     }
 
+    if (isUsingFirebaseEmulators) {
+      toast({
+        title: "Upload z panelu jest wyłączony w trybie Spark",
+        description: "Podglądy wzorów są optymalizowane i publikowane jako statyczne pliki Firebase Hosting.",
+      });
+      return;
+    }
+
     setIsUploading(true);
     try {
       const fileExt = file.name.split(".").pop();
       const fileName = `postcard_front_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
       const filePath = `card-designs/${fileName}`;
 
-      if (isUsingFirebaseEmulators) {
-        const storagePath = `card-designs/drafts/${fileName}`;
-        const uploadRef = ref(storage, storagePath);
-        await uploadBytes(uploadRef, file, { contentType: file.type });
-        setImageUrl(await getDownloadURL(uploadRef));
-        toast({ title: "Przesłano zdjęcie lokalnie do Firebase Storage" });
-      } else {
       const { error: uploadError } = await supabase.storage
         .from("postcards")
         .upload(filePath, file, { upsert: true });
@@ -301,7 +301,6 @@ export const AdminCardCreator = ({
 
         setImageUrl(publicUrlData.publicUrl);
         toast({ title: "Przesłano zdjęcie" });
-      }
       }
     } catch (err) {
       toast({ title: "Błąd przesyłania", description: (err as Error).message, variant: "destructive" });

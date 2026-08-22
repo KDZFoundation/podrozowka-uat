@@ -194,7 +194,7 @@ const Shop = () => {
             return {
               id: c.id,
               title: c.title || `Podróżówka ${countryDoc?.name || "Polska"}`,
-              image_front_url: c.image_front_url || null,
+              image_front_url: c.image_thumb_url || c.image_front_url || null,
               photo_author: c.photo_author || null,
               thank_you_text: c.thank_you_text || c.description || null,
               crop_settings: c.crop_settings || null,

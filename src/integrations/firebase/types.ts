@@ -53,6 +53,7 @@ export interface FirestoreCardDesign {
   /** Pozostawione dla zgodności z pierwszymi dokumentami Firebase. */
   price_pln?: number;
   image_front_url?: string | null;
+  image_thumb_url?: string;
   image_front_storage_path?: string;
   image_back_url?: string;
   images?: FirestoreCardDesignImage[];

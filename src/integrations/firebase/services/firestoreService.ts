@@ -12,8 +12,7 @@ import {
   limit,
   serverTimestamp,
 } from "firebase/firestore";
-import { getDownloadURL, ref } from "firebase/storage";
-import { db, isFirebaseConfigured, storage } from "../config";
+import { db, isFirebaseConfigured } from "../config";
 import type {
   FirestoreCardDesign,
   FirestoreCountry,
@@ -24,15 +23,6 @@ import type {
   FirestoreUserProfile,
   FirestoreLanguageTemplate,
 } from "../types";
-
-async function resolveCardImage(design: FirestoreCardDesign): Promise<FirestoreCardDesign> {
-  if (design.image_front_url || !design.image_front_storage_path) return design;
-  try {
-    return { ...design, image_front_url: await getDownloadURL(ref(storage, design.image_front_storage_path)) };
-  } catch {
-    return design;
-  }
-}
 
 function normalizeCardDesign(id: string, raw: Record<string, unknown>): FirestoreCardDesign {
   const active = raw.active !== undefined
@@ -95,7 +85,7 @@ export const firestoreService = {
       const designs = snap.docs
         .map((d) => normalizeCardDesign(d.id, d.data()))
         .filter((design) => options.includeInactive || design.active);
-      return Promise.all(designs.map(resolveCardImage));
+      return designs;
     } catch {
       return [];
     }
@@ -107,7 +97,7 @@ export const firestoreService = {
       const docRef = doc(db, "card_designs", id);
       const snap = await getDoc(docRef);
       if (!snap.exists()) return null;
-      return resolveCardImage(normalizeCardDesign(snap.id, snap.data()));
+      return normalizeCardDesign(snap.id, snap.data());
     } catch {
       return null;
     }
