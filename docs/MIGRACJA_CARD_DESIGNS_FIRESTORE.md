@@ -93,4 +93,9 @@ Importer ma blokadę bezpieczeństwa: bez `FIRESTORE_EMULATOR_HOST` przerywa dzi
 
 ### Obrazy zapisane jako `data:`
 
-Firestore nie może przechowywać dużych obrazów Base64 w dokumencie (limit dokumentu to 1 MB). Migrator wyodrębnia je do lokalnego katalogu `migration-data/generated/card-design-assets/`, usuwa Base64 z dokumentu i zapisuje planowany `image_front_storage_path`. W osobnym etapie pliki trafią do Firebase Storage, a dokumenty zostaną uzupełnione o publiczne/adresowalne URL-e.
+Firestore nie może przechowywać dużych obrazów Base64 w dokumencie (limit dokumentu to 1 MB). Migrator wyodrębnia je do lokalnego katalogu `migration-data/generated/card-design-assets/`, a skrypt `prepare-hosting-card-images.ts` tworzy z nich dwa statyczne pliki WebP w `public/card-designs/`:
+
+- `thumb.webp` — lekki podgląd w katalogu sklepu;
+- `front.webp` — większy podgląd na stronie produktu.
+
+Dokument Firestore zapisuje adresy `/card-designs/{id}/thumb.webp` oraz `/card-designs/{id}/front.webp`. Dzięki temu Firebase Hosting może obsłużyć podglądy na planie Spark bez tworzenia Firebase Storage.
