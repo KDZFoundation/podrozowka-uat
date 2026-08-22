@@ -26,6 +26,11 @@ export const storage = getStorage(app);
 export const isUsingFirebaseEmulators =
   import.meta.env.DEV && import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true";
 
+// UAT can read the migrated catalog directly from the remote Firestore while
+// the remaining operational areas are still being migrated separately.
+export const isFirestoreCatalogEnabled =
+  isUsingFirebaseEmulators || import.meta.env.VITE_CATALOG_SOURCE === "firestore";
+
 if (isUsingFirebaseEmulators) {
   connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
   connectFirestoreEmulator(db, "127.0.0.1", 8080);

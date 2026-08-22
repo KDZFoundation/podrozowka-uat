@@ -7,7 +7,7 @@ import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { useCart } from "@/contexts/CartContext";
 import { getProductTitle } from "@/lib/productTitle";
@@ -74,7 +74,7 @@ const ShopProduct = () => {
       let foundProduct: Product | null = null;
       let extraImages: ExtraImage[] = [];
 
-      if (!isUsingFirebaseEmulators) {
+      if (!isFirestoreCatalogEnabled) {
         try {
         const [{ data: p }, { data: imgs }] = await Promise.all([
           supabase
@@ -155,7 +155,7 @@ const ShopProduct = () => {
 
       setProduct(foundProduct);
 
-      if (isUsingFirebaseEmulators) {
+      if (isFirestoreCatalogEnabled) {
         const templates = await firestoreService.getLanguageTemplatesForCountry(foundProduct.country_id);
         setLanguageTemplates(
           templates
