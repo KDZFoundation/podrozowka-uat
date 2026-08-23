@@ -76,7 +76,7 @@ jobs:
       - name: Build Firebase Hosting bundle
         run: |
           bun install --frozen-lockfile
-          VITE_CATALOG_SOURCE=firestore bun run build:uat
+          VITE_CATALOG_SOURCE=firestore VITE_BACKEND_API_URL=https://podrozowka-uat-one.vercel.app bun run build:uat
 
       - name: Setup Node.js for Firebase CLI
         uses: actions/setup-node@v4

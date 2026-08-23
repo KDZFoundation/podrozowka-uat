@@ -12,6 +12,7 @@ import {
 import { Loader2, Search, ArrowLeft, Plus, Truck, Download, CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
+import { backendApiUrl } from "@/lib/backendApi";
 
 type ShipmentStatus = Database["public"]["Enums"]["shipment_status"];
 
@@ -159,7 +160,7 @@ const AdminShipments = () => {
     setIsGeneratingInpost(true);
     try {
       // First try Node/Express API
-      const createRes = await fetch("/api/inpost/create-shipment", {
+      const createRes = await fetch(backendApiUrl("/api/inpost/create-shipment"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ order_id: orderId, size }),
@@ -235,7 +236,7 @@ const AdminShipments = () => {
       const shipmentId = selectedShipment.inpost_shipment_id || selectedShipment.id;
 
       // Try Node/Express API
-      const apiRes = await fetch("/api/inpost/buy-shipment", {
+      const apiRes = await fetch(backendApiUrl("/api/inpost/buy-shipment"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shipment_id: shipmentId }),
@@ -271,7 +272,7 @@ const AdminShipments = () => {
       const shipmentId = selectedShipment.inpost_shipment_id || selectedShipment.id;
 
       // Try Node/Express API first
-      const response = await fetch(`/api/inpost/label/${encodeURIComponent(shipmentId)}`);
+      const response = await fetch(backendApiUrl(`/api/inpost/label/${encodeURIComponent(shipmentId)}`));
       if (response.ok) {
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);

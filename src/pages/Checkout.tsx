@@ -30,6 +30,7 @@ import ShippingMethodPicker from "@/components/checkout/ShippingMethodPicker";
 import CourierAddressForm from "@/components/checkout/CourierAddressForm";
 import OrderSteps from "@/components/checkout/OrderSteps";
 import { isValidNip, normalizeNip } from "@/lib/nip";
+import { backendApiUrl } from "@/lib/backendApi";
 
 const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
@@ -163,7 +164,7 @@ const Checkout = () => {
       } | null = null;
 
       try {
-        const apiRes = await fetch("/api/payments/create-hotpay", {
+        const apiRes = await fetch(backendApiUrl("/api/payments/create-hotpay"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
