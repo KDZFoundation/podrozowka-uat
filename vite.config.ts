@@ -8,6 +8,16 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "0.0.0.0",
     port: 3000,
+    proxy: {
+      // Local frontend uses the same Vercel Functions backend as UAT. Keeping
+      // the request same-origin avoids CORS failures during local testing and
+      // prevents the UI from falling back to the retired Supabase functions.
+      "/api": {
+        target: "https://podrozowka-uat-one.vercel.app",
+        changeOrigin: true,
+        secure: true,
+      },
+    },
     hmr: {
       overlay: false,
     },

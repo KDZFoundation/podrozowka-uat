@@ -21,3 +21,8 @@ Dla każdej zmiany, która wymaga migracji SQL (nowa kolumna, tabela, funkcja, p
 
 5. **Przejrzyste podsumowanie zadań:**
    - Każde podsumowanie prac musi precyzyjnie rozdzielać stan zmian w kodzie od stanu rzeczywistym na bazie danych.
+
+## 2. Dokumentacja Handoff i Audytu Schematów
+
+- **Plik przekazania stanu:** Szczegółowy stan prac, weryfikacji testów (51/51) oraz audytu schematu Supabase znajduje się w [CODEX_HANDOFF.md](file:///C:/Users/dariu/Documents/Playground%203/tmp/podrozowka-uat/CODEX_HANDOFF.md).
+- **Zrzut schematów Supabase:** Pełny wyciąg wszystkich 24 tabel/widoków z instancji Supabase znajduje się w pliku `SUPABASE_SCHEMA_AUDIT.json`.

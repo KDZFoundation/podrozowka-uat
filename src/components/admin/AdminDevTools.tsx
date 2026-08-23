@@ -8,7 +8,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { seedFirestoreIfEmpty } from "@/integrations/firebase/services/seedService";
 import { isFirebaseConfigured } from "@/integrations/firebase/config";
-import { AdminDataMigration } from "./AdminDataMigration";
 
 const MOCK_COUNTRIES = [
   { name_pl: "Japonia", iso2: "JP", iso3: "JPN", slug: "japonia" },
@@ -618,8 +617,6 @@ const AdminDevTools = () => {
   return (
     <div className="space-y-6">
       <h2 className="font-display text-2xl font-bold text-foreground">Narzędzia Dev</h2>
-
-      <AdminDataMigration />
 
       <Card className="max-w-lg border-amber-500/40 shadow-md bg-gradient-to-br from-amber-500/5 to-transparent">
         <CardHeader>

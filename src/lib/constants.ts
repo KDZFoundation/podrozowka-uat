@@ -2,7 +2,38 @@ export const SHIPPING_COST_GROSZE = 1399;
 export const COD_SHIPPING_COST_GROSZE = 1699;
 
 export type PaymentMethod = "online" | "cod";
-export type ShippingMethod = "inpost" | "courier" | "orlen" | "pocztex";
+export type ShippingMethod =
+  | "inpost_locker"
+  | "inpost_courier"
+  | "orlen_paczka"
+  | "pocztex_courier"
+  | "pocztex_point";
+
+export type PickupProvider = "inpost" | "orlen" | "pocztex";
+
+export const pickupProviderForMethod = (method: ShippingMethod): PickupProvider | null => ({
+  inpost_locker: "inpost" as const,
+  orlen_paczka: "orlen" as const,
+  pocztex_point: "pocztex" as const,
+  inpost_courier: null,
+  pocztex_courier: null,
+})[method];
+
+export const isPickupShippingMethod = (method: ShippingMethod) => pickupProviderForMethod(method) !== null;
+export const isCourierShippingMethod = (method: ShippingMethod) => !isPickupShippingMethod(method);
+
+export const shippingMethodLabel = (method: ShippingMethod | string) => ({
+  inpost_locker: "InPost Paczkomat 24/7",
+  inpost_courier: "InPost Kurier",
+  orlen_paczka: "ORLEN Paczka",
+  pocztex_courier: "Pocztex Kurier",
+  pocztex_point: "Pocztex Punkt",
+  // Labels for historical orders.
+  inpost: "InPost Paczkomat 24/7",
+  courier: "Kurier",
+  orlen: "ORLEN Paczka",
+  pocztex: "Pocztex Punkt",
+}[method] ?? method);
 
 export const getShippingCostGrosze = (method: PaymentMethod): number =>
   method === "cod" ? COD_SHIPPING_COST_GROSZE : SHIPPING_COST_GROSZE;

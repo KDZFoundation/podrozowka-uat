@@ -1,0 +1,2731 @@
+{
+  "auditedAt": "2026-08-23T18:59:35.194Z",
+  "url": "https://nqqephusxnxzzkfulfae.supabase.co",
+  "tables": {
+    "user_gamification_stats": [
+      "user_id",
+      "display_name",
+      "unit_count",
+      "unique_countries",
+      "registration_count",
+      "total_points",
+      "impact_rank"
+    ],
+    "pod_production_batches": [
+      "id",
+      "batch_number",
+      "production_date",
+      "status",
+      "scheduled_for",
+      "total_orders",
+      "total_postcards",
+      "printer_email",
+      "created_by",
+      "created_at",
+      "prepared_at",
+      "sent_to_printer_at",
+      "notes"
+    ],
+    "inventory_locations": [
+      "id",
+      "code",
+      "name",
+      "location_type",
+      "address",
+      "active",
+      "created_at",
+      "updated_at"
+    ],
+    "notifications": [
+      "id",
+      "user_id",
+      "title",
+      "message",
+      "type",
+      "is_read",
+      "created_at"
+    ],
+    "user_roles": [
+      "id",
+      "user_id",
+      "role"
+    ],
+    "authors": [
+      "id",
+      "display_name",
+      "legal_name",
+      "email",
+      "website_url",
+      "social_handle",
+      "bio",
+      "avatar_url",
+      "agreement_status",
+      "agreement_signed_at",
+      "agreement_expires_at",
+      "agreement_file_url",
+      "notes",
+      "active",
+      "created_at",
+      "updated_at"
+    ],
+    "countries": [
+      "id",
+      "name_pl",
+      "iso2",
+      "created_at",
+      "iso3",
+      "slug",
+      "active",
+      "flag_url"
+    ],
+    "traveler_registrations_view": [
+      "id",
+      "inventory_unit_id",
+      "recipient_name",
+      "recipient_message",
+      "recipient_email",
+      "contact_opt_in",
+      "registered_at",
+      "created_at"
+    ],
+    "orders": [
+      "id",
+      "user_id",
+      "order_number",
+      "status",
+      "payment_status",
+      "total_amount",
+      "currency",
+      "shipping_name",
+      "shipping_address",
+      "shipping_city",
+      "shipping_postal_code",
+      "shipping_country",
+      "notes",
+      "paid_at",
+      "fulfilled_at",
+      "cancelled_at",
+      "created_at",
+      "updated_at",
+      "pickup_point_name",
+      "pickup_point_address",
+      "pickup_point_city",
+      "shipping_cost",
+      "invoice_requested",
+      "company_name",
+      "company_nip",
+      "company_address",
+      "payment_method",
+      "shipping_method",
+      "shipping_phone",
+      "fiscal_document_status",
+      "fiscal_document_number",
+      "fiscal_document_error",
+      "fiscal_document_external_id",
+      "fiscal_document_issued_at",
+      "fiscal_document_url",
+      "customer_email",
+      "pickup_point_code",
+      "fiscal_provider"
+    ],
+    "gamification_config": [
+      "id",
+      "points_per_unit",
+      "points_per_country",
+      "points_per_registration",
+      "updated_at"
+    ],
+    "card_design_images": [
+      "id",
+      "card_design_id",
+      "url",
+      "sort_order",
+      "created_at"
+    ],
+    "inventory_units": [
+      "id",
+      "stock_batch_id",
+      "card_design_id",
+      "internal_inventory_code",
+      "business_status",
+      "fulfillment_status",
+      "traveler_user_id",
+      "order_id",
+      "order_item_id",
+      "shipment_id",
+      "public_claim_code",
+      "public_claim_token_hash",
+      "qr_generated_at",
+      "qr_applied_at",
+      "shipped_at",
+      "registered_at",
+      "created_at",
+      "updated_at",
+      "current_location_id",
+      "distribution_note",
+      "assigned_at",
+      "inventory_serial_no"
+    ],
+    "order_items": [
+      "id",
+      "order_id",
+      "card_design_id",
+      "quantity",
+      "unit_price",
+      "total_price",
+      "created_at",
+      "secondary_language_code",
+      "secondary_language_name",
+      "secondary_front_thank_you_text"
+    ],
+    "feature_flags": [
+      "key",
+      "name",
+      "description",
+      "is_enabled"
+    ],
+    "qr_print_jobs": [
+      "id",
+      "name",
+      "shipment_id",
+      "order_id",
+      "status",
+      "total_items",
+      "generated_items",
+      "created_by",
+      "created_at",
+      "updated_at"
+    ],
+    "pod_production_batch_orders": [
+      "id",
+      "batch_id",
+      "order_id",
+      "print_job_id",
+      "order_number",
+      "postcard_count",
+      "shipping_method",
+      "recipient_name",
+      "recipient_email",
+      "recipient_street",
+      "recipient_postal_code",
+      "recipient_city",
+      "pickup_point_code",
+      "pickup_point_name",
+      "pickup_point_address",
+      "pickup_point_city",
+      "carrier_label_status",
+      "carrier_label_url",
+      "tracking_number",
+      "created_at"
+    ],
+    "shipping_settings": [
+      "singleton",
+      "inpost_environment",
+      "inpost_organization_id",
+      "inpost_api_token",
+      "inpost_geowidget_token",
+      "updated_at",
+      "orlen_environment",
+      "orlen_partner_id",
+      "orlen_partner_key",
+      "orlen_widget_token",
+      "orlen_sender_name",
+      "orlen_sender_street",
+      "orlen_sender_postal_code",
+      "orlen_sender_city",
+      "orlen_sender_phone",
+      "orlen_sender_email"
+    ],
+    "author_profiles": [
+      "id",
+      "display_name",
+      "bio",
+      "avatar_url",
+      "social_handle",
+      "website_url"
+    ],
+    "card_language_templates": [
+      "id",
+      "country_id",
+      "language_code",
+      "language_name",
+      "front_thank_you_text",
+      "back_qr_label",
+      "created_at",
+      "updated_at"
+    ],
+    "platform_stats": [
+      "id",
+      "total_members",
+      "total_countries",
+      "total_given",
+      "total_purchased",
+      "updated_at",
+      "total_registered"
+    ],
+    "stock_production_orders": [
+      "id",
+      "order_number",
+      "name",
+      "purpose",
+      "distribution_channel",
+      "event_name",
+      "partner_name",
+      "location_id",
+      "status",
+      "total_quantity",
+      "ordered_at",
+      "received_at",
+      "notes",
+      "created_by",
+      "created_at",
+      "updated_at"
+    ],
+    "profiles": [
+      "id",
+      "user_id",
+      "display_name",
+      "avatar_url",
+      "country",
+      "city",
+      "bio",
+      "postcards_purchased",
+      "postcards_received",
+      "created_at",
+      "updated_at",
+      "first_name",
+      "last_name",
+      "total_points",
+      "current_rank",
+      "total_kilometers"
+    ],
+    "profiles_public": [
+      "id",
+      "user_id",
+      "display_name",
+      "avatar_url",
+      "total_points",
+      "current_rank",
+      "total_kilometers",
+      "postcards_purchased",
+      "postcards_received"
+    ],
+    "card_designs": [
+      "id",
+      "country_id",
+      "created_at",
+      "language_code",
+      "view_no",
+      "title",
+      "thank_you_text",
+      "image_front_url",
+      "active",
+      "category_id",
+      "price_grosze",
+      "currency",
+      "description",
+      "updated_at",
+      "photo_author",
+      "crop_settings",
+      "back_qr_label",
+      "author_id",
+      "product_code",
+      "firmino_article_id",
+      "firmino_synced_at",
+      "firmino_sync_error"
+    ],
+    "inventory_unit_events": [
+      "id",
+      "inventory_unit_id",
+      "event_type",
+      "actor_type",
+      "actor_id",
+      "payload_json",
+      "created_at"
+    ],
+    "inventory_movements": [
+      "id",
+      "inventory_unit_id",
+      "stock_batch_id",
+      "movement_type",
+      "from_location_id",
+      "to_location_id",
+      "reference_type",
+      "reference_id",
+      "note",
+      "actor_id",
+      "created_at"
+    ],
+    "shipments": [
+      "id",
+      "order_id",
+      "user_id",
+      "status",
+      "tracking_number",
+      "carrier",
+      "shipping_method",
+      "shipped_at",
+      "delivered_at",
+      "notes",
+      "created_at",
+      "updated_at",
+      "inpost_shipment_id",
+      "label_url",
+      "size",
+      "inpost_status",
+      "inpost_offer_id"
+    ],
+    "payment_settings": [
+      "id",
+      "p24_mode",
+      "singleton",
+      "created_at",
+      "updated_at",
+      "p24_merchant_id",
+      "p24_pos_id",
+      "p24_api_key",
+      "p24_crc_key",
+      "p24_report_key",
+      "payment_gateway",
+      "hotpay_secret",
+      "hotpay_notification_password"
+    ],
+    "recipient_registrations": [
+      "id",
+      "inventory_unit_id",
+      "recipient_name",
+      "recipient_message",
+      "recipient_email",
+      "contact_opt_in",
+      "registered_at",
+      "created_at",
+      "latitude",
+      "longitude",
+      "registered_country_iso2"
+    ],
+    "categories": [
+      "id",
+      "name",
+      "slug",
+      "icon_url",
+      "sort_order",
+      "created_at",
+      "product_code_prefix"
+    ],
+    "postcards": [
+      "id",
+      "design_id",
+      "serial_number",
+      "qr_token",
+      "status",
+      "buyer_id",
+      "buyer_display_name",
+      "purchased_at",
+      "order_reference",
+      "recipient_name",
+      "recipient_message",
+      "recipient_email",
+      "registered_at",
+      "created_at",
+      "updated_at"
+    ],
+    "stock_batches": [
+      "id",
+      "name",
+      "description",
+      "card_design_id",
+      "quantity",
+      "created_at",
+      "updated_at",
+      "source_type",
+      "purpose",
+      "distribution_channel",
+      "event_name",
+      "partner_name",
+      "location_id",
+      "production_status",
+      "received_at",
+      "production_order_id"
+    ],
+    "gamification_tiers": [
+      "id",
+      "name",
+      "min_points",
+      "created_at"
+    ],
+    "qr_print_job_items": [
+      "id",
+      "print_job_id",
+      "inventory_unit_id",
+      "public_claim_code",
+      "qr_url",
+      "generated_at"
+    ]
+  },
+  "full": {
+    "user_gamification_stats": {
+      "properties": {
+        "user_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "display_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "unit_count": {
+          "format": "integer",
+          "type": "integer"
+        },
+        "unique_countries": {
+          "format": "integer",
+          "type": "integer"
+        },
+        "registration_count": {
+          "format": "integer",
+          "type": "integer"
+        },
+        "total_points": {
+          "format": "integer",
+          "type": "integer"
+        },
+        "impact_rank": {
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "pod_production_batches": {
+      "description": "Daily POD production batches. One batch produces one combined SRA3 postcard PDF and one shipping manifest.",
+      "required": [
+        "id",
+        "batch_number",
+        "production_date",
+        "status",
+        "total_orders",
+        "total_postcards",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "batch_number": {
+          "format": "text",
+          "type": "string"
+        },
+        "production_date": {
+          "format": "date",
+          "type": "string"
+        },
+        "status": {
+          "default": "queued",
+          "format": "text",
+          "type": "string"
+        },
+        "scheduled_for": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "total_orders": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "total_postcards": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "printer_email": {
+          "format": "text",
+          "type": "string"
+        },
+        "created_by": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "prepared_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "sent_to_printer_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "notes": {
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "inventory_locations": {
+      "description": "Physical warehouse, event, partner and transit locations for STOCK inventory.",
+      "required": [
+        "id",
+        "code",
+        "name",
+        "location_type",
+        "active",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "code": {
+          "format": "text",
+          "type": "string"
+        },
+        "name": {
+          "format": "text",
+          "type": "string"
+        },
+        "location_type": {
+          "default": "warehouse",
+          "format": "text",
+          "type": "string"
+        },
+        "address": {
+          "format": "text",
+          "type": "string"
+        },
+        "active": {
+          "default": true,
+          "format": "boolean",
+          "type": "boolean"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "notifications": {
+      "required": [
+        "id",
+        "user_id",
+        "title",
+        "message",
+        "type",
+        "is_read",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "user_id": {
+          "description": "Note:\nThis is a Foreign Key to `profiles.user_id`.<fk table='profiles' column='user_id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "title": {
+          "format": "text",
+          "type": "string"
+        },
+        "message": {
+          "format": "text",
+          "type": "string"
+        },
+        "type": {
+          "default": "info",
+          "format": "text",
+          "type": "string"
+        },
+        "is_read": {
+          "default": false,
+          "format": "boolean",
+          "type": "boolean"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "user_roles": {
+      "required": [
+        "id",
+        "user_id",
+        "role"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "user_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "traveler",
+            "admin"
+          ],
+          "format": "public.app_role",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "authors": {
+      "required": [
+        "id",
+        "display_name",
+        "agreement_status",
+        "active",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "display_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "legal_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "email": {
+          "format": "text",
+          "type": "string"
+        },
+        "website_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "social_handle": {
+          "format": "text",
+          "type": "string"
+        },
+        "bio": {
+          "format": "text",
+          "type": "string"
+        },
+        "avatar_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "agreement_status": {
+          "default": "draft",
+          "format": "text",
+          "type": "string"
+        },
+        "agreement_signed_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "agreement_expires_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "agreement_file_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "notes": {
+          "format": "text",
+          "type": "string"
+        },
+        "active": {
+          "default": true,
+          "format": "boolean",
+          "type": "boolean"
+        },
+        "created_at": {
+          "default": "timezone('utc'::text, now())",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "timezone('utc'::text, now())",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "countries": {
+      "required": [
+        "id",
+        "name_pl",
+        "iso2",
+        "created_at",
+        "active"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "name_pl": {
+          "format": "text",
+          "type": "string"
+        },
+        "iso2": {
+          "format": "text",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "iso3": {
+          "format": "text",
+          "type": "string"
+        },
+        "slug": {
+          "format": "text",
+          "type": "string"
+        },
+        "active": {
+          "default": true,
+          "format": "boolean",
+          "type": "boolean"
+        },
+        "flag_url": {
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "traveler_registrations_view": {
+      "properties": {
+        "id": {
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "inventory_unit_id": {
+          "description": "Note:\nThis is a Foreign Key to `inventory_units.id`.<fk table='inventory_units' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "recipient_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_message": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_email": {
+          "format": "text",
+          "type": "string"
+        },
+        "contact_opt_in": {
+          "format": "boolean",
+          "type": "boolean"
+        },
+        "registered_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "orders": {
+      "required": [
+        "id",
+        "user_id",
+        "order_number",
+        "status",
+        "payment_status",
+        "total_amount",
+        "currency",
+        "created_at",
+        "updated_at",
+        "invoice_requested",
+        "payment_method",
+        "shipping_method"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "user_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "order_number": {
+          "default": "public.generate_order_number()",
+          "format": "text",
+          "type": "string"
+        },
+        "status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "paid",
+            "fulfilled",
+            "cancelled"
+          ],
+          "format": "public.order_status",
+          "type": "string"
+        },
+        "payment_status": {
+          "default": "unpaid",
+          "enum": [
+            "unpaid",
+            "paid",
+            "refunded",
+            "failed"
+          ],
+          "format": "public.payment_status",
+          "type": "string"
+        },
+        "total_amount": {
+          "default": 0,
+          "format": "numeric",
+          "type": "number"
+        },
+        "currency": {
+          "default": "PLN",
+          "format": "text",
+          "type": "string"
+        },
+        "shipping_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "shipping_address": {
+          "format": "text",
+          "type": "string"
+        },
+        "shipping_city": {
+          "format": "text",
+          "type": "string"
+        },
+        "shipping_postal_code": {
+          "format": "text",
+          "type": "string"
+        },
+        "shipping_country": {
+          "format": "text",
+          "type": "string"
+        },
+        "notes": {
+          "format": "text",
+          "type": "string"
+        },
+        "paid_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "fulfilled_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "cancelled_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "pickup_point_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "pickup_point_address": {
+          "format": "text",
+          "type": "string"
+        },
+        "pickup_point_city": {
+          "format": "text",
+          "type": "string"
+        },
+        "shipping_cost": {
+          "format": "numeric",
+          "type": "number"
+        },
+        "invoice_requested": {
+          "default": false,
+          "format": "boolean",
+          "type": "boolean"
+        },
+        "company_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "company_nip": {
+          "format": "text",
+          "type": "string"
+        },
+        "company_address": {
+          "format": "text",
+          "type": "string"
+        },
+        "payment_method": {
+          "default": "online",
+          "format": "text",
+          "type": "string"
+        },
+        "shipping_method": {
+          "default": "inpost",
+          "format": "text",
+          "type": "string"
+        },
+        "shipping_phone": {
+          "format": "text",
+          "type": "string"
+        },
+        "fiscal_document_status": {
+          "format": "text",
+          "type": "string"
+        },
+        "fiscal_document_number": {
+          "format": "text",
+          "type": "string"
+        },
+        "fiscal_document_error": {
+          "format": "text",
+          "type": "string"
+        },
+        "fiscal_document_external_id": {
+          "format": "text",
+          "type": "string"
+        },
+        "fiscal_document_issued_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "fiscal_document_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "customer_email": {
+          "format": "text",
+          "type": "string"
+        },
+        "pickup_point_code": {
+          "format": "text",
+          "type": "string"
+        },
+        "fiscal_provider": {
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "gamification_config": {
+      "required": [
+        "id",
+        "points_per_unit",
+        "points_per_country",
+        "points_per_registration",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "default": 1,
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "integer",
+          "type": "integer"
+        },
+        "points_per_unit": {
+          "default": 10,
+          "format": "integer",
+          "type": "integer"
+        },
+        "points_per_country": {
+          "default": 50,
+          "format": "integer",
+          "type": "integer"
+        },
+        "points_per_registration": {
+          "default": 100,
+          "format": "integer",
+          "type": "integer"
+        },
+        "updated_at": {
+          "default": "timezone('utc'::text, now())",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "card_design_images": {
+      "required": [
+        "id",
+        "card_design_id",
+        "url",
+        "sort_order",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "card_design_id": {
+          "description": "Note:\nThis is a Foreign Key to `card_designs.id`.<fk table='card_designs' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "url": {
+          "format": "text",
+          "type": "string"
+        },
+        "sort_order": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "created_at": {
+          "default": "timezone('utc'::text, now())",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "inventory_units": {
+      "required": [
+        "id",
+        "stock_batch_id",
+        "card_design_id",
+        "internal_inventory_code",
+        "fulfillment_status",
+        "created_at",
+        "updated_at",
+        "inventory_serial_no"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "stock_batch_id": {
+          "description": "Note:\nThis is a Foreign Key to `stock_batches.id`.<fk table='stock_batches' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "card_design_id": {
+          "description": "Note:\nThis is a Foreign Key to `card_designs.id`.<fk table='card_designs' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "internal_inventory_code": {
+          "format": "text",
+          "type": "string"
+        },
+        "business_status": {
+          "enum": [
+            "purchased",
+            "registered",
+            "assigned"
+          ],
+          "format": "public.business_status",
+          "type": "string"
+        },
+        "fulfillment_status": {
+          "default": "in_stock",
+          "enum": [
+            "in_stock",
+            "reserved",
+            "qr_generated",
+            "qr_applied",
+            "shipped",
+            "voided",
+            "damaged",
+            "allocated",
+            "issued"
+          ],
+          "format": "public.fulfillment_status",
+          "type": "string"
+        },
+        "traveler_user_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "order_id": {
+          "format": "text",
+          "type": "string"
+        },
+        "order_item_id": {
+          "format": "text",
+          "type": "string"
+        },
+        "shipment_id": {
+          "format": "text",
+          "type": "string"
+        },
+        "public_claim_code": {
+          "format": "text",
+          "type": "string"
+        },
+        "public_claim_token_hash": {
+          "format": "text",
+          "type": "string"
+        },
+        "qr_generated_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "qr_applied_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "shipped_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "registered_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "current_location_id": {
+          "description": "Note:\nThis is a Foreign Key to `inventory_locations.id`.<fk table='inventory_locations' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "distribution_note": {
+          "format": "text",
+          "type": "string"
+        },
+        "assigned_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "inventory_serial_no": {
+          "description": "Global physical-copy serial used with card_designs.product_code for a channel-independent inventory code.",
+          "format": "bigint",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "order_items": {
+      "required": [
+        "id",
+        "order_id",
+        "card_design_id",
+        "quantity",
+        "unit_price",
+        "total_price",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "order_id": {
+          "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "card_design_id": {
+          "description": "Note:\nThis is a Foreign Key to `card_designs.id`.<fk table='card_designs' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "quantity": {
+          "default": 1,
+          "format": "integer",
+          "type": "integer"
+        },
+        "unit_price": {
+          "default": 0,
+          "format": "numeric",
+          "type": "number"
+        },
+        "total_price": {
+          "default": 0,
+          "format": "numeric",
+          "type": "number"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "secondary_language_code": {
+          "format": "text",
+          "type": "string"
+        },
+        "secondary_language_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "secondary_front_thank_you_text": {
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "feature_flags": {
+      "required": [
+        "key",
+        "name",
+        "description",
+        "is_enabled"
+      ],
+      "properties": {
+        "key": {
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "text",
+          "type": "string"
+        },
+        "name": {
+          "format": "text",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "format": "text",
+          "type": "string"
+        },
+        "is_enabled": {
+          "default": false,
+          "format": "boolean",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "qr_print_jobs": {
+      "required": [
+        "id",
+        "name",
+        "status",
+        "total_items",
+        "generated_items",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "name": {
+          "format": "text",
+          "type": "string"
+        },
+        "shipment_id": {
+          "format": "text",
+          "type": "string"
+        },
+        "order_id": {
+          "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "generating",
+            "ready",
+            "printed",
+            "failed"
+          ],
+          "format": "public.qr_print_job_status",
+          "type": "string"
+        },
+        "total_items": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "generated_items": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "created_by": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "pod_production_batch_orders": {
+      "description": "Frozen fulfilment/address data per order for a POD batch; not a carrier label itself.",
+      "required": [
+        "id",
+        "batch_id",
+        "order_id",
+        "print_job_id",
+        "order_number",
+        "postcard_count",
+        "shipping_method",
+        "carrier_label_status",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "batch_id": {
+          "description": "Note:\nThis is a Foreign Key to `pod_production_batches.id`.<fk table='pod_production_batches' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "order_id": {
+          "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "print_job_id": {
+          "description": "Note:\nThis is a Foreign Key to `qr_print_jobs.id`.<fk table='qr_print_jobs' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "order_number": {
+          "format": "text",
+          "type": "string"
+        },
+        "postcard_count": {
+          "format": "integer",
+          "type": "integer"
+        },
+        "shipping_method": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_email": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_street": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_postal_code": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_city": {
+          "format": "text",
+          "type": "string"
+        },
+        "pickup_point_code": {
+          "format": "text",
+          "type": "string"
+        },
+        "pickup_point_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "pickup_point_address": {
+          "format": "text",
+          "type": "string"
+        },
+        "pickup_point_city": {
+          "format": "text",
+          "type": "string"
+        },
+        "carrier_label_status": {
+          "default": "pending",
+          "format": "text",
+          "type": "string"
+        },
+        "carrier_label_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "tracking_number": {
+          "format": "text",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "shipping_settings": {
+      "description": "Server-managed logistics credentials. Read and write is performed only by Edge Functions with service-role access.",
+      "required": [
+        "singleton",
+        "inpost_environment",
+        "updated_at",
+        "orlen_environment"
+      ],
+      "properties": {
+        "singleton": {
+          "default": true,
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "boolean",
+          "type": "boolean"
+        },
+        "inpost_environment": {
+          "default": "sandbox",
+          "format": "text",
+          "type": "string"
+        },
+        "inpost_organization_id": {
+          "format": "text",
+          "type": "string"
+        },
+        "inpost_api_token": {
+          "format": "text",
+          "type": "string"
+        },
+        "inpost_geowidget_token": {
+          "format": "text",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "orlen_environment": {
+          "default": "sandbox",
+          "format": "text",
+          "type": "string"
+        },
+        "orlen_partner_id": {
+          "format": "text",
+          "type": "string"
+        },
+        "orlen_partner_key": {
+          "format": "text",
+          "type": "string"
+        },
+        "orlen_widget_token": {
+          "format": "text",
+          "type": "string"
+        },
+        "orlen_sender_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "orlen_sender_street": {
+          "format": "text",
+          "type": "string"
+        },
+        "orlen_sender_postal_code": {
+          "format": "text",
+          "type": "string"
+        },
+        "orlen_sender_city": {
+          "format": "text",
+          "type": "string"
+        },
+        "orlen_sender_phone": {
+          "format": "text",
+          "type": "string"
+        },
+        "orlen_sender_email": {
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "author_profiles": {
+      "properties": {
+        "id": {
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "display_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "bio": {
+          "format": "text",
+          "type": "string"
+        },
+        "avatar_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "social_handle": {
+          "format": "text",
+          "type": "string"
+        },
+        "website_url": {
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "card_language_templates": {
+      "required": [
+        "id",
+        "country_id",
+        "language_code",
+        "language_name",
+        "front_thank_you_text",
+        "back_qr_label",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "country_id": {
+          "description": "Note:\nThis is a Foreign Key to `countries.id`.<fk table='countries' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "language_code": {
+          "format": "text",
+          "type": "string"
+        },
+        "language_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "front_thank_you_text": {
+          "format": "text",
+          "type": "string"
+        },
+        "back_qr_label": {
+          "format": "text",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "timezone('utc'::text, now())",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "timezone('utc'::text, now())",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "platform_stats": {
+      "required": [
+        "id",
+        "total_members",
+        "total_countries",
+        "total_given",
+        "total_purchased",
+        "updated_at",
+        "total_registered"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "total_members": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "total_countries": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "total_given": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "total_purchased": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "total_registered": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "stock_production_orders": {
+      "description": "One physical print-shop order containing one or more per-design stock batches.",
+      "required": [
+        "id",
+        "order_number",
+        "name",
+        "purpose",
+        "distribution_channel",
+        "status",
+        "total_quantity",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "order_number": {
+          "default": "((('STK-'::text || to_char(now(), 'YYMMDD'::text)) || '-'::text) || upper(substr(replace((gen_random_uuid())::text, '-'::text, ''::text), 1, 5)))",
+          "format": "text",
+          "type": "string"
+        },
+        "name": {
+          "format": "text",
+          "type": "string"
+        },
+        "purpose": {
+          "format": "text",
+          "type": "string"
+        },
+        "distribution_channel": {
+          "default": "warehouse",
+          "format": "text",
+          "type": "string"
+        },
+        "event_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "partner_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "location_id": {
+          "description": "Note:\nThis is a Foreign Key to `inventory_locations.id`.<fk table='inventory_locations' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "status": {
+          "default": "received",
+          "format": "text",
+          "type": "string"
+        },
+        "total_quantity": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "ordered_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "received_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "notes": {
+          "format": "text",
+          "type": "string"
+        },
+        "created_by": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "profiles": {
+      "required": [
+        "id",
+        "user_id",
+        "postcards_purchased",
+        "postcards_received",
+        "created_at",
+        "updated_at",
+        "total_points",
+        "current_rank",
+        "total_kilometers"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "user_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "display_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "avatar_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "country": {
+          "format": "text",
+          "type": "string"
+        },
+        "city": {
+          "format": "text",
+          "type": "string"
+        },
+        "bio": {
+          "format": "text",
+          "type": "string"
+        },
+        "postcards_purchased": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "postcards_received": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "first_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "last_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "total_points": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "current_rank": {
+          "default": "Zwiadowca",
+          "format": "text",
+          "type": "string"
+        },
+        "total_kilometers": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "profiles_public": {
+      "properties": {
+        "id": {
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "user_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "display_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "avatar_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "total_points": {
+          "format": "integer",
+          "type": "integer"
+        },
+        "current_rank": {
+          "format": "text",
+          "type": "string"
+        },
+        "total_kilometers": {
+          "format": "integer",
+          "type": "integer"
+        },
+        "postcards_purchased": {
+          "format": "integer",
+          "type": "integer"
+        },
+        "postcards_received": {
+          "format": "integer",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "card_designs": {
+      "required": [
+        "id",
+        "country_id",
+        "created_at",
+        "language_code",
+        "view_no",
+        "active",
+        "price_grosze",
+        "currency",
+        "updated_at",
+        "product_code"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "country_id": {
+          "description": "Note:\nThis is a Foreign Key to `countries.id`.<fk table='countries' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "language_code": {
+          "default": "en",
+          "format": "text",
+          "type": "string"
+        },
+        "view_no": {
+          "format": "integer",
+          "type": "integer"
+        },
+        "title": {
+          "format": "text",
+          "type": "string"
+        },
+        "thank_you_text": {
+          "format": "text",
+          "type": "string"
+        },
+        "image_front_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "active": {
+          "default": true,
+          "format": "boolean",
+          "type": "boolean"
+        },
+        "category_id": {
+          "description": "Note:\nThis is a Foreign Key to `categories.id`.<fk table='categories' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "price_grosze": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "currency": {
+          "default": "PLN",
+          "format": "text",
+          "type": "string"
+        },
+        "description": {
+          "format": "text",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "timezone('utc'::text, now())",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "photo_author": {
+          "format": "text",
+          "type": "string"
+        },
+        "crop_settings": {
+          "format": "jsonb"
+        },
+        "back_qr_label": {
+          "format": "text",
+          "type": "string"
+        },
+        "author_id": {
+          "description": "Note:\nThis is a Foreign Key to `authors.id`.<fk table='authors' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "product_code": {
+          "description": "Stable product code for Firmino. Never reuse QR, claim or inventory identifiers here.",
+          "format": "text",
+          "type": "string"
+        },
+        "firmino_article_id": {
+          "format": "bigint",
+          "type": "integer"
+        },
+        "firmino_synced_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "firmino_sync_error": {
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "inventory_unit_events": {
+      "required": [
+        "id",
+        "inventory_unit_id",
+        "event_type",
+        "actor_type",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "inventory_unit_id": {
+          "description": "Note:\nThis is a Foreign Key to `inventory_units.id`.<fk table='inventory_units' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "event_type": {
+          "enum": [
+            "created_in_stock",
+            "reserved_for_order",
+            "qr_generated",
+            "qr_applied",
+            "shipped",
+            "registered",
+            "voided",
+            "damaged"
+          ],
+          "format": "public.inventory_event_type",
+          "type": "string"
+        },
+        "actor_type": {
+          "default": "system",
+          "enum": [
+            "system",
+            "admin",
+            "traveler",
+            "recipient"
+          ],
+          "format": "public.event_actor_type",
+          "type": "string"
+        },
+        "actor_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "payload_json": {
+          "format": "jsonb"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "inventory_movements": {
+      "description": "Immutable movement history for physical STOCK and automatically created POD units.",
+      "required": [
+        "id",
+        "inventory_unit_id",
+        "stock_batch_id",
+        "movement_type",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "inventory_unit_id": {
+          "description": "Note:\nThis is a Foreign Key to `inventory_units.id`.<fk table='inventory_units' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "stock_batch_id": {
+          "description": "Note:\nThis is a Foreign Key to `stock_batches.id`.<fk table='stock_batches' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "movement_type": {
+          "format": "text",
+          "type": "string"
+        },
+        "from_location_id": {
+          "description": "Note:\nThis is a Foreign Key to `inventory_locations.id`.<fk table='inventory_locations' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "to_location_id": {
+          "description": "Note:\nThis is a Foreign Key to `inventory_locations.id`.<fk table='inventory_locations' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "reference_type": {
+          "format": "text",
+          "type": "string"
+        },
+        "reference_id": {
+          "format": "text",
+          "type": "string"
+        },
+        "note": {
+          "format": "text",
+          "type": "string"
+        },
+        "actor_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "shipments": {
+      "required": [
+        "id",
+        "order_id",
+        "user_id",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "order_id": {
+          "description": "Note:\nThis is a Foreign Key to `orders.id`.<fk table='orders' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "user_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "status": {
+          "default": "pending",
+          "enum": [
+            "pending",
+            "packed",
+            "shipped",
+            "delivered",
+            "returned"
+          ],
+          "format": "public.shipment_status",
+          "type": "string"
+        },
+        "tracking_number": {
+          "format": "text",
+          "type": "string"
+        },
+        "carrier": {
+          "format": "text",
+          "type": "string"
+        },
+        "shipping_method": {
+          "format": "text",
+          "type": "string"
+        },
+        "shipped_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "delivered_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "notes": {
+          "format": "text",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "inpost_shipment_id": {
+          "format": "text",
+          "type": "string"
+        },
+        "label_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "size": {
+          "format": "text",
+          "type": "string"
+        },
+        "inpost_status": {
+          "description": "Last status returned by InPost ShipX, e.g. created, offers_prepared, confirmed.",
+          "format": "text",
+          "type": "string"
+        },
+        "inpost_offer_id": {
+          "description": "Selected InPost ShipX offer used to purchase the shipment.",
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "payment_settings": {
+      "required": [
+        "id",
+        "p24_mode",
+        "singleton",
+        "created_at",
+        "updated_at",
+        "payment_gateway"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "p24_mode": {
+          "default": "sandbox",
+          "format": "text",
+          "type": "string"
+        },
+        "singleton": {
+          "default": true,
+          "format": "boolean",
+          "type": "boolean"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "p24_merchant_id": {
+          "format": "text",
+          "type": "string"
+        },
+        "p24_pos_id": {
+          "format": "text",
+          "type": "string"
+        },
+        "p24_api_key": {
+          "format": "text",
+          "type": "string"
+        },
+        "p24_crc_key": {
+          "format": "text",
+          "type": "string"
+        },
+        "p24_report_key": {
+          "format": "text",
+          "type": "string"
+        },
+        "payment_gateway": {
+          "default": "hotpay",
+          "format": "text",
+          "type": "string"
+        },
+        "hotpay_secret": {
+          "format": "text",
+          "type": "string"
+        },
+        "hotpay_notification_password": {
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "recipient_registrations": {
+      "required": [
+        "id",
+        "inventory_unit_id",
+        "recipient_name",
+        "contact_opt_in",
+        "registered_at",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "inventory_unit_id": {
+          "description": "Note:\nThis is a Foreign Key to `inventory_units.id`.<fk table='inventory_units' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "recipient_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_message": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_email": {
+          "format": "text",
+          "type": "string"
+        },
+        "contact_opt_in": {
+          "default": false,
+          "format": "boolean",
+          "type": "boolean"
+        },
+        "registered_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "latitude": {
+          "format": "numeric",
+          "type": "number"
+        },
+        "longitude": {
+          "format": "numeric",
+          "type": "number"
+        },
+        "registered_country_iso2": {
+          "description": "Note:\nThis is a Foreign Key to `countries.iso2`.<fk table='countries' column='iso2'/>",
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "categories": {
+      "required": [
+        "id",
+        "name",
+        "slug",
+        "sort_order",
+        "created_at",
+        "product_code_prefix"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "name": {
+          "format": "text",
+          "type": "string"
+        },
+        "slug": {
+          "format": "text",
+          "type": "string"
+        },
+        "icon_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "sort_order": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "created_at": {
+          "default": "timezone('utc'::text, now())",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "product_code_prefix": {
+          "default": "OTH",
+          "format": "text",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "postcards": {
+      "required": [
+        "id",
+        "design_id",
+        "serial_number",
+        "qr_token",
+        "status",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "design_id": {
+          "description": "Note:\nThis is a Foreign Key to `card_designs.id`.<fk table='card_designs' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "serial_number": {
+          "format": "integer",
+          "type": "integer"
+        },
+        "qr_token": {
+          "format": "text",
+          "type": "string"
+        },
+        "status": {
+          "default": "available",
+          "format": "text",
+          "type": "string"
+        },
+        "buyer_id": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "buyer_display_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "purchased_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "order_reference": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_message": {
+          "format": "text",
+          "type": "string"
+        },
+        "recipient_email": {
+          "format": "text",
+          "type": "string"
+        },
+        "registered_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "stock_batches": {
+      "required": [
+        "id",
+        "name",
+        "card_design_id",
+        "quantity",
+        "created_at",
+        "updated_at",
+        "source_type",
+        "distribution_channel",
+        "production_status"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "name": {
+          "format": "text",
+          "type": "string"
+        },
+        "description": {
+          "format": "text",
+          "type": "string"
+        },
+        "card_design_id": {
+          "description": "Note:\nThis is a Foreign Key to `card_designs.id`.<fk table='card_designs' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "quantity": {
+          "default": 0,
+          "format": "integer",
+          "type": "integer"
+        },
+        "created_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "updated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "source_type": {
+          "default": "stock",
+          "description": "stock = physical bulk inventory; pod = units created for a paid online order.",
+          "format": "text",
+          "type": "string"
+        },
+        "purpose": {
+          "format": "text",
+          "type": "string"
+        },
+        "distribution_channel": {
+          "default": "warehouse",
+          "format": "text",
+          "type": "string"
+        },
+        "event_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "partner_name": {
+          "format": "text",
+          "type": "string"
+        },
+        "location_id": {
+          "description": "Note:\nThis is a Foreign Key to `inventory_locations.id`.<fk table='inventory_locations' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "production_status": {
+          "default": "received",
+          "format": "text",
+          "type": "string"
+        },
+        "received_at": {
+          "format": "timestamp with time zone",
+          "type": "string"
+        },
+        "production_order_id": {
+          "description": "Note:\nThis is a Foreign Key to `stock_production_orders.id`.<fk table='stock_production_orders' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "gamification_tiers": {
+      "required": [
+        "id",
+        "name",
+        "min_points",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "name": {
+          "format": "text",
+          "type": "string"
+        },
+        "min_points": {
+          "format": "integer",
+          "type": "integer"
+        },
+        "created_at": {
+          "default": "timezone('utc'::text, now())",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "qr_print_job_items": {
+      "required": [
+        "id",
+        "print_job_id",
+        "inventory_unit_id",
+        "public_claim_code",
+        "qr_url",
+        "generated_at"
+      ],
+      "properties": {
+        "id": {
+          "default": "gen_random_uuid()",
+          "description": "Note:\nThis is a Primary Key.<pk/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "print_job_id": {
+          "description": "Note:\nThis is a Foreign Key to `qr_print_jobs.id`.<fk table='qr_print_jobs' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "inventory_unit_id": {
+          "description": "Note:\nThis is a Foreign Key to `inventory_units.id`.<fk table='inventory_units' column='id'/>",
+          "format": "uuid",
+          "type": "string"
+        },
+        "public_claim_code": {
+          "format": "text",
+          "type": "string"
+        },
+        "qr_url": {
+          "format": "text",
+          "type": "string"
+        },
+        "generated_at": {
+          "default": "now()",
+          "format": "timestamp with time zone",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  }
+}

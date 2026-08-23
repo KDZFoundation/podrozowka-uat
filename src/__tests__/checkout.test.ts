@@ -6,6 +6,10 @@ import {
   getShippingCostGrosze,
   SHIPPING_COST_GROSZE,
   COD_SHIPPING_COST_GROSZE,
+  isCourierShippingMethod,
+  isPickupShippingMethod,
+  pickupProviderForMethod,
+  shippingMethodLabel,
 } from '@/lib/constants';
 
 describe('Checkout Validation and Logic', () => {
@@ -175,5 +179,30 @@ describe('Checkout Validation and Logic', () => {
   it('SHIPPING_COST_GROSZE and COD_SHIPPING_COST_GROSZE are correct values', () => {
     expect(SHIPPING_COST_GROSZE).toBe(1399);
     expect(COD_SHIPPING_COST_GROSZE).toBe(1699);
+  });
+
+  it('defines all five delivery methods with clear labels', () => {
+    expect([
+      shippingMethodLabel('inpost_locker'),
+      shippingMethodLabel('inpost_courier'),
+      shippingMethodLabel('orlen_paczka'),
+      shippingMethodLabel('pocztex_courier'),
+      shippingMethodLabel('pocztex_point'),
+    ]).toEqual([
+      'InPost Paczkomat 24/7',
+      'InPost Kurier',
+      'ORLEN Paczka',
+      'Pocztex Kurier',
+      'Pocztex Punkt',
+    ]);
+  });
+
+  it('distinguishes pickup-point and courier delivery methods', () => {
+    expect(pickupProviderForMethod('inpost_locker')).toBe('inpost');
+    expect(pickupProviderForMethod('orlen_paczka')).toBe('orlen');
+    expect(pickupProviderForMethod('pocztex_point')).toBe('pocztex');
+    expect(isPickupShippingMethod('pocztex_point')).toBe(true);
+    expect(isCourierShippingMethod('inpost_courier')).toBe(true);
+    expect(isCourierShippingMethod('pocztex_courier')).toBe(true);
   });
 });

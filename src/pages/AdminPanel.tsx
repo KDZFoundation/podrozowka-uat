@@ -24,7 +24,6 @@ import {
   Tags,
   CreditCard,
   Printer,
-  Database,
   Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -38,7 +37,6 @@ import AdminShipments from "@/components/admin/AdminShipments";
 import AdminRegistrations from "@/components/admin/AdminRegistrations";
 import AdminEventLog from "@/components/admin/AdminEventLog";
 import AdminDevTools from "@/components/admin/AdminDevTools";
-import { AdminDataMigration } from "@/components/admin/AdminDataMigration";
 import AdminGlobalMap from "@/components/admin/AdminGlobalMap";
 import AdminLab from "@/components/admin/AdminLab";
 import AdminGamification from "@/components/admin/AdminGamification";
@@ -52,7 +50,6 @@ import { Blocks } from "lucide-react";
 
 type TabId =
   | "overview"
-  | "migration"
   | "dev-tools"
   | "map"
   | "countries"
@@ -163,7 +160,6 @@ const AdminPanel = () => {
 
   const navigationTabs: { id: TabId; label: string; icon: typeof Package }[] = [
     { id: "overview", label: "Przegląd", icon: BarChart3 },
-    { id: "migration", label: "Migracja Firestore", icon: Database },
     { id: "dev-tools", label: "Narzędzia Dev", icon: Wrench },
     { id: "countries", label: "Kraje", icon: Globe2 },
     { id: "card-designs", label: "Kreator wzorów", icon: Image },
@@ -184,7 +180,6 @@ const AdminPanel = () => {
   ];
 
   const workflowCards: { id: TabId; step: string; title: string; description: string; icon: typeof Package }[] = [
-    { id: "migration", step: "DEV", title: "Migracja Firestore", description: "Pobierz dane z Supabase i zapisz w Google Cloud Firestore.", icon: Database },
     { id: "card-designs", step: "01", title: "Wzory", description: "Przygotuj przód, tył i język kartki.", icon: Image },
     { id: "products", step: "02", title: "Produkty", description: "Opublikuj wzór i ustaw cenę sklepową.", icon: ShoppingBag },
     { id: "orders", step: "03", title: "POD i drukarnia", description: "Obsłuż opłacone zamówienie, QR oraz PDF SRA3.", icon: Printer },
@@ -412,33 +407,6 @@ CREATE POLICY "Admins manage categories"
 
         {activeTab === "overview" && (
           <div className="space-y-6">
-            {/* Quick migration alert box */}
-            <div className="rounded-2xl border border-primary/25 bg-primary/5 p-5 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
-                  <Database className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-display text-base font-bold text-foreground flex items-center gap-2">
-                    Migracja Danych z Supabase do Google Cloud Firestore
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-primary/20 text-primary font-semibold">
-                      Firestore DB: ai-studio-podrozowkauat
-                    </span>
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-0.5">
-                    Pobierz wszystkie rekordy (kraje, wzory, produkty, zamówienia, magazyn, rejestracje) i zapisz w bazie Firestore.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTab("migration")}
-                className="whitespace-nowrap px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors shadow-xs"
-              >
-                Otwórz panel migracji &rarr;
-              </button>
-            </div>
-
             <div>
               <p className="mb-2 text-sm font-medium text-primary">Centrum operacyjne</p>
               <h2 className="font-display text-2xl font-bold text-foreground">Przepływ POD</h2>
@@ -478,7 +446,6 @@ CREATE POLICY "Admins manage categories"
           </div>
         )}
 
-        {activeTab === "migration" && <AdminDataMigration />}
         {activeTab === "dev-tools" && <AdminDevTools />}
         {activeTab === "map" && <AdminGlobalMap />}
         {activeTab === "countries" && <AdminCountries />}

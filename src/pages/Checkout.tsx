@@ -22,12 +22,16 @@ import {
   type CourierAddress,
   emptyCourierAddress,
   isCourierAddressValid,
+  isPickupShippingMethod,
+  pickupProviderForMethod,
+  shippingMethodLabel,
 } from "@/lib/constants";
 import InpostGeowidget from "@/components/checkout/InpostGeowidget";
 import OrlenPaczkaWidget from "@/components/checkout/OrlenPaczkaWidget";
 import PaymentMethodPicker from "@/components/checkout/PaymentMethodPicker";
 import ShippingMethodPicker from "@/components/checkout/ShippingMethodPicker";
 import CourierAddressForm from "@/components/checkout/CourierAddressForm";
+import PocztexPointForm from "@/components/checkout/PocztexPointForm";
 import OrderSteps from "@/components/checkout/OrderSteps";
 import { isValidNip, normalizeNip } from "@/lib/nip";
 import { backendApiUrl } from "@/lib/backendApi";
@@ -38,7 +42,7 @@ const formatPln = (grosze: number) =>
 const Checkout = () => {
   const { user, isLoading: authLoading } = useAuth();
   const { items: cartItems, clear: clearCart } = useCart();
-  const { pickupPoint, setPickupPoint } = useCheckout();
+  const { pickupPoint, setPickupPoint, clearPickupPoint } = useCheckout();
   const { items, subtotalGrosze, isLoading } = useCartItems();
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -46,13 +50,13 @@ const Checkout = () => {
     (p: PickupPoint) => {
       setPickupPoint(p);
       setDialogOpen(false);
-      toast.success("Wybrano paczkomat", { description: p.name });
+      toast.success("Wybrano punkt odbioru", { description: p.name });
     },
     [setPickupPoint, setDialogOpen],
   );
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("online");
-  const [shippingMethod, setShippingMethod] = useState<ShippingMethod>("inpost");
+  const [shippingMethod, setShippingMethod] = useState<ShippingMethod>("inpost_locker");
   const [courierAddress, setCourierAddress] = useState<CourierAddress>(emptyCourierAddress);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [invoiceRequested, setInvoiceRequested] = useState(false);
@@ -97,9 +101,23 @@ const Checkout = () => {
   const totalGrosze = subtotalGrosze + shippingCostGrosze;
 
   const invoiceValid = !invoiceRequested || Object.keys(invoiceErrors).length === 0;
-  const shippingValid =
-    shippingMethod === "inpost" || shippingMethod === "orlen" ? !!pickupPoint && pickupPoint.provider === shippingMethod : isCourierAddressValid(courierAddress);
+  const pickupProvider = pickupProviderForMethod(shippingMethod);
+  const pickupPointValid = Boolean(
+    pickupProvider &&
+    pickupPoint?.provider === pickupProvider &&
+    pickupPoint.name.trim() &&
+    pickupPoint.address.trim() &&
+    pickupPoint.city.trim() &&
+    (shippingMethod !== "pocztex_point" || pickupPoint.code?.trim()),
+  );
+  const shippingValid = pickupProvider ? pickupPointValid : isCourierAddressValid(courierAddress);
   const canProceed = shippingValid && !hasUnavailable && !isLoading && invoiceValid && !isBelowMin;
+
+  const handleShippingMethodChange = (method: ShippingMethod) => {
+    if (pickupPoint?.provider !== pickupProviderForMethod(method)) clearPickupPoint();
+    setShippingMethod(method);
+    setDialogOpen(false);
+  };
 
   const handleProceed = async () => {
     if (!shippingValid || isBelowMin) {
@@ -118,7 +136,7 @@ const Checkout = () => {
           })),
         shipping_method: shippingMethod,
         pickup_point:
-          (shippingMethod === "inpost" || shippingMethod === "orlen") && pickupPoint
+          isPickupShippingMethod(shippingMethod) && pickupPoint
             ? {
                 name: pickupPoint.name,
                 address: pickupPoint.address,
@@ -127,7 +145,7 @@ const Checkout = () => {
               }
             : null,
         shipping_address:
-          shippingMethod === "courier"
+          !isPickupShippingMethod(shippingMethod)
             ? {
                 name: courierAddress.name.trim(),
                 street: courierAddress.street.trim(),
@@ -147,18 +165,11 @@ const Checkout = () => {
             }
           : { requested: false },
       };
-      const { supabase } = await import("@/integrations/supabase/client");
-      const { firestoreService } = await import("@/integrations/firebase/services/firestoreService");
-      
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-      const userEmail = sessionData.session?.user?.email || "";
-      const userId = sessionData.session?.user?.id || "";
-
       // Call our backend API to initialize HotPay payment
       let responseData: {
         error?: string;
         payment_method?: string;
+        order_id?: string;
         order_number?: string;
         redirect_url?: string;
       } | null = null;
@@ -168,33 +179,17 @@ const Checkout = () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
           },
           body: JSON.stringify({
             ...payload,
-            customer_email: userEmail,
+            customer_email: user.email || "",
+            user_id: user.id,
             origin_url: window.location.origin,
           }),
         });
         responseData = await apiRes.json().catch(() => null);
       } catch (apiErr) {
         console.warn("[HotPay API direct error, trying fallback]:", apiErr);
-      }
-
-      // If backend API returned a valid response
-      if (!responseData || responseData.error) {
-        // Try fallback via client/supabase function if API wasn't available
-        try {
-          const { data, error } = await supabase.functions.invoke("create-payment", {
-            body: payload,
-            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-          });
-          if (!error && data) {
-            responseData = data;
-          }
-        } catch (_) {
-          // ignore
-        }
       }
 
       const errCode = responseData?.error;
@@ -214,44 +209,6 @@ const Checkout = () => {
         toast.error("Nie udało się rozpocząć płatności", { description: errCode });
         setIsSubmitting(false);
         return;
-      }
-
-      // Save order to Firestore as well for complete persistence
-      if (responseData?.order_number) {
-        try {
-          await firestoreService.createOrder({
-            order_number: responseData.order_number,
-            user_id: userId,
-            guest_email: userEmail,
-            status: paymentMethod === "cod" ? "pending" : "new",
-            payment_method: paymentMethod === "cod" ? "cod" : "hotpay",
-            payment_status: paymentMethod === "cod" ? "pending" : "pending",
-            total_amount_pln: totalGrosze / 100,
-            shipping_cost_pln: (shippingCostGrosze || 0) / 100,
-            items: items.map((it) => ({
-              card_design_id: it.card_design_id,
-              quantity: it.quantity,
-              unit_price_pln: 1.20,
-              total_price_pln: it.quantity * 1.20,
-            })),
-            shipping_address: pickupPoint ? {
-              type: pickupPoint.provider === "inpost" ? "inpost_paczkomat" : "orlen_paczka",
-              name: pickupPoint.name,
-              address: pickupPoint.address,
-              city: pickupPoint.city,
-            } : {
-              type: "courier",
-              name: courierAddress.name,
-              street: courierAddress.street,
-              city: courierAddress.city,
-              postal_code: courierAddress.postal_code,
-              phone: courierAddress.phone,
-            },
-            fiscal_document_status: "pending",
-          });
-        } catch (fsErr) {
-          console.warn("[Firestore order backup notice]:", fsErr);
-        }
       }
 
       clearCart();
@@ -330,15 +287,15 @@ const Checkout = () => {
                   <h2 className="font-display text-lg font-semibold text-foreground">
                     Metoda dostawy
                   </h2>
-                  <p className="text-sm text-muted-foreground">
-                    Wybierz punkt InPost, ORLEN Paczka lub dostawę kurierem pod wskazany adres.
-                  </p>
+                  <p className="text-sm text-muted-foreground">Wybierz jedną z dostępnych metod.</p>
                 </div>
               </div>
 
-              <ShippingMethodPicker value={shippingMethod} onChange={setShippingMethod} />
+              <ShippingMethodPicker value={shippingMethod} onChange={handleShippingMethodChange} />
 
-              {shippingMethod === "inpost" || shippingMethod === "orlen" ? (
+              {shippingMethod === "pocztex_point" ? (
+                <PocztexPointForm value={pickupPoint} onChange={setPickupPoint} />
+              ) : shippingMethod === "inpost_locker" || shippingMethod === "orlen_paczka" ? (
                 pickupPoint ? (
                   <div className="border border-border rounded-xl p-4 flex items-start gap-3">
                     <MapPin className="w-5 h-5 text-primary shrink-0 mt-0.5" />
@@ -358,7 +315,7 @@ const Checkout = () => {
                 ) : (
                   <Button className="w-full sm:w-auto" onClick={() => setDialogOpen(true)}>
                     <MapPin className="w-4 h-4 mr-2" />
-                    {shippingMethod === "orlen" ? "Wybierz punkt ORLEN Paczka" : "Wybierz paczkomat"}
+                    {shippingMethod === "orlen_paczka" ? "Wybierz punkt ORLEN Paczka" : "Wybierz Paczkomat InPost"}
                   </Button>
                 )
               ) : (
@@ -522,7 +479,7 @@ const Checkout = () => {
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">
-                    Dostawa ({shippingMethod === "courier" ? "kurier" : shippingMethod === "orlen" ? "ORLEN Paczka" : "InPost"}
+                    Dostawa ({shippingMethodLabel(shippingMethod)}
                     {paymentMethod === "cod" ? ", za pobraniem" : ""})
                   </span>
                   <span className="font-medium">{formatPln(shippingCostGrosze)}</span>
@@ -556,8 +513,8 @@ const Checkout = () => {
               </Button>
               {!shippingValid && (
                 <p className="text-xs text-muted-foreground mt-2 text-center">
-                  {shippingMethod === "inpost" || shippingMethod === "orlen"
-                    ? `Wybierz ${shippingMethod === "orlen" ? "punkt ORLEN Paczka" : "paczkomat"}, aby przejść dalej.`
+                  {isPickupShippingMethod(shippingMethod)
+                    ? `Uzupełnij punkt odbioru dla: ${shippingMethodLabel(shippingMethod)}.`
                     : "Uzupełnij dane adresowe, aby przejść dalej."}
                 </p>
               )}
@@ -569,9 +526,9 @@ const Checkout = () => {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-4xl w-[95vw] p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>{shippingMethod === "orlen" ? "Wybierz punkt ORLEN Paczka" : "Wybierz paczkomat InPost"}</DialogTitle>
+            <DialogTitle>{shippingMethod === "orlen_paczka" ? "Wybierz punkt ORLEN Paczka" : "Wybierz Paczkomat InPost"}</DialogTitle>
           </DialogHeader>
-          {shippingMethod === "orlen" ? <OrlenPaczkaWidget onSelect={handleSelectPickupPoint} /> : <InpostGeowidget onSelect={handleSelectPickupPoint} />}
+          {shippingMethod === "orlen_paczka" ? <OrlenPaczkaWidget onSelect={handleSelectPickupPoint} /> : <InpostGeowidget onSelect={handleSelectPickupPoint} />}
         </DialogContent>
       </Dialog>
 

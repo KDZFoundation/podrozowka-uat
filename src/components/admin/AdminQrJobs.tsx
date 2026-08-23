@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Loader2, QrCode, Printer, ArrowLeft, Eye, Plus, Download, CheckCheck, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "@/integrations/firebase/config";
 
 interface PrintJob {
   id: string;
@@ -44,24 +46,6 @@ interface PrintJobItem {
   design_title: string | null;
   country_name: string | null;
   view_no: number | null;
-}
-
-interface QrPrintJobItemJoin {
-  id: string;
-  inventory_unit_id: string;
-  public_claim_code: string;
-  qr_url: string;
-  generated_at: string;
-  inventory_units: {
-    internal_inventory_code: string;
-    card_designs: {
-      title: string | null;
-      view_no: number;
-      countries: {
-        name_pl: string;
-      } | null;
-    } | null;
-  } | null;
 }
 
 interface ReservedUnitJoin {
@@ -101,11 +85,22 @@ const AdminQrJobs = () => {
 
   const fetchJobs = useCallback(async () => {
     setIsLoading(true);
-    const { data } = await supabase
-      .from("qr_print_jobs")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (data) setJobs(data);
+    const snapshot = await getDocs(collection(db, "qr_print_jobs"));
+    setJobs(snapshot.docs
+      .map((document) => {
+        const data = document.data();
+        return {
+          id: document.id,
+          name: String(data.name || "Zadanie QR"),
+          status: String(data.status || "pending"),
+          total_items: Number(data.total_items || 0),
+          generated_items: Number(data.generated_items || 0),
+          shipment_id: typeof data.shipment_id === "string" ? data.shipment_id : null,
+          order_id: typeof data.order_id === "string" ? data.order_id : null,
+          created_at: String(data.created_at || ""),
+        };
+      })
+      .sort((left, right) => right.created_at.localeCompare(left.created_at)));
     setIsLoading(false);
   }, []);
 
@@ -115,30 +110,32 @@ const AdminQrJobs = () => {
 
   const fetchJobItems = async (jobId: string) => {
     setItemsLoading(true);
-    const { data } = await supabase
-      .from("qr_print_job_items")
-      .select(`
-        id, inventory_unit_id, public_claim_code, qr_url, generated_at,
-        inventory_units!inner(internal_inventory_code, card_designs!inner(title, view_no, countries!inner(name_pl)))
-      `)
-      .eq("print_job_id", jobId);
-
-    if (data) {
-      const typedData = data as unknown as QrPrintJobItemJoin[];
-      setJobItems(
-        typedData.map((i: QrPrintJobItemJoin) => ({
-          id: i.id,
-          inventory_unit_id: i.inventory_unit_id,
-          public_claim_code: i.public_claim_code,
-          qr_url: i.qr_url,
-          generated_at: i.generated_at,
-          unit_code: i.inventory_units?.internal_inventory_code || null,
-          design_title: i.inventory_units?.card_designs?.title || null,
-          country_name: i.inventory_units?.card_designs?.countries?.name_pl || null,
-          view_no: i.inventory_units?.card_designs?.view_no || null,
-        }))
-      );
-    }
+    const [itemsSnapshot, unitsSnapshot, designsSnapshot, countriesSnapshot] = await Promise.all([
+      getDocs(query(collection(db, "qr_print_job_items"), where("print_job_id", "==", jobId))),
+      getDocs(collection(db, "inventory_units")),
+      getDocs(collection(db, "card_designs")),
+      getDocs(collection(db, "countries")),
+    ]);
+    const units = new Map(unitsSnapshot.docs.map((document) => [document.id, document.data()]));
+    const designs = new Map(designsSnapshot.docs.map((document) => [document.id, document.data()]));
+    const countries = new Map(countriesSnapshot.docs.map((document) => [document.id, document.data()]));
+    setJobItems(itemsSnapshot.docs.map((document) => {
+      const data = document.data();
+      const unit = units.get(String(data.inventory_unit_id || ""));
+      const design = unit ? designs.get(String(unit.card_design_id || "")) : null;
+      const country = design ? countries.get(String(design.country_id || "")) : null;
+      return {
+        id: document.id,
+        inventory_unit_id: String(data.inventory_unit_id || ""),
+        public_claim_code: String(data.public_claim_code || ""),
+        qr_url: String(data.qr_url || ""),
+        generated_at: String(data.generated_at || ""),
+        unit_code: typeof unit?.internal_inventory_code === "string" ? unit.internal_inventory_code : null,
+        design_title: typeof design?.title === "string" ? design.title : null,
+        country_name: typeof country?.name_pl === "string" ? country.name_pl : null,
+        view_no: Number(design?.view_no || 0) || null,
+      };
+    }));
     setItemsLoading(false);
   };
 

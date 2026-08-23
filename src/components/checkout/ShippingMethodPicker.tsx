@@ -1,6 +1,5 @@
-import { Package, Truck, Building2, Mail } from "lucide-react";
+import { Package, Truck, Building2, Mail, MapPin } from "lucide-react";
 import type { ShippingMethod } from "@/lib/constants";
-import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
 interface Props {
   value: ShippingMethod;
@@ -12,48 +11,43 @@ const allOptions: {
   label: string;
   description: string;
   icon: typeof Package;
-  flagKey?: "inpost_shipping_enabled" | "orlen_paczka_enabled" | "pocztex_shipping_enabled";
 }[] = [
   {
-    value: "inpost",
-    label: "Paczkomat InPost",
-    description: "Odbiór w wybranym paczkomacie.",
+    value: "inpost_locker",
+    label: "InPost Paczkomat 24/7",
+    description: "Odbiór w wybranym Paczkomacie.",
     icon: Package,
-    flagKey: "inpost_shipping_enabled",
   },
   {
-    value: "courier",
-    label: "Kurier — adres domowy",
-    description: "Dostawa na wskazany adres.",
+    value: "inpost_courier",
+    label: "InPost Kurier",
+    description: "Dostawa kurierem InPost pod wskazany adres.",
     icon: Truck,
   },
   {
-    value: "orlen",
+    value: "orlen_paczka",
     label: "ORLEN Paczka",
     description: "Odbiór w automacie paczkowym lub stacji ORLEN.",
     icon: Building2,
-    flagKey: "orlen_paczka_enabled",
   },
   {
-    value: "pocztex",
-    label: "Pocztex / Punkt Odbioru",
-    description: "Odbiór na Poczcie, w Żabce lub Biedronce.",
+    value: "pocztex_courier",
+    label: "Pocztex Kurier",
+    description: "Dostawa kurierem Pocztex pod wskazany adres.",
     icon: Mail,
-    flagKey: "pocztex_shipping_enabled",
+  },
+  {
+    value: "pocztex_point",
+    label: "Pocztex Punkt",
+    description: "Odbiór w wybranym punkcie Pocztex.",
+    icon: MapPin,
   },
 ];
 
 const ShippingMethodPicker = ({ value, onChange }: Props) => {
-  const { flags } = useFeatureFlags();
-
-  const options = allOptions.filter((opt) => {
-    if (!opt.flagKey) return true;
-    return flags[opt.flagKey] ?? true;
-  });
-
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      {options.map((opt) => {
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {allOptions.map((opt) => {
         const Icon = opt.icon;
         const active = value === opt.value;
         return (
