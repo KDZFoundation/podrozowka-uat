@@ -119,7 +119,7 @@ export const updateDocument = async (documentPath: string, data: Record<string, 
 export const readDocument = async (collection: string, id: string) =>
   firestoreApi(`/${collection}/${encodeURIComponent(id)}`) as Promise<{ name: string; fields?: Record<string, Record<string, unknown>> }>;
 
-export const findOrderByNumber = async (orderNumber: string) => {
+export const findOrdersByNumber = async (orderNumber: string) => {
   const query = await firestoreApi(":runQuery", {
     method: "POST",
     body: JSON.stringify({
@@ -130,5 +130,10 @@ export const findOrderByNumber = async (orderNumber: string) => {
       },
     }),
   }) as Array<{ document?: { name: string } }>;
-  return query[0]?.document?.name?.split("/documents/")[1] || null;
+  return query
+    .map((result) => result.document?.name?.split("/documents/")[1] || null)
+    .filter((path): path is string => Boolean(path));
 };
+
+export const findOrderByNumber = async (orderNumber: string) =>
+  (await findOrdersByNumber(orderNumber))[0] || null;
