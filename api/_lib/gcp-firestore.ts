@@ -67,7 +67,12 @@ const accessToken = async () => {
     subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
     token_url: "https://sts.googleapis.com/v1/token",
     service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${settings.serviceAccount}:generateAccessToken`,
-    subject_token_supplier: { getSubjectToken: getVercelOidcToken },
+    // google-auth-library calls a supplier with its own context argument.
+    // Passing getVercelOidcToken directly made that context get interpreted as
+    // Vercel OIDC options, causing Vercel to mint a token for the Google WIF
+    // provider audience rather than its configured team audience. Keep the
+    // supplier zero-argument so we exchange the original Vercel token.
+    subject_token_supplier: { getSubjectToken: () => getVercelOidcToken() },
   });
   const token = await client.getAccessToken();
   if (!token) throw new Error("gcp_access_token_unavailable");
