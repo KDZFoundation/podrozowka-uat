@@ -116,8 +116,32 @@ export const updateDocument = async (documentPath: string, data: Record<string, 
   });
 };
 
+export const setDocument = async (collection: string, id: string, data: Record<string, unknown>) =>
+  firestoreApi(`/${collection}/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, toFirestoreValue(value)])) }),
+  });
+
 export const readDocument = async (collection: string, id: string) =>
   firestoreApi(`/${collection}/${encodeURIComponent(id)}`) as Promise<{ name: string; fields?: Record<string, Record<string, unknown>> }>;
+
+export const queryDocuments = async (collectionId: string, fieldPath: string, value: FirestoreValue, queryLimit = 500) => {
+  const results = await firestoreApi(":runQuery", {
+    method: "POST",
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId }],
+        where: { fieldFilter: { field: { fieldPath }, op: "EQUAL", value } },
+        limit: queryLimit,
+      },
+    }),
+  }) as Array<{ document?: { name: string; fields?: Record<string, Record<string, unknown>> } }>;
+  return results.flatMap((result) => result.document ? [{
+    path: result.document.name.split("/documents/")[1],
+    id: result.document.name.split("/").pop() || "",
+    data: fromFirestoreFields(result.document.fields),
+  }] : []);
+};
 
 export const findOrdersByNumber = async (orderNumber: string) => {
   const query = await firestoreApi(":runQuery", {
