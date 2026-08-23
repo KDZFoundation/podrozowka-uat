@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { findOrderByNumber, updateDocument } from "../_lib/gcp-firestore";
+import { findOrderByNumber, updateDocument } from "../_lib/gcp-firestore.js";
 
 const safeEquals = (left: string, right: string) => left.length === right.length && crypto.timingSafeEqual(Buffer.from(left), Buffer.from(right));
 const sha256 = (value: string) => crypto.createHash("sha256").update(value, "utf8").digest("hex");

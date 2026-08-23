@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
-import { fromFirestoreFields, readDocument, writeDocument } from "../_lib/gcp-firestore";
-import { json, preflight } from "../_lib/http";
+import { fromFirestoreFields, readDocument, writeDocument } from "../_lib/gcp-firestore.js";
+import { json, preflight } from "../_lib/http.js";
 
 type CheckoutItem = { card_design_id?: string; quantity?: number; secondary_language_code?: string };
 
