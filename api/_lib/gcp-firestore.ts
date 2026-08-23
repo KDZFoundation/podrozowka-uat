@@ -74,7 +74,8 @@ const accessToken = async () => {
     // supplier zero-argument so we exchange the original Vercel token.
     subject_token_supplier: { getSubjectToken: () => getVercelOidcToken() },
   });
-  const token = await client.getAccessToken();
+  const accessTokenResponse = await client.getAccessToken();
+  const token = accessTokenResponse.token;
   if (!token) throw new Error("gcp_access_token_unavailable");
   return token;
 };
