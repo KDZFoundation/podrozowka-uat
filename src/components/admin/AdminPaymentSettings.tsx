@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useQueryClient } from "@tanstack/react-query";
+import { backendApiUrl } from "@/lib/backendApi";
 
 type PaymentGateway = "hotpay" | "p24";
 type SecretStatus = { name: string; set: boolean; length: number; preview: string };
@@ -69,7 +70,7 @@ const AdminPaymentSettings = () => {
 
     if (!loadedData) {
       try {
-        const res = await fetch("/api/payments/status");
+        const res = await fetch(backendApiUrl("/api/payments/status"));
         const apiStatus = await res.json().catch(() => null);
         if (apiStatus) {
           loadedData = {
@@ -223,7 +224,7 @@ const AdminPaymentSettings = () => {
         <div className="mt-4 p-3.5 bg-muted/60 rounded-lg border border-border text-xs text-foreground space-y-1">
           <p className="font-semibold text-primary">Adres URL powiadomień IPN (Webhook):</p>
           <code className="block bg-background px-2.5 py-1.5 rounded font-mono text-muted-foreground break-all select-all">
-            {typeof window !== "undefined" ? `${window.location.origin}/api/payments/hotpay-webhook` : "https://[twoja-domena]/api/payments/hotpay-webhook"}
+            {backendApiUrl("/api/payments/hotpay-webhook")}
           </code>
           <p className="text-muted-foreground pt-1">Wklej ten adres w panelu HotPay w ustawieniach usługi w polu <strong>„Adres powiadomień URL / Webhook”</strong>.</p>
         </div>

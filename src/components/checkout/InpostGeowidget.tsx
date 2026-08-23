@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import type { PickupPoint } from "@/contexts/CheckoutContext";
 import { supabase } from "@/integrations/supabase/client";
+import { backendApiUrl } from "@/lib/backendApi";
 
 // Web component type declaration
 declare global {
@@ -122,7 +123,7 @@ const InpostGeowidget = ({ onSelect }: Props) => {
     let cancelled = false;
 
     // Fetch from Node/Express API with fallback
-    fetch("/api/inpost/geowidget-config")
+    fetch(backendApiUrl("/api/inpost/geowidget-config"))
       .then((res) => (res.ok ? res.json() : null))
       .then((apiData: { token?: string | null; environment?: GeowidgetEnvironment } | null) => {
         if (cancelled) return;

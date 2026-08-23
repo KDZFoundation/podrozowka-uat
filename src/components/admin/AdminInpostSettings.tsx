@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { backendApiUrl } from "@/lib/backendApi";
 
 type MaskedValue = { set: boolean; preview: string };
 type InpostSettings = {
@@ -37,13 +38,13 @@ const AdminInpostSettings = () => {
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [form, setForm] = useState({ organizationId: "", apiToken: "", geowidgetToken: "" });
 
-  const webhookUrl = `${window.location.origin}/api/inpost/webhook`;
+  const webhookUrl = backendApiUrl("/api/inpost/webhook");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       // First try Node/Express API
-      const res = await fetch("/api/inpost/settings");
+      const res = await fetch(backendApiUrl("/api/inpost/settings"));
       if (res.ok) {
         const apiData = (await res.json()) as InpostSettings;
         setData(apiData);
