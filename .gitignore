@@ -46,3 +46,6 @@ output/
 # zawierać dane katalogowe, więc nie trafiają automatycznie do repozytorium.
 migration-data/generated/
 migration-data/supabase-*.json
+
+.vercel
+.env*

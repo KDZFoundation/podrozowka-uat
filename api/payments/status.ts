@@ -1,4 +1,4 @@
-import { json, preflight } from "../_lib/http";
+import { json, preflight } from "../_lib/http.js";
 
 export default {
   fetch: (request: Request) => {
