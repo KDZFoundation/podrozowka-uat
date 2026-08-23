@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, ShoppingCart, ArrowLeft, Plus, Minus, Trash2, MapPin, Package } from "lucide-react";
+import { Loader2, ShoppingCart, ArrowLeft, Plus, Minus, Trash2, MapPin, Package, QrCode } from "lucide-react";
 import { toast } from "sonner";
 import InpostGeowidget from "@/components/checkout/InpostGeowidget";
 import OrlenPaczkaWidget from "@/components/checkout/OrlenPaczkaWidget";
@@ -21,10 +21,17 @@ import {
   type CourierAddress,
   emptyCourierAddress,
   isCourierAddressValid,
+  isPickupShippingMethod,
+  pickupProviderForMethod,
+  shippingMethodLabel,
 } from "@/lib/constants";
 import PaymentMethodPicker from "@/components/checkout/PaymentMethodPicker";
 import ShippingMethodPicker from "@/components/checkout/ShippingMethodPicker";
 import CourierAddressForm from "@/components/checkout/CourierAddressForm";
+import PocztexPointForm from "@/components/checkout/PocztexPointForm";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "@/integrations/firebase/config";
 
 interface Order {
   id: string;
@@ -57,6 +64,15 @@ interface OrderItem {
   design_title: string | null;
   country_name: string | null;
   view_no: number | null;
+}
+
+interface OrderInventoryUnit {
+  id: string;
+  card_design_id: string;
+  internal_inventory_code: string;
+  public_claim_code: string;
+  fulfillment_status: string;
+  business_status: string | null;
 }
 
 interface DesignOption {
@@ -115,6 +131,7 @@ const STATUS_LABELS: Record<string, { label: string; className: string }> = {
 };
 
 const PAYMENT_LABELS: Record<string, string> = {
+  pending: "Oczekuje na płatność",
   unpaid: "Nieopłacone",
   paid: "Opłacone",
   refunded: "Zwrócone",
@@ -128,6 +145,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
+  const [orderUnits, setOrderUnits] = useState<OrderInventoryUnit[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
 
   // New order
@@ -138,19 +156,25 @@ const MyOrders = ({ userId }: { userId: string }) => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("online");
-  const [shippingMethod, setShippingMethod] = useState<ShippingMethod>("inpost");
+  const [shippingMethod, setShippingMethod] = useState<ShippingMethod>("inpost_locker");
   const [courierAddress, setCourierAddress] = useState<CourierAddress>(emptyCourierAddress);
 
   const fetchOrders = useCallback(async () => {
     setIsLoading(true);
-    const { data, error } = await supabase
-      .from("orders")
-      .select("id, order_number, status, payment_status, total_amount, currency, created_at")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    if (!error && data) setOrders(data);
-    setIsLoading(false);
+    try {
+      const firestoreOrders = await firestoreService.getOrdersByUser(userId);
+      setOrders(firestoreOrders.map((order) => ({
+        id: order.id,
+        order_number: order.order_number,
+        status: order.status,
+        payment_status: order.payment_status,
+        total_amount: order.total_amount_pln,
+        currency: "PLN",
+        created_at: order.created_at || new Date(0).toISOString(),
+      })));
+    } finally {
+      setIsLoading(false);
+    }
   }, [userId]);
 
   useEffect(() => {
@@ -159,29 +183,50 @@ const MyOrders = ({ userId }: { userId: string }) => {
 
   const fetchOrderDetail = async (orderId: string) => {
     setDetailLoading(true);
-    const [{ data: order }, { data: items }] = await Promise.all([
-      supabase.from("orders").select("*").eq("id", orderId).single(),
-      supabase
-        .from("order_items")
-        .select(`
-          id, quantity, unit_price, total_price, card_design_id,
-          card_designs!inner(title, view_no, countries!inner(name_pl))
-        `)
-        .eq("order_id", orderId),
+    const [order, unitsSnapshot] = await Promise.all([
+      firestoreService.getOrderById(orderId),
+      getDocs(query(collection(db, "inventory_units"), where("traveler_user_id", "==", userId))),
     ]);
-
+    setOrderUnits(unitsSnapshot.docs
+      .map((document) => ({ id: document.id, ...document.data() } as Record<string, unknown> & { id: string }))
+      .filter((unit) => unit.order_id === orderId)
+      .map((unit) => ({
+        id: unit.id,
+        card_design_id: String(unit.card_design_id || ""),
+        internal_inventory_code: String(unit.internal_inventory_code || ""),
+        public_claim_code: String(unit.public_claim_code || ""),
+        fulfillment_status: String(unit.fulfillment_status || ""),
+        business_status: typeof unit.business_status === "string" ? unit.business_status : null,
+      }))
+      .sort((left, right) => left.internal_inventory_code.localeCompare(right.internal_inventory_code)));
     if (order) {
+      const rawOrder = order as unknown as Record<string, unknown>;
+      const address = (order.shipping_address || {}) as Record<string, string | undefined>;
       setSelectedOrder({
-        ...order,
-        items: ((items as unknown as OrderItemJoin[]) || []).map((i: OrderItemJoin) => ({
-          id: i.id,
-          quantity: i.quantity,
-          unit_price: i.unit_price,
-          total_price: i.total_price,
-          card_design_id: i.card_design_id,
-          design_title: i.card_designs?.title || null,
-          country_name: i.card_designs?.countries?.name_pl || null,
-          view_no: i.card_designs?.view_no || null,
+        id: order.id,
+        order_number: order.order_number,
+        status: order.status,
+        payment_status: order.payment_status,
+        total_amount: order.total_amount_pln,
+        currency: "PLN",
+        created_at: order.created_at || new Date(0).toISOString(),
+        shipping_name: address.name || [address.first_name, address.last_name].filter(Boolean).join(" ") || null,
+        shipping_address: address.address || address.street || null,
+        shipping_city: address.city || null,
+        shipping_postal_code: address.postal_code || null,
+        shipping_country: "Polska",
+        notes: null,
+        paid_at: typeof rawOrder.paid_at === "string" ? rawOrder.paid_at : null,
+        fulfilled_at: typeof rawOrder.fulfilled_at === "string" ? rawOrder.fulfilled_at : null,
+        items: order.items.map((item, index) => ({
+          id: `${order.id}-${index}`,
+          quantity: item.quantity,
+          unit_price: item.unit_price_pln,
+          total_price: item.total_price_pln,
+          card_design_id: item.card_design_id,
+          design_title: item.title || null,
+          country_name: null,
+          view_no: null,
         })),
       });
     }
@@ -214,7 +259,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
     setShowNewOrder(true);
     setCart([]);
     setPickupPoint(null);
-    setShippingMethod("inpost");
+    setShippingMethod("inpost_locker");
     setCourierAddress(emptyCourierAddress());
     loadDesigns();
   };
@@ -242,10 +287,22 @@ const MyOrders = ({ userId }: { userId: string }) => {
   const shippingCostGrosze = getShippingCostGrosze(paymentMethod);
   const totalGrosze = subtotalGrosze + shippingCostGrosze;
 
-  const shippingValid =
-    shippingMethod === "inpost" || shippingMethod === "orlen"
-      ? !!pickupPoint && pickupPoint.provider === shippingMethod
-      : isCourierAddressValid(courierAddress);
+  const pickupProvider = pickupProviderForMethod(shippingMethod);
+  const shippingValid = pickupProvider
+    ? Boolean(
+        pickupPoint?.provider === pickupProvider &&
+        pickupPoint.name.trim() &&
+        pickupPoint.address.trim() &&
+        pickupPoint.city.trim() &&
+        (shippingMethod !== "pocztex_point" || pickupPoint.code?.trim()),
+      )
+    : isCourierAddressValid(courierAddress);
+
+  const handleShippingMethodChange = (method: ShippingMethod) => {
+    if (pickupPoint?.provider !== pickupProviderForMethod(method)) setPickupPoint(null);
+    setShippingMethod(method);
+    setDialogOpen(false);
+  };
 
 
 
@@ -256,8 +313,8 @@ const MyOrders = ({ userId }: { userId: string }) => {
     }
     if (!shippingValid) {
       toast.error(
-        shippingMethod === "inpost" || shippingMethod === "orlen"
-          ? `Wybierz ${shippingMethod === "orlen" ? "punkt ORLEN Paczka" : "paczkomat InPost"}`
+        isPickupShippingMethod(shippingMethod)
+          ? `Uzupełnij punkt odbioru dla: ${shippingMethodLabel(shippingMethod)}`
           : "Uzupełnij dane adresowe do kuriera",
       );
       return;
@@ -269,7 +326,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
         items: cart.map((c) => ({ card_design_id: c.design_id, quantity: c.quantity })),
         shipping_method: shippingMethod,
         pickup_point:
-          (shippingMethod === "inpost" || shippingMethod === "orlen") && pickupPoint
+          isPickupShippingMethod(shippingMethod) && pickupPoint
             ? {
                 name: pickupPoint.name,
                 address: pickupPoint.address,
@@ -278,7 +335,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
               }
             : null,
         shipping_address:
-          shippingMethod === "courier"
+          !isPickupShippingMethod(shippingMethod)
             ? {
                 name: courierAddress.name.trim(),
                 street: courierAddress.street.trim(),
@@ -371,7 +428,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
                 <div><span className="text-muted-foreground">Data:</span><p>{formatDate(selectedOrder.created_at)}</p></div>
                 <div><span className="text-muted-foreground">Płatność:</span><p>{PAYMENT_LABELS[selectedOrder.payment_status]}</p></div>
                 <div><span className="text-muted-foreground">Kwota:</span><p className="font-bold">{Number(selectedOrder.total_amount).toFixed(2)} {selectedOrder.currency}</p></div>
-                <div><span className="text-muted-foreground">Pozycji:</span><p>{selectedOrder.items.length}</p></div>
+                <div><span className="text-muted-foreground">Podróżówek:</span><p>{selectedOrder.items.reduce((sum, item) => sum + item.quantity, 0)}</p></div>
               </div>
               {selectedOrder.shipping_name && (
                 <div className="border-t border-border pt-4 text-sm">
@@ -407,7 +464,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
                 <tbody>
                   {selectedOrder.items.map((item) => (
                     <tr key={item.id} className="border-b border-border/50">
-                      <td className="p-3">V{item.view_no} {item.design_title || ""}</td>
+                      <td className="p-3">{item.view_no ? `V${item.view_no} ` : ""}{item.design_title || ""}</td>
                       <td className="p-3">{item.country_name}</td>
                       <td className="p-3 text-right">{item.quantity}</td>
                       <td className="p-3 text-right">{Number(item.unit_price).toFixed(2)} PLN</td>
@@ -416,6 +473,42 @@ const MyOrders = ({ userId }: { userId: string }) => {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="bg-card rounded-xl shadow-soft overflow-hidden">
+              <div className="flex items-center gap-3 border-b border-border p-4">
+                <QrCode className="h-5 w-5 text-primary" />
+                <div>
+                  <h4 className="font-display font-semibold">Kody Podróżówek</h4>
+                  <p className="text-xs text-muted-foreground">Każda fizyczna sztuka ma indywidualny kod i kod QR.</p>
+                </div>
+              </div>
+              {orderUnits.length === 0 ? (
+                <p className="p-5 text-sm text-muted-foreground">Kody QR nie zostały jeszcze wygenerowane.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="p-3 text-left font-medium text-muted-foreground">Lp.</th>
+                        <th className="p-3 text-left font-medium text-muted-foreground">Kod Podróżówki</th>
+                        <th className="p-3 text-left font-medium text-muted-foreground">Claim code / QR</th>
+                        <th className="p-3 text-left font-medium text-muted-foreground">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orderUnits.map((unit, index) => (
+                        <tr key={unit.id} className="border-b border-border/50">
+                          <td className="p-3 text-muted-foreground">{index + 1}</td>
+                          <td className="p-3 font-mono text-xs">{unit.internal_inventory_code}</td>
+                          <td className="p-3 font-mono text-xs">{unit.public_claim_code}</td>
+                          <td className="p-3 text-xs">{unit.fulfillment_status === "qr_generated" ? "QR wygenerowany" : unit.fulfillment_status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -473,7 +566,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
                   <span>Suma częściowa</span><span>{formatPln(subtotalGrosze)}</span>
                 </div>
                 <div className="flex justify-between text-muted-foreground">
-                  <span>Dostawa ({shippingMethod === "courier" ? "kurier" : shippingMethod === "orlen" ? "ORLEN Paczka" : "InPost"}{paymentMethod === "cod" ? ", za pobraniem" : ""})</span>
+                  <span>Dostawa ({shippingMethodLabel(shippingMethod)}{paymentMethod === "cod" ? ", za pobraniem" : ""})</span>
                   <span>{formatPln(shippingCostGrosze)}</span>
                 </div>
                 <div className="flex justify-between font-display font-bold text-base pt-1">
@@ -499,13 +592,15 @@ const MyOrders = ({ userId }: { userId: string }) => {
             </div>
             <div>
               <h3 className="font-medium">Metoda dostawy</h3>
-              <p className="text-sm text-muted-foreground">Punkt InPost, ORLEN Paczka lub kurier pod wskazany adres.</p>
+              <p className="text-sm text-muted-foreground">Wybierz jedną z dostępnych metod.</p>
             </div>
           </div>
 
-          <ShippingMethodPicker value={shippingMethod} onChange={setShippingMethod} />
+          <ShippingMethodPicker value={shippingMethod} onChange={handleShippingMethodChange} />
 
-          {shippingMethod === "inpost" || shippingMethod === "orlen" ? (
+          {shippingMethod === "pocztex_point" ? (
+            <PocztexPointForm value={pickupPoint} onChange={setPickupPoint} />
+          ) : shippingMethod === "inpost_locker" || shippingMethod === "orlen_paczka" ? (
             pickupPoint ? (
               <div className="border border-border rounded-xl p-4 flex items-start gap-3">
                 <MapPin className="w-5 h-5 text-primary shrink-0 mt-0.5" />
@@ -518,7 +613,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
               </div>
             ) : (
               <Button variant="outline" onClick={() => setDialogOpen(true)}>
-                <MapPin className="w-4 h-4 mr-2" /> {shippingMethod === "orlen" ? "Wybierz punkt ORLEN Paczka" : "Wybierz paczkomat"}
+                <MapPin className="w-4 h-4 mr-2" /> {shippingMethod === "orlen_paczka" ? "Wybierz punkt ORLEN Paczka" : "Wybierz Paczkomat InPost"}
               </Button>
             )
           ) : (
@@ -543,9 +638,9 @@ const MyOrders = ({ userId }: { userId: string }) => {
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogContent className="max-w-4xl w-[95vw] p-4 sm:p-6">
             <DialogHeader>
-              <DialogTitle>{shippingMethod === "orlen" ? "Wybierz punkt ORLEN Paczka" : "Wybierz paczkomat InPost"}</DialogTitle>
+              <DialogTitle>{shippingMethod === "orlen_paczka" ? "Wybierz punkt ORLEN Paczka" : "Wybierz Paczkomat InPost"}</DialogTitle>
             </DialogHeader>
-            {shippingMethod === "orlen" ? <OrlenPaczkaWidget onSelect={(p) => {
+            {shippingMethod === "orlen_paczka" ? <OrlenPaczkaWidget onSelect={(p) => {
               setPickupPoint(p); setDialogOpen(false); toast.success("Wybrano punkt ORLEN Paczka", { description: p.name });
             }} /> : <InpostGeowidget
               onSelect={(p) => {

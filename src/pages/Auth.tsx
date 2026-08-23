@@ -17,6 +17,11 @@ const passwordSchema = z.string().min(8, "Hasło musi mieć minimum 8 znaków");
 const firstNameSchema = z.string().min(1, "Podaj imię").max(50);
 const lastNameSchema = z.string().min(1, "Podaj nazwisko").max(50);
 
+// Firebase is the authentication provider for this local/UAT application.
+// Keep the old Supabase OAuth route opt-in only; otherwise a Firebase popup
+// error would silently redirect to Supabase and produce redirect_uri_mismatch.
+const allowSupabaseOAuthFallback = import.meta.env.VITE_USE_SUPABASE_AUTH_FALLBACK === "true";
+
 interface AuthProps {
   mode?: "login" | "signup" | "forgot";
 }
@@ -149,7 +154,9 @@ const Auth = ({ mode = "login" }: AuthProps) => {
           return;
         }
 
-        // Try Supabase OAuth fallback
+        if (!allowSupabaseOAuthFallback) throw popupErr;
+
+        // Legacy Supabase OAuth fallback (explicitly opt-in for old environments).
         const redirectTo = `${window.location.origin}${redirect ?? "/dashboard"}`;
         const { data, error: supaErr } = await supabase.auth.signInWithOAuth({
           provider: 'google',

@@ -21,6 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import AdminPaymentSettings from "@/components/admin/AdminPaymentSettings";
 import AdminInpostSettings from "@/components/admin/AdminInpostSettings";
 import AdminOrlenSettings from "@/components/admin/AdminOrlenSettings";
+import { backendApiUrl } from "@/lib/backendApi";
 
 interface IntegrationSecretStatus {
   name: string;
@@ -40,8 +41,9 @@ const AdminIntegrations = () => {
 
   const loadSecretsStatus = useCallback(async () => {
     setLoadingSecrets(true);
-    // Fetch payment settings from edge function if available
-    const { data: p24Data } = await supabase.functions.invoke("admin-payment-status", { method: "GET" }).catch(() => ({ data: null }));
+    const paymentData = await fetch(backendApiUrl("/api/payments/status"))
+      .then((response) => response.ok ? response.json() : null)
+      .catch(() => null);
 
     const inpostGeoToken = Boolean(import.meta.env.VITE_INPOST_GEOWIDGET_TOKEN);
 
@@ -51,43 +53,13 @@ const AdminIntegrations = () => {
         name: "HOTPAY_SECRET",
         label: "HotPay sekret usługi",
         category: "payments",
-        set: p24Data?.hotpay?.secrets?.find((s: { name: string; set: boolean }) => s.name === "HOTPAY_SECRET")?.set ?? false,
+        set: paymentData?.hotpay?.secrets?.find((s: { name: string; set: boolean }) => s.name === "HOTPAY_SECRET")?.set ?? false,
       },
       {
         name: "HOTPAY_NOTIFICATION_PASSWORD",
         label: "HotPay hasło notyfikacji",
         category: "payments",
-        set: p24Data?.hotpay?.secrets?.find((s: { name: string; set: boolean }) => s.name === "HOTPAY_NOTIFICATION_PASSWORD")?.set ?? false,
-      },
-      {
-        name: "P24_MERCHANT_ID",
-        label: "Przelewy24 Merchant ID",
-        category: "payments",
-        set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_MERCHANT_ID")?.set ?? false,
-      },
-      {
-        name: "P24_POS_ID",
-        label: "Przelewy24 POS ID",
-        category: "payments",
-        set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_POS_ID")?.set ?? false,
-      },
-      {
-        name: "P24_API_KEY",
-        label: "Przelewy24 Klucz API",
-        category: "payments",
-        set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_API_KEY")?.set ?? false,
-      },
-      {
-        name: "P24_CRC_KEY",
-        label: "Przelewy24 Klucz CRC",
-        category: "payments",
-        set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_CRC_KEY")?.set ?? false,
-      },
-      {
-        name: "P24_REPORT_KEY",
-        label: "Przelewy24 Klucz raportów",
-        category: "payments",
-        set: p24Data?.secrets?.find((s: { name: string; set: boolean }) => s.name === "P24_REPORT_KEY")?.set ?? false,
+        set: paymentData?.hotpay?.secrets?.find((s: { name: string; set: boolean }) => s.name === "HOTPAY_NOTIFICATION_PASSWORD")?.set ?? false,
       },
       {
         name: "VITE_INPOST_GEOWIDGET_TOKEN",
@@ -178,7 +150,7 @@ const AdminIntegrations = () => {
               Integracje Płatności i Dostaw
             </h2>
             <p className="text-sm text-muted-foreground">
-              Zarządzanie usługami płatności (HotPay, Przelewy24, COD) oraz dostawcami kurierskimi (InPost, ORLEN Paczka, Pocztex).
+              Zarządzanie płatnością HotPay oraz dostawcami kurierskimi (InPost, ORLEN Paczka, Pocztex).
             </p>
           </div>
         </div>
@@ -251,7 +223,7 @@ const AdminIntegrations = () => {
                 </div>
                 <div>
                   <h3 className="font-display text-lg font-semibold text-foreground flex items-center gap-2">
-                    Bramka płatności HotPay, Przelewy24 & COD
+                    Bramka płatności HotPay i COD
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     Obsługa płatności online (BLIK, przelewy, karty) oraz płatności przy odbiorze.

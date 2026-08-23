@@ -129,6 +129,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const effectiveRole: AppRole = isEmailAdmin ? 'admin' : 'traveler';
     const devPassword = "DevAdminPassword123!";
 
+    const currentFirebaseUser = auth.currentUser;
+    if (currentFirebaseUser?.email?.trim().toLowerCase() === cleanEmail) {
+      const firebaseAppUser = toAppUser(currentFirebaseUser);
+      setUser(firebaseAppUser);
+      setSession(null);
+      setRole(effectiveRole);
+      setIsDbAdmin(isEmailAdmin);
+      localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: firebaseAppUser, role: effectiveRole }));
+      setIsLoading(false);
+      setRoleLoading(false);
+      return firebaseAppUser;
+    }
+
     if (isUsingFirebaseEmulators) {
       try {
         const credential = await signInWithEmailAndPassword(auth, cleanEmail, devPassword);
@@ -212,11 +225,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    if (!isUsingFirebaseEmulators) return;
     let isMounted = true;
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (!isMounted) return;
       if (!firebaseUser) {
+        if (!isUsingFirebaseEmulators) return;
         setUser(null);
         setSession(null);
         setRole(null);
@@ -235,9 +248,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setRoleLoading(false);
     });
 
-    void signInWithEmailAndPassword(auth, "fundacja@d-arka.org", "DevAdminPassword123!").catch(() => {
-      setIsLoading(false);
-    });
+    if (isUsingFirebaseEmulators) {
+      void signInWithEmailAndPassword(auth, "fundacja@d-arka.org", "DevAdminPassword123!").catch(() => {
+        setIsLoading(false);
+      });
+    }
     return () => {
       isMounted = false;
       unsubscribe();
@@ -250,6 +265,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
+        if (auth.currentUser) return;
         if (event === 'SIGNED_OUT') {
           // Explicit user sign out
           localStorage.removeItem(DEV_AUTH_STORAGE_KEY);
@@ -290,6 +306,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     );
 
     const initializeSession = async () => {
+      await auth.authStateReady();
+      if (auth.currentUser) {
+        const firebaseUser = auth.currentUser;
+        const firebaseAppUser = toAppUser(firebaseUser);
+        const isEmailAdmin = ADMIN_EMAILS.includes((firebaseUser.email || "").toLowerCase());
+        setUser(firebaseAppUser);
+        setSession(null);
+        setRole(isEmailAdmin ? "admin" : "traveler");
+        setIsDbAdmin(isEmailAdmin);
+        localStorage.setItem(DEV_AUTH_STORAGE_KEY, JSON.stringify({ user: firebaseAppUser, role: isEmailAdmin ? "admin" : "traveler" }));
+        setIsLoading(false);
+        setRoleLoading(false);
+        return;
+      }
       let resolvedSession: Session | null = null;
       try {
         const current = await supabase.auth.getSession();
@@ -329,8 +359,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = useCallback(async () => {
     localStorage.removeItem(DEV_AUTH_STORAGE_KEY);
-    if (isUsingFirebaseEmulators) {
+    if (auth.currentUser) {
       await firebaseSignOut(auth);
+    }
+    if (isUsingFirebaseEmulators) {
       setUser(null);
       setSession(null);
       setRole(null);

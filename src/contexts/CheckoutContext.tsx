@@ -1,10 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
+import type { PickupProvider } from "@/lib/constants";
 
 export interface PickupPoint {
   name: string;
   address: string;
   city: string;
-  provider?: "inpost" | "orlen";
+  provider?: PickupProvider;
   code?: string;
 }
 

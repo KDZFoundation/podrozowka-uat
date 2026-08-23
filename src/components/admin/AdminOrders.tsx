@@ -320,72 +320,35 @@ const AdminOrders = () => {
 
   const handleDeleteOrder = async (orderId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (!confirm("Usunąć zamówienie i wszystkie jego niewykorzystane jednostki POD? Zamówienia w produkcji, wysłane lub zarejestrowane nie mogą zostać usunięte.")) return;
+    if (!confirm("Usunąć zamówienie? Jeżeli istnieją zdublowane wpisy o tym samym numerze, również zostaną usunięte.")) return;
 
-    const { data, error } = await supabase.rpc("delete_order_with_inventory_cleanup", {
-      _order_id: orderId,
-    });
-
-    if (error) {
-      const description = error.message.includes("order_already_in_production_batch")
-        ? "Zamówienie znajduje się już w paczce produkcyjnej. Zamiast usuwać, zakończ lub zarchiwizuj jego obsługę."
-        : error.message.includes("order_has_protected_inventory_units")
-          ? "Zamówienie zawiera jednostki wysłane lub zarejestrowane i stanowi część historii platformy."
-          : error.message;
-      toast({ title: "Nie można usunąć zamówienia", description, variant: "destructive" });
-    } else {
-      const result = data as { deleted_units?: number } | null;
+    const target = orders.find((order) => order.id === orderId);
+    if (!target) return;
+    try {
+      const deletedOrders = await firestoreService.deleteOrdersByNumber(target.order_number);
       toast({
         title: "Zamówienie zostało usunięte",
-        description: `Usunięto również ${result?.deleted_units || 0} niewykorzystanych jednostek POD.`,
+        description: deletedOrders > 1 ? `Usunięto ${deletedOrders} zdublowane wpisy tego zamówienia.` : undefined,
       });
       if (selectedOrder?.id === orderId) {
         setSelectedOrder(null);
       }
       fetchOrders();
+    } catch (error) {
+      toast({ title: "Nie można usunąć zamówienia", description: getErrorMessage(error), variant: "destructive" });
     }
   };
 
   const fetchOrders = useCallback(async () => {
     setIsLoading(true);
     try {
-      let query = supabase
-        .from("orders")
-        .select("id, order_number, user_id, status, payment_status, total_amount, currency, customer_email, shipping_name, shipping_city, created_at")
-        .order("created_at", { ascending: false })
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-
-      if (statusFilter !== "all") query = query.eq("status", statusFilter as Database["public"]["Enums"]["order_status"]);
-      if (paymentFilter !== "all") query = query.eq("payment_status", paymentFilter as Database["public"]["Enums"]["payment_status"]);
-
-      const { data, error } = await query;
-      if (!error && data) {
-        // Fetch display names for users safely
-        const userIds = [...new Set(data.map((o) => o.user_id))].filter((id): id is string => Boolean(id));
-        let profiles: { user_id: string; display_name: string | null }[] | null = null;
-        if (userIds.length > 0) {
-          const { data: profData } = await supabase
-            .from("profiles")
-            .select("user_id, display_name")
-            .in("user_id", userIds);
-          profiles = profData;
-        }
-
-        const nameMap = new Map(profiles?.map((p) => [p.user_id, p.display_name]) || []);
-
-        setOrders(
-          data.map((o) => ({
-            ...o,
-            payment_method: "online",
-            display_name: o.user_id ? nameMap.get(o.user_id) || null : null,
-          }))
-        );
-      } else {
-        // Fallback to Firestore orders
-        const firestoreOrders = await firestoreService.getAllOrders();
-        if (firestoreOrders && firestoreOrders.length > 0) {
-          setOrders(
-            firestoreOrders.map((fo) => ({
+      const firestoreOrders = await firestoreService.getAllOrders();
+      const filtered = firestoreOrders.filter((order) =>
+        (statusFilter === "all" || order.status === statusFilter) &&
+        (paymentFilter === "all" || order.payment_status === paymentFilter),
+      );
+      setOrders(
+        filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map((fo) => ({
               id: fo.id,
               order_number: fo.order_number || fo.id.slice(0, 8).toUpperCase(),
               user_id: fo.user_id || "",
@@ -399,12 +362,8 @@ const AdminOrders = () => {
               shipping_city: null,
               created_at: typeof fo.created_at === "string" ? fo.created_at : new Date().toISOString(),
               display_name: fo.guest_email || null,
-            }))
-          );
-        } else {
-          setOrders([]);
-        }
-      }
+        })),
+      );
     } catch (err) {
       console.warn("fetchOrders handled error:", err);
       setOrders([]);
@@ -419,26 +378,38 @@ const AdminOrders = () => {
 
   const fetchDetail = async (orderId: string) => {
     setDetailLoading(true);
-    const [{ data: order }, { data: items }] = await Promise.all([
-      supabase.from("orders").select("*").eq("id", orderId).single(),
-      supabase
-        .from("order_items")
-        .select("id, quantity, unit_price, total_price, card_design_id, card_designs!inner(title, view_no, countries!inner(name_pl))")
-        .eq("order_id", orderId),
-    ]);
-
+    const order = await firestoreService.getOrderById(orderId);
     if (order) {
-      const typedItems = (items || []) as unknown as AdminOrderItemJoin[];
+      const rawOrder = order as unknown as Record<string, unknown>;
+      const address = (order.shipping_address || {}) as Record<string, string | undefined>;
       setSelectedOrder({
-        ...order,
-        items: typedItems.map((i: AdminOrderItemJoin) => ({
-          id: i.id,
-          quantity: i.quantity,
-          unit_price: i.unit_price,
-          total_price: i.total_price,
-          design_title: i.card_designs?.title || null,
-          country_name: i.card_designs?.countries?.name_pl || null,
-          view_no: i.card_designs?.view_no || null,
+        id: order.id,
+        order_number: order.order_number,
+        user_id: order.user_id || "",
+        status: order.status,
+        payment_status: order.payment_status,
+        payment_method: order.payment_method,
+        total_amount: order.total_amount_pln,
+        currency: "PLN",
+        customer_email: order.guest_email || null,
+        shipping_name: address.name || [address.first_name, address.last_name].filter(Boolean).join(" ") || null,
+        shipping_address: address.address || address.street || null,
+        shipping_city: address.city || null,
+        shipping_postal_code: address.postal_code || null,
+        shipping_country: "Polska",
+        notes: null,
+        paid_at: typeof rawOrder.paid_at === "string" ? rawOrder.paid_at : null,
+        fulfilled_at: typeof rawOrder.fulfilled_at === "string" ? rawOrder.fulfilled_at : null,
+        cancelled_at: typeof rawOrder.cancelled_at === "string" ? rawOrder.cancelled_at : null,
+        created_at: order.created_at || new Date(0).toISOString(),
+        items: order.items.map((item, index) => ({
+          id: `${order.id}-${index}`,
+          quantity: item.quantity,
+          unit_price: item.unit_price_pln,
+          total_price: item.total_price_pln,
+          design_title: item.title || null,
+          country_name: null,
+          view_no: null,
         })),
       });
       fetchReservedUnits(orderId);
@@ -447,38 +418,32 @@ const AdminOrders = () => {
   };
 
   const updateOrderStatus = async (orderId: string, status: string) => {
-    const updates: Partial<Database["public"]["Tables"]["orders"]["Update"]> = {
-      status: status as Database["public"]["Enums"]["order_status"],
-    };
+    const updates: Record<string, unknown> = { status };
     if (status === "fulfilled") updates.fulfilled_at = new Date().toISOString();
     if (status === "cancelled") updates.cancelled_at = new Date().toISOString();
-
-    const { error } = await supabase.from("orders").update(updates).eq("id", orderId);
-    if (error) {
-      toast({ title: "Błąd aktualizacji", description: error.message, variant: "destructive" });
-    } else {
+    try {
+      await firestoreService.updateOrder(orderId, updates);
       toast({ title: `Status zmieniony na: ${STATUS_LABELS[status]?.label || status}` });
       if (selectedOrder) fetchDetail(orderId);
       fetchOrders();
+    } catch (error) {
+      toast({ title: "Błąd aktualizacji", description: getErrorMessage(error), variant: "destructive" });
     }
   };
 
   const updatePaymentStatus = async (orderId: string, paymentStatus: string) => {
-    const updates: Partial<Database["public"]["Tables"]["orders"]["Update"]> = {
-      payment_status: paymentStatus as Database["public"]["Enums"]["payment_status"],
-    };
+    const updates: Record<string, unknown> = { payment_status: paymentStatus };
     if (paymentStatus === "paid") {
       updates.paid_at = new Date().toISOString();
-      updates.status = "paid" as Database["public"]["Enums"]["order_status"];
+      updates.status = "paid";
     }
-
-    const { error } = await supabase.from("orders").update(updates).eq("id", orderId);
-    if (error) {
-      toast({ title: "Błąd aktualizacji", description: error.message, variant: "destructive" });
-    } else {
+    try {
+      await firestoreService.updateOrder(orderId, updates);
       toast({ title: `Płatność: ${PAYMENT_LABELS[paymentStatus]}` });
       if (selectedOrder) fetchDetail(orderId);
       fetchOrders();
+    } catch (error) {
+      toast({ title: "Błąd aktualizacji", description: getErrorMessage(error), variant: "destructive" });
     }
   };
 

@@ -29,6 +29,7 @@ const CheckoutConfirmation = () => {
   const { user, isLoading: authLoading } = useAuth();
   const [params] = useSearchParams();
   const orderNumber = params.get("order");
+  const orderId = params.get("order_id");
   const isCod = params.get("cod") === "1";
   const { clear: clearCart } = useCart();
   const { clearPickupPoint } = useCheckout();
@@ -53,36 +54,19 @@ const CheckoutConfirmation = () => {
         let data: { id: string; order_number: string; total_amount: number } | null = null;
 
         try {
-          const { data: sbData } = await supabase
-            .from("orders")
-            .select("id, order_number, total_amount")
-            .eq("order_number", orderNumber)
-            .maybeSingle();
-          if (sbData) {
+          const { firestoreService } = await import("@/integrations/firebase/services/firestoreService");
+          const fsOrder = orderId
+            ? await firestoreService.getOrderById(orderId)
+            : await firestoreService.getOrderByNumber(orderNumber);
+          if (fsOrder) {
             data = {
-              id: sbData.id,
-              order_number: sbData.order_number,
-              total_amount: Number(sbData.total_amount),
+              id: fsOrder.id,
+              order_number: fsOrder.order_number,
+              total_amount: Number(fsOrder.total_amount_pln),
             };
           }
         } catch (_) {
           // ignore
-        }
-
-        if (!data) {
-          try {
-            const { firestoreService } = await import("@/integrations/firebase/services/firestoreService");
-            const fsOrder = await firestoreService.getOrderByNumber(orderNumber);
-            if (fsOrder) {
-              data = {
-                id: fsOrder.id,
-                order_number: fsOrder.order_number,
-                total_amount: Number(fsOrder.total_amount_pln),
-              };
-            }
-          } catch (_) {
-            // ignore
-          }
         }
 
         if (cancelled) return;
@@ -120,38 +104,20 @@ const CheckoutConfirmation = () => {
       } | null = null;
 
       try {
-        const { data: sbData } = await supabase
-          .from("orders")
-          .select("id, order_number, total_amount, payment_status")
-          .eq("order_number", orderNumber)
-          .maybeSingle();
-        if (sbData) {
+        const { firestoreService } = await import("@/integrations/firebase/services/firestoreService");
+        const fsOrder = orderId
+          ? await firestoreService.getOrderById(orderId)
+          : await firestoreService.getOrderByNumber(orderNumber);
+        if (fsOrder) {
           orderFound = {
-            id: sbData.id,
-            order_number: sbData.order_number,
-            total_amount: Number(sbData.total_amount),
-            payment_status: sbData.payment_status || "pending",
+            id: fsOrder.id,
+            order_number: fsOrder.order_number,
+            total_amount: Number(fsOrder.total_amount_pln),
+            payment_status: fsOrder.payment_status || "pending",
           };
         }
       } catch (_) {
         // ignore
-      }
-
-      if (!orderFound) {
-        try {
-          const { firestoreService } = await import("@/integrations/firebase/services/firestoreService");
-          const fsOrder = await firestoreService.getOrderByNumber(orderNumber);
-          if (fsOrder) {
-            orderFound = {
-              id: fsOrder.id,
-              order_number: fsOrder.order_number,
-              total_amount: Number(fsOrder.total_amount_pln),
-              payment_status: fsOrder.payment_status || "pending",
-            };
-          }
-        } catch (_) {
-          // ignore
-        }
       }
 
       if (cancelled) return;
@@ -192,7 +158,7 @@ const CheckoutConfirmation = () => {
     return () => {
       cancelled = true;
     };
-  }, [user, orderNumber, clearCart, clearPickupPoint, isCod]);
+  }, [user, orderNumber, orderId, clearCart, clearPickupPoint, isCod]);
 
   if (authLoading) {
     return (
@@ -202,7 +168,10 @@ const CheckoutConfirmation = () => {
     );
   }
   if (!user) {
-    const back = `/checkout/potwierdzenie${orderNumber ? `?order=${encodeURIComponent(orderNumber)}` : ""}`;
+    const backParams = new URLSearchParams();
+    if (orderNumber) backParams.set("order", orderNumber);
+    if (orderId) backParams.set("order_id", orderId);
+    const back = `/checkout/potwierdzenie${backParams.size ? `?${backParams.toString()}` : ""}`;
     return <Navigate to={`/logowanie?redirect=${encodeURIComponent(back)}`} replace />;
   }
   if (!orderNumber) return <Navigate to="/sklep" replace />;

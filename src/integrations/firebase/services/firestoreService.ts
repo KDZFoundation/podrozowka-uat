@@ -11,6 +11,7 @@ import {
   orderBy,
   limit,
   serverTimestamp,
+  writeBatch,
 } from "firebase/firestore";
 import { db, isFirebaseConfigured } from "../config";
 import type {
@@ -45,6 +46,57 @@ function normalizeCardDesign(id: string, raw: Record<string, unknown>): Firestor
     is_active: active,
   } as FirestoreCardDesign;
 }
+
+const numericValue = (value: unknown, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const createdAtValue = (value: unknown): string => {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") {
+    return value.toDate().toISOString();
+  }
+  return new Date(0).toISOString();
+};
+
+export const normalizeOrder = (id: string, raw: Record<string, unknown>): FirestoreOrder => ({
+  ...raw,
+  id,
+  order_number: typeof raw.order_number === "string" ? raw.order_number : id,
+  user_id: typeof raw.user_id === "string" ? raw.user_id : "",
+  guest_email: typeof raw.guest_email === "string"
+    ? raw.guest_email
+    : typeof raw.customer_email === "string" ? raw.customer_email : "",
+  status: (typeof raw.status === "string" ? raw.status : "new") as FirestoreOrder["status"],
+  payment_method: (typeof raw.payment_method === "string" ? raw.payment_method : "hotpay") as FirestoreOrder["payment_method"],
+  payment_status: (typeof raw.payment_status === "string" ? raw.payment_status : "pending") as FirestoreOrder["payment_status"],
+  total_amount_pln: numericValue(raw.total_amount_pln, numericValue(raw.total_amount, numericValue(raw.total_amount_grosze) / 100)),
+  shipping_cost_pln: numericValue(raw.shipping_cost_pln, numericValue(raw.shipping_cost_grosze) / 100),
+  items: Array.isArray(raw.items) ? raw.items.map((item) => {
+    const value = item as Record<string, unknown>;
+    return {
+      ...value,
+      card_design_id: String(value.card_design_id || ""),
+      title: String(value.title || "Podróżówka"),
+      quantity: numericValue(value.quantity),
+      unit_price_pln: numericValue(value.unit_price_pln, numericValue(value.unit_price_grosze) / 100),
+      total_price_pln: numericValue(value.total_price_pln, numericValue(value.total_price_grosze) / 100),
+    };
+  }) : [],
+  created_at: createdAtValue(raw.created_at),
+} as FirestoreOrder);
+
+export const uniqueOrders = (orders: FirestoreOrder[]) => {
+  const byNumber = new Map<string, FirestoreOrder>();
+  for (const order of orders) {
+    const existing = byNumber.get(order.order_number);
+    if (!existing || (order.payment_status === "paid" && existing.payment_status !== "paid")) {
+      byNumber.set(order.order_number, order);
+    }
+  }
+  return [...byNumber.values()].sort((left, right) => right.created_at!.localeCompare(left.created_at!));
+};
 
 export const firestoreService = {
   // --- Katalog i Kraje ---
@@ -160,10 +212,8 @@ export const firestoreService = {
   async getOrdersByUser(userId: string): Promise<FirestoreOrder[]> {
     if (!isFirebaseConfigured) return [];
     try {
-      const snap = await getDocs(
-        query(collection(db, "orders"), where("user_id", "==", userId), orderBy("created_at", "desc"))
-      );
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreOrder));
+      const snap = await getDocs(query(collection(db, "orders"), where("user_id", "==", userId)));
+      return uniqueOrders(snap.docs.map((d) => normalizeOrder(d.id, d.data())));
     } catch (e) {
       console.warn("Firestore getOrdersByUser error:", e);
       return [];
@@ -173,10 +223,8 @@ export const firestoreService = {
   async getAllOrders(): Promise<FirestoreOrder[]> {
     if (!isFirebaseConfigured) return [];
     try {
-      const snap = await getDocs(
-        query(collection(db, "orders"), orderBy("created_at", "desc"), limit(100))
-      );
-      return snap.docs.map((d) => ({ id: d.id, ...d.data() } as FirestoreOrder));
+      const snap = await getDocs(collection(db, "orders"));
+      return uniqueOrders(snap.docs.map((d) => normalizeOrder(d.id, d.data()))).slice(0, 100);
     } catch (e) {
       console.warn("Firestore getAllOrders error:", e);
       return [];
@@ -186,15 +234,33 @@ export const firestoreService = {
   async getOrderByNumber(orderNumber: string): Promise<FirestoreOrder | null> {
     if (!isFirebaseConfigured) return null;
     try {
-      const snap = await getDocs(
-        query(collection(db, "orders"), where("order_number", "==", orderNumber), limit(1))
-      );
+      const snap = await getDocs(query(collection(db, "orders"), where("order_number", "==", orderNumber)));
       if (snap.empty) return null;
-      return { id: snap.docs[0].id, ...snap.docs[0].data() } as FirestoreOrder;
+      return uniqueOrders(snap.docs.map((d) => normalizeOrder(d.id, d.data())))[0] || null;
     } catch (e) {
       console.warn("Firestore getOrderByNumber error:", e);
       return null;
     }
+  },
+
+  async getOrderById(id: string): Promise<FirestoreOrder | null> {
+    if (!isFirebaseConfigured) return null;
+    const snapshot = await getDoc(doc(db, "orders", id));
+    return snapshot.exists() ? normalizeOrder(snapshot.id, snapshot.data()) : null;
+  },
+
+  async updateOrder(id: string, data: Record<string, unknown>): Promise<void> {
+    if (!isFirebaseConfigured) return;
+    await updateDoc(doc(db, "orders", id), { ...data, updated_at: new Date().toISOString() });
+  },
+
+  async deleteOrdersByNumber(orderNumber: string): Promise<number> {
+    if (!isFirebaseConfigured) return 0;
+    const snapshot = await getDocs(query(collection(db, "orders"), where("order_number", "==", orderNumber)));
+    const batch = writeBatch(db);
+    snapshot.docs.forEach((orderDocument) => batch.delete(orderDocument.ref));
+    await batch.commit();
+    return snapshot.size;
   },
 
   // --- Rejestracja obdarowanych ---

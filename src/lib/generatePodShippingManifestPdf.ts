@@ -1,4 +1,5 @@
 import { jsPDF } from "jspdf";
+import { shippingMethodLabel } from "@/lib/constants";
 
 export interface PodBatchShippingRow {
   order_number: string;
@@ -21,12 +22,6 @@ export interface PodManifestPdfResult {
   fileName: string;
   downloadUrl: string;
 }
-
-const shippingMethodLabel = (method: string) => ({
-  inpost: "InPost",
-  orlen: "ORLEN Paczka",
-  courier: "Kurier",
-}[method] ?? method);
 
 export const generatePodShippingManifestPdf = (
   batchNumber: string,
@@ -70,7 +65,7 @@ export const generatePodShippingManifestPdf = (
   y += 7;
 
   rows.forEach((row, index) => {
-    const isPickup = row.shipping_method === "inpost" || row.shipping_method === "orlen";
+    const isPickup = ["inpost", "orlen", "pocztex", "inpost_locker", "orlen_paczka", "pocztex_point"].includes(row.shipping_method);
     const addressLines = isPickup
       ? [row.pickup_point_code, row.pickup_point_name, row.pickup_point_address, row.pickup_point_city].filter(Boolean) as string[]
       : [row.recipient_name, row.recipient_street, [row.recipient_postal_code, row.recipient_city].filter(Boolean).join(" "), row.recipient_email].filter(Boolean) as string[];
