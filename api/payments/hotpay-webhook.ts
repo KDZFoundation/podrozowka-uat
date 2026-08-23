@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { findOrdersByNumber, updateDocument } from "../_lib/gcp-firestore.js";
+import { preparePaidOrderPod } from "../_lib/pod-order.js";
 
 const safeEquals = (left: string, right: string) => left.length === right.length && crypto.timingSafeEqual(Buffer.from(left), Buffer.from(right));
 const sha256 = (value: string) => crypto.createHash("sha256").update(value, "utf8").digest("hex");
@@ -51,6 +52,7 @@ export default {
           paid_at: paidAt,
           updated_at: paidAt,
         })));
+        await preparePaidOrderPod(documentPaths[0], orderNumber);
       }
       return new Response("OK", { status: 200 });
     } catch {

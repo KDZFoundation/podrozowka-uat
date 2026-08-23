@@ -38,6 +38,7 @@ export default {
           unit_price_pln: priceGrosze / 100,
           total_price_pln: (priceGrosze * quantity) / 100,
           language_code: String(data.language_code || "pl"),
+          product_code: String(data.product_code || ""),
           secondary_language_code: item.secondary_language_code || null,
         };
       }));
