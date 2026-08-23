@@ -25,6 +25,9 @@ const config = () => ({
   databaseId: process.env.FIRESTORE_DATABASE_ID || "ai-studio-podrozowkauat-e1d9b39b-c759-477c-98ea-34396a1afd2f",
 });
 
+export const firestoreDocumentsUrl = (projectId: string, databaseId: string, path: string) =>
+  `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents${path}`;
+
 export const toFirestoreValue = (value: unknown): FirestoreValue => {
   if (value === null || value === undefined) return { nullValue: null };
   if (typeof value === "string") return { stringValue: value };
@@ -84,7 +87,7 @@ export const firestoreApi = async (path: string, init: RequestInit = {}) => {
   const settings = config();
   const token = await accessToken();
   const response = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${settings.projectId}/databases/${settings.databaseId}/documents${path}`,
+    firestoreDocumentsUrl(settings.projectId, settings.databaseId, path),
     {
       ...init,
       headers: {
@@ -100,21 +103,21 @@ export const firestoreApi = async (path: string, init: RequestInit = {}) => {
 };
 
 export const writeDocument = async (collection: string, id: string, data: Record<string, unknown>) =>
-  firestoreApi(`/documents/${collection}?documentId=${encodeURIComponent(id)}`, {
+  firestoreApi(`/${collection}?documentId=${encodeURIComponent(id)}`, {
     method: "POST",
     body: JSON.stringify({ fields: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, toFirestoreValue(value)])) }),
   });
 
 export const updateDocument = async (documentPath: string, data: Record<string, unknown>) => {
   const masks = Object.keys(data).map((key) => `updateMask.fieldPaths=${encodeURIComponent(key)}`).join("&");
-  return firestoreApi(`/documents/${documentPath}?${masks}`, {
+  return firestoreApi(`/${documentPath}?${masks}`, {
     method: "PATCH",
     body: JSON.stringify({ fields: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, toFirestoreValue(value)])) }),
   });
 };
 
 export const readDocument = async (collection: string, id: string) =>
-  firestoreApi(`/documents/${collection}/${encodeURIComponent(id)}`) as Promise<{ name: string; fields?: Record<string, Record<string, unknown>> }>;
+  firestoreApi(`/${collection}/${encodeURIComponent(id)}`) as Promise<{ name: string; fields?: Record<string, Record<string, unknown>> }>;
 
 export const findOrderByNumber = async (orderNumber: string) => {
   const query = await firestoreApi(":runQuery", {
