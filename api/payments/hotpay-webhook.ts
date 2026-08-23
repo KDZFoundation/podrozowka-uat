@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { findOrderByNumber, updateDocument } from "../_lib/gcp-firestore.js";
+import { findOrdersByNumber, updateDocument } from "../_lib/gcp-firestore.js";
 
 const safeEquals = (left: string, right: string) => left.length === right.length && crypto.timingSafeEqual(Buffer.from(left), Buffer.from(right));
 const sha256 = (value: string) => crypto.createHash("sha256").update(value, "utf8").digest("hex");
@@ -41,9 +41,16 @@ export default {
       const expected = hotpayNotificationHash({ password, amount, paymentId, orderNumber, status, secure, secret: incomingSecret });
       if (!safeEquals(expected, incomingHash)) return new Response("invalid signature", { status: 400 });
       if (status === "SUCCESS") {
-        const documentPath = await findOrderByNumber(orderNumber);
-        if (!documentPath) return new Response("order not found", { status: 404 });
-        await updateDocument(documentPath, { payment_status: "paid", status: "paid", hotpay_payment_id: paymentId, paid_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+        const documentPaths = await findOrdersByNumber(orderNumber);
+        if (documentPaths.length === 0) return new Response("order not found", { status: 404 });
+        const paidAt = new Date().toISOString();
+        await Promise.all(documentPaths.map((documentPath) => updateDocument(documentPath, {
+          payment_status: "paid",
+          status: "paid",
+          hotpay_payment_id: paymentId,
+          paid_at: paidAt,
+          updated_at: paidAt,
+        })));
       }
       return new Response("OK", { status: 200 });
     } catch {

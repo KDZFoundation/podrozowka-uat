@@ -35,6 +35,8 @@ export default {
           quantity,
           unit_price_grosze: priceGrosze,
           total_price_grosze: priceGrosze * quantity,
+          unit_price_pln: priceGrosze / 100,
+          total_price_pln: (priceGrosze * quantity) / 100,
           language_code: String(data.language_code || "pl"),
           secondary_language_code: item.secondary_language_code || null,
         };
@@ -46,20 +48,27 @@ export default {
       const orderId = crypto.randomUUID();
       const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}`;
       const origin = typeof body.origin_url === "string" ? body.origin_url : "https://podrozowka.web.app";
-      const returnUrl = `${origin}/checkout/potwierdzenie?order=${encodeURIComponent(orderNumber)}`;
+      const returnUrl = `${origin}/checkout/potwierdzenie?order=${encodeURIComponent(orderNumber)}&order_id=${encodeURIComponent(orderId)}`;
       const customerEmail = typeof body.customer_email === "string" ? body.customer_email : "";
+      const userId = typeof body.user_id === "string" ? body.user_id : "";
 
       await writeDocument("orders", orderId, {
         id: orderId,
         order_number: orderNumber,
+        user_id: userId,
         guest_email: customerEmail,
+        customer_email: customerEmail,
         status: "new",
         payment_method: "hotpay",
         payment_status: "pending",
         total_amount_grosze: totalGrosze,
+        total_amount_pln: totalGrosze / 100,
+        total_amount: totalGrosze / 100,
         shipping_cost_grosze: shippingCostGrosze,
+        shipping_cost_pln: shippingCostGrosze / 100,
+        currency: "PLN",
         items: orderItems,
-        shipping_method: body.shipping_method || "courier",
+        shipping_method: body.shipping_method || "inpost_courier",
         pickup_point: body.pickup_point || null,
         shipping_address: body.shipping_address || null,
         invoice: body.invoice || { requested: false },
@@ -68,7 +77,7 @@ export default {
       });
 
       if (body.payment_method === "cod") {
-        return json({ ok: true, payment_method: "cod", order_number: orderNumber, redirect_url: `${returnUrl}&cod=1` });
+        return json({ ok: true, payment_method: "cod", order_id: orderId, order_number: orderNumber, redirect_url: `${returnUrl}&cod=1` });
       }
 
       const secret = process.env.HOTPAY_SECRET;
@@ -90,7 +99,7 @@ export default {
       const response = await fetch("https://platnosc.hotpay.pl/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form });
       const result = await response.json().catch(() => null) as { STATUS?: boolean; URL?: string; WIADOMOSC?: string } | null;
       if (!response.ok || !result?.STATUS || !result.URL) return json({ error: result?.WIADOMOSC || "hotpay_initialization_failed", order_number: orderNumber }, 502);
-      return json({ ok: true, payment_gateway: "hotpay", order_number: orderNumber, redirect_url: result.URL });
+      return json({ ok: true, payment_gateway: "hotpay", order_id: orderId, order_number: orderNumber, redirect_url: result.URL });
     } catch (error) {
       return json({ error: error instanceof Error ? error.message : "payment_initialization_failed" }, 500);
     }
