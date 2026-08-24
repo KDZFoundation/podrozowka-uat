@@ -6,21 +6,25 @@ import { Mail, Lock, ArrowLeft, Loader2, CheckCircle2, Eye, EyeOff, UserPlus, Ke
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { auth } from "@/integrations/firebase/config";
-import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider } from "firebase/auth";
+import {
+  createUserWithEmailAndPassword,
+  getRedirectResult,
+  GoogleAuthProvider,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+  updateProfile,
+} from "firebase/auth";
 import { z } from "zod";
 
 const emailSchema = z.string().email("Podaj prawidłowy adres email");
 const passwordSchema = z.string().min(8, "Hasło musi mieć minimum 8 znaków");
 const firstNameSchema = z.string().min(1, "Podaj imię").max(50);
 const lastNameSchema = z.string().min(1, "Podaj nazwisko").max(50);
-
-// Firebase is the authentication provider for this local/UAT application.
-// Keep the old Supabase OAuth route opt-in only; otherwise a Firebase popup
-// error would silently redirect to Supabase and produce redirect_uri_mismatch.
-const allowSupabaseOAuthFallback = import.meta.env.VITE_USE_SUPABASE_AUTH_FALLBACK === "true";
 
 interface AuthProps {
   mode?: "login" | "signup" | "forgot";
@@ -48,7 +52,7 @@ const Auth = ({ mode = "login" }: AuthProps) => {
   const [serverError, setServerError] = useState<string | null>(null);
   const [canAutoSignup, setCanAutoSignup] = useState(false);
 
-  const { user, signInWithDevAccount } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = searchParams.get("redirect");
@@ -72,15 +76,11 @@ const Auth = ({ mode = "login" }: AuthProps) => {
         if (!isSubscribed || !result?.user?.email) return;
 
         const email = result.user.email;
-        const isEmailAdmin = email.trim().toLowerCase() === 'fundacja@d-arka.org';
-        const loggedUser = await signInWithDevAccount(email, isEmailAdmin ? 'admin' : 'traveler');
         toast({
           title: "Zalogowano przez Google!",
           description: `Witaj, ${result.user.displayName || email}!`,
         });
-        if (loggedUser) {
-          await doRedirect(loggedUser.id);
-        }
+        await doRedirect(result.user.uid);
       } catch (err: unknown) {
         console.warn("Redirect auth result error:", err);
       }
@@ -89,7 +89,7 @@ const Auth = ({ mode = "login" }: AuthProps) => {
     return () => {
       isSubscribed = false;
     };
-  }, [signInWithDevAccount, doRedirect, toast]);
+  }, [doRedirect, toast]);
 
   // If already logged in when landing on the page, respect redirect / role.
   useEffect(() => {
@@ -101,16 +101,9 @@ const Auth = ({ mode = "login" }: AuthProps) => {
   const handleQuickStudioLogin = async (targetEmail: string, role: 'admin' | 'traveler' = 'traveler') => {
     setIsLoading(true);
     try {
-      const isEmailAdmin = targetEmail.trim().toLowerCase() === 'fundacja@d-arka.org';
-      const effectiveRole: 'admin' | 'traveler' = isEmailAdmin ? 'admin' : 'traveler';
-      const loggedUser = await signInWithDevAccount(targetEmail, effectiveRole);
-      if (loggedUser) {
-        toast({
-          title: "Zalogowano pomyślnie!",
-          description: `Zalogowano jako ${targetEmail} (${effectiveRole === 'admin' ? 'Administrator' : 'Użytkownik portalu'}).`,
-        });
-        await doRedirect(loggedUser.id);
-      }
+      // Placeholder retained for the Apple button. Apple sign-in itself is not
+      // configured yet, so it must never create an artificial local session.
+      throw new Error(`Logowanie ${targetEmail} nie jest jeszcze skonfigurowane.`);
     } catch (e) {
       toast({
         title: "Błąd logowania",
@@ -154,37 +147,15 @@ const Auth = ({ mode = "login" }: AuthProps) => {
           return;
         }
 
-        if (!allowSupabaseOAuthFallback) throw popupErr;
-
-        // Legacy Supabase OAuth fallback (explicitly opt-in for old environments).
-        const redirectTo = `${window.location.origin}${redirect ?? "/dashboard"}`;
-        const { data, error: supaErr } = await supabase.auth.signInWithOAuth({
-          provider: 'google',
-          options: {
-            redirectTo,
-            queryParams: {
-              prompt: 'select_account',
-            },
-          },
-        });
-
-        if (supaErr) throw popupErr;
-        if (data?.url) {
-          window.location.href = data.url;
-          return;
-        }
+        throw popupErr;
       }
 
       if (googleUserEmail) {
-        const isEmailAdmin = googleUserEmail.trim().toLowerCase() === 'fundacja@d-arka.org';
-        const loggedUser = await signInWithDevAccount(googleUserEmail, isEmailAdmin ? 'admin' : 'traveler');
         toast({
           title: "Zalogowano przez Google!",
           description: `Witaj, ${googleDisplayName || googleUserEmail}!`,
         });
-        if (loggedUser) {
-          await doRedirect(loggedUser.id);
-        }
+        await doRedirect(auth.currentUser?.uid || "");
       }
     } catch (err: unknown) {
       const error = err as { code?: string; message?: string };
@@ -257,31 +228,15 @@ const Auth = ({ mode = "login" }: AuthProps) => {
     setServerError(null);
 
     try {
-      const emailRedirectTo = `${window.location.origin}${redirect ?? "/"}`;
-      const { data, error } = await supabase.auth.signUp({
-        email: cleanEmail,
-        password,
-        options: {
-          emailRedirectTo,
-          data: {
-            display_name: cleanEmail.split("@")[0],
-          },
-        },
-      });
-
-      if (error) {
-        setServerError(error.message);
-        toast({ title: "Błąd rejestracji", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "Konto utworzone!", description: "Konto zostało zarejestrowane pomyślnie." });
-        if (data.session && data.user) {
-          await doRedirect(data.user.id);
-        } else {
-          toast({ title: "Sprawdź email", description: "Wysłano link weryfikacyjny na Twój adres e-mail." });
-        }
-      }
-    } catch {
-      toast({ title: "Wystąpił błąd", description: "Spróbuj ponownie.", variant: "destructive" });
+      const credential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      await updateProfile(credential.user, { displayName: cleanEmail.split("@")[0] });
+      await sendEmailVerification(credential.user, { url: `${window.location.origin}${redirect ?? "/dashboard"}` });
+      toast({ title: "Konto utworzone!", description: "Wysłaliśmy link weryfikacyjny na Twój adres e-mail." });
+      await doRedirect(credential.user.uid);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "Spróbuj ponownie.";
+      setServerError(message);
+      toast({ title: "Błąd rejestracji", description: message, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
@@ -293,17 +248,9 @@ const Auth = ({ mode = "login" }: AuthProps) => {
 
     setIsLoading(true);
     try {
-      const resetRedirectTo = `${window.location.origin}/reset-password`;
-      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: resetRedirectTo,
-      });
-
-      if (error) {
-        toast({ title: "Błąd resetowania", description: error.message, variant: "destructive" });
-      } else {
-        setResetSent(true);
-        toast({ title: "Wysłano link do resetu!", description: `Sprawdź skrzynkę ${cleanEmail}.` });
-      }
+      await sendPasswordResetEmail(auth, cleanEmail, { url: `${window.location.origin}/reset-password`, handleCodeInApp: true });
+      setResetSent(true);
+      toast({ title: "Wysłano link do resetu!", description: `Sprawdź skrzynkę ${cleanEmail}.` });
     } finally {
       setIsLoading(false);
     }
@@ -320,153 +267,45 @@ const Auth = ({ mode = "login" }: AuthProps) => {
 
     try {
       if (isForgot) {
-        const resetRedirectTo = `${window.location.origin}/reset-password`;
-        const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-          redirectTo: resetRedirectTo,
+        await sendPasswordResetEmail(auth, cleanEmail, {
+          url: `${window.location.origin}/reset-password`,
+          handleCodeInApp: true,
         });
-
-        if (error) {
-          console.error("Reset password error:", error.message);
-          setServerError(error.message || "Wystąpił błąd podczas wysyłania e-maila.");
-          toast({
-            title: "Błąd wysyłania e-maila",
-            description: error.message || "Wystąpił błąd. Spróbuj ponownie.",
-            variant: "destructive",
-          });
-        } else {
-          setResetSent(true);
-          toast({
-            title: "Wysłano e-mail!",
-            description: "Sprawdź skrzynkę odbiorczą, aby dokończyć resetowanie hasła.",
-          });
-        }
+        setResetSent(true);
+        toast({ title: "Wysłano e-mail!", description: "Sprawdź skrzynkę odbiorczą, aby dokończyć resetowanie hasła." });
       } else if (isLogin) {
-        const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
-
-        if (error) {
-          console.error("Login error:", error.message);
-          const msg = error.message.toLowerCase();
-          
-          if (msg.includes("invalid login credentials") || msg.includes("invalid_credentials")) {
-            // Attempt automatic signup if account does not exist yet
-            try {
-              const emailRedirectTo = `${window.location.origin}${redirect ?? "/"}`;
-              const { data: signupData, error: signupError } = await supabase.auth.signUp({
-                email: cleanEmail,
-                password,
-                options: {
-                  emailRedirectTo,
-                  data: {
-                    display_name: cleanEmail.split("@")[0],
-                  },
-                },
-              });
-
-              if (!signupError && signupData.user) {
-                if (signupData.session) {
-                  toast({
-                    title: "Konto utworzone i zalogowane!",
-                    description: "Witaj w Podróżówce!",
-                  });
-                  await doRedirect(signupData.user.id);
-                  return;
-                } else {
-                  toast({
-                    title: "Konto zarejestrowane!",
-                    description: "Wysłano link weryfikacyjny na Twój adres e-mail.",
-                  });
-                  setServerError("Konto zostało zarejestrowane! Sprawdź swoją skrzynkę e-mail, aby potwierdzić adres.");
-                  return;
-                }
-              }
-            } catch {
-              // Ignore and show password mismatch error
-            }
-
-            setCanAutoSignup(true);
-            const desc = "Nieprawidłowe hasło dla tego konta lub konto jeszcze nie zostało aktywowane.";
-            setServerError(desc);
-            toast({
-              title: "Nieprawidłowe hasło",
-              description: "Wprowadzone hasło nie pasuje do konta. Użyj opcji resetu hasła poniżej lub zaloguj się przez Google.",
-              variant: "destructive",
-            });
-          } else if (msg.includes("email not confirmed")) {
-            const desc = "Adres e-mail nie został jeszcze potwierdzony. Sprawdź swoją skrzynkę pocztową.";
-            setServerError(desc);
-            toast({
-              title: "Email niepotwierdzony",
-              description: desc,
-              variant: "destructive",
-            });
-          } else if (msg.includes("too many requests") || msg.includes("rate limit")) {
-            const desc = "Zbyt wiele nieudanych prób logowania. Odczekaj chwilę przed kolejną próbą.";
-            setServerError(desc);
-            toast({
-              title: "Ograniczenie prób",
-              description: desc,
-              variant: "destructive",
-            });
-          } else {
-            setServerError(error.message);
-            toast({
-              title: "Błąd logowania",
-              description: error.message,
-              variant: "destructive",
-            });
-          }
-        } else if (data.user) {
-          toast({ title: "Zalogowano!", description: "Witaj z powrotem." });
-          await doRedirect(data.user.id);
-        }
+        const credential = await signInWithEmailAndPassword(auth, cleanEmail, password);
+        toast({ title: "Zalogowano!", description: "Witaj z powrotem." });
+        await doRedirect(credential.user.uid);
       } else {
         const cleanFirstName = firstName.trim();
         const cleanLastName = lastName.trim();
         const displayName = `${cleanFirstName} ${cleanLastName}`.trim();
-        const emailRedirectTo = `${window.location.origin}${redirect ?? "/"}`;
-        const { data, error } = await supabase.auth.signUp({
-          email: cleanEmail,
-          password,
-          options: {
-            emailRedirectTo,
-            data: {
-              display_name: displayName,
-              first_name: cleanFirstName,
-              last_name: cleanLastName,
-            },
-          },
-        });
-
-        if (error) {
-          console.error("Signup error:", error.message);
-          const description = error.message.includes("already registered")
-              ? "Ten email jest już zarejestrowany. Przejdź do logowania lub zresetuj hasło."
-              : "Wystąpił błąd podczas rejestracji. Spróbuj ponownie.";
-          setServerError(description);
-          toast({
-            title: "Błąd rejestracji",
-            description,
-            variant: "destructive",
-          });
-        } else {
-          toast({ title: "Konto utworzone!", description: "Sprawdź email, aby potwierdzić konto." });
-          if (data.session && data.user) {
-            await doRedirect(data.user.id);
-          }
-        }
+        const credential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+        await updateProfile(credential.user, { displayName });
+        await sendEmailVerification(credential.user, { url: `${window.location.origin}${redirect ?? "/dashboard"}` });
+        toast({ title: "Konto utworzone!", description: "Sprawdź e-mail, aby potwierdzić adres." });
+        await doRedirect(credential.user.uid);
       }
-    } catch {
-      setServerError("Wystąpił nieoczekiwany błąd. Spróbuj ponownie.");
-      toast({ title: "Wystąpił błąd", description: "Spróbuj ponownie.", variant: "destructive" });
+    } catch (error: unknown) {
+      const code = typeof error === "object" && error && "code" in error ? String(error.code) : "";
+      const description = code === "auth/invalid-credential"
+        ? "Nieprawidłowy e-mail lub hasło."
+        : code === "auth/email-already-in-use"
+          ? "Ten adres e-mail jest już zarejestrowany."
+          : code === "auth/too-many-requests"
+            ? "Zbyt wiele prób. Odczekaj chwilę i spróbuj ponownie."
+            : "Wystąpił nieoczekiwany błąd. Spróbuj ponownie.";
+      setServerError(description);
+      setCanAutoSignup(code === "auth/invalid-credential");
+      toast({ title: "Błąd uwierzytelniania", description, variant: "destructive" });
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Google/Apple must return to the login route.  This route observes the
-  // Supabase session and then applies the intended destination (or the role
-  // default).  Returning straight to `/` left an authenticated visitor on the
-  // landing page and made the OAuth flow appear not to have completed.
+  // Google must return to the login route. This route observes Firebase Auth
+  // and then applies the intended destination (or the role default).
   const oauthRedirectUri = `${window.location.origin}/auth${
     redirect ? `?redirect=${encodeURIComponent(redirect)}` : ""
   }`;
