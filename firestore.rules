@@ -47,6 +47,14 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Public feature switches control storefront availability. Only an
+    // administrator may change them; no payment or courier secret is stored
+    // in Firestore.
+    match /feature_flags/{flagId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     match /users/{userId} {
       allow read: if ownsUser(userId) || isAdmin();
       allow create, update: if ownsUser(userId) || isAdmin();

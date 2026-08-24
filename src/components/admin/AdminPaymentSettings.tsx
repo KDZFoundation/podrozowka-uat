@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { Banknote, CheckCircle2, CreditCard, Loader2, XCircle } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { useQueryClient } from "@tanstack/react-query";
 import { backendApiUrl } from "@/lib/backendApi";
+import { runtimeConfigService } from "@/integrations/firebase/services/runtimeConfigService";
 
 type SecretStatus = { name: string; set: boolean; length: number; preview: string };
 type GatewayStatus = { secrets: SecretStatus[]; all_secrets_set: boolean };
@@ -76,12 +76,14 @@ const AdminPaymentSettings = () => {
 
   const toggleCod = async (enabled: boolean) => {
     setTogglingCod(true);
-    const { error } = await supabase.from("feature_flags").upsert({ key: "cod_payment_enabled", is_enabled: enabled, name: "Płatność za pobraniem (COD)", description: "Udostępnia opcję płatności przy odbiorze" });
-    setTogglingCod(false);
-    if (error) toast.error("Nie udało się zmienić statusu COD");
-    else {
+    try {
+      await runtimeConfigService.setFeatureFlag({ key: "cod_payment_enabled", is_enabled: enabled, name: "Płatność za pobraniem (COD)", description: "Udostępnia opcję płatności przy odbiorze" });
       toast.success(enabled ? "Płatność za pobraniem włączona" : "Płatność za pobraniem wyłączona");
       queryClient.invalidateQueries({ queryKey: ["feature-flags"] });
+    } catch {
+      toast.error("Nie udało się zmienić statusu COD");
+    } finally {
+      setTogglingCod(false);
     }
   };
 

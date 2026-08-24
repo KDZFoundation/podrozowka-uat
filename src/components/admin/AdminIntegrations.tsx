@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import {
   CreditCard,
   Truck,
@@ -22,6 +21,7 @@ import AdminPaymentSettings from "@/components/admin/AdminPaymentSettings";
 import AdminInpostSettings from "@/components/admin/AdminInpostSettings";
 import AdminOrlenSettings from "@/components/admin/AdminOrlenSettings";
 import { backendApiUrl } from "@/lib/backendApi";
+import { runtimeConfigService } from "@/integrations/firebase/services/runtimeConfigService";
 
 interface IntegrationSecretStatus {
   name: string;
@@ -115,22 +115,19 @@ const AdminIntegrations = () => {
 
   const toggleFeature = async (key: FeatureFlagKey, enabled: boolean, name: string) => {
     setTogglingFlag(key);
-    const { error } = await supabase
-      .from("feature_flags")
-      .upsert({
+    try {
+      await runtimeConfigService.setFeatureFlag({
         key,
         is_enabled: enabled,
         name,
         description: `Włącza lub wyłącza integrację ${name} w koszyku`,
       });
-
-    setTogglingFlag(null);
-
-    if (error) {
-      toast.error(`Nie udało się zmienić statusu integracji ${name}`);
-    } else {
       toast.success(enabled ? `Integracja ${name} została WŁĄCZONA` : `Integracja ${name} została WYŁĄCZONA`);
       queryClient.invalidateQueries({ queryKey: ["feature-flags"] });
+    } catch {
+      toast.error(`Nie udało się zmienić statusu integracji ${name}`);
+    } finally {
+      setTogglingFlag(null);
     }
   };
 

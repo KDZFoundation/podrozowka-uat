@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { runtimeConfigService } from "@/integrations/firebase/services/runtimeConfigService";
 
 export type FeatureFlagKey =
   | "travel_stats"
@@ -30,11 +30,8 @@ interface FeatureFlagRow {
 }
 
 async function fetchFlags(): Promise<FeatureFlags> {
-  const { data, error } = await supabase
-    .from("feature_flags")
-    .select("key, is_enabled");
-
-  if (error || !data) return { ...DEFAULT_FLAGS };
+  const data = await runtimeConfigService.getFeatureFlags().catch(() => []);
+  if (data.length === 0) return { ...DEFAULT_FLAGS };
 
   const flags = { ...DEFAULT_FLAGS };
   (data as unknown as FeatureFlagRow[]).forEach((row) => {

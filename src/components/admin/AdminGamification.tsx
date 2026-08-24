@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { runtimeConfigService } from "@/integrations/firebase/services/runtimeConfigService";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -29,15 +29,7 @@ const ScoringConfig = () => {
 
   const { data: config, isLoading } = useQuery({
     queryKey: ["admin-gamification-config"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("gamification_config")
-        .select("points_per_unit, points_per_country, points_per_registration")
-        .eq("id", 1)
-        .single();
-      if (error) throw error;
-      return data as GamificationConfig;
-    },
+    queryFn: async () => runtimeConfigService.getGamificationConfig(),
   });
 
   useEffect(() => {
@@ -46,11 +38,7 @@ const ScoringConfig = () => {
 
   const mutation = useMutation({
     mutationFn: async (values: GamificationConfig) => {
-      const { error } = await supabase
-        .from("gamification_config")
-        .update(values)
-        .eq("id", 1);
-      if (error) throw error;
+      await runtimeConfigService.setGamificationConfig(values);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-gamification-config"] });
@@ -117,25 +105,12 @@ const TiersSection = () => {
 
   const { data: tiers = [], isLoading } = useQuery({
     queryKey: ["admin-gamification-tiers"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("gamification_tiers")
-        .select("id, name, min_points")
-        .order("min_points", { ascending: true });
-      if (error) throw error;
-      return data as Tier[];
-    },
+    queryFn: async () => runtimeConfigService.getGamificationTiers(),
   });
 
   const upsertMutation = useMutation({
     mutationFn: async ({ id, name, min_points }: { id?: string; name: string; min_points: number }) => {
-      if (id) {
-        const { error } = await supabase.from("gamification_tiers").update({ name, min_points }).eq("id", id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("gamification_tiers").insert({ name, min_points });
-        if (error) throw error;
-      }
+      await runtimeConfigService.setGamificationTier({ id: id || crypto.randomUUID(), name, min_points });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-gamification-tiers"] });
@@ -147,8 +122,7 @@ const TiersSection = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("gamification_tiers").delete().eq("id", id);
-      if (error) throw error;
+      await runtimeConfigService.deleteGamificationTier(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-gamification-tiers"] });

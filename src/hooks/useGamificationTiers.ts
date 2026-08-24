@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { runtimeConfigService } from "@/integrations/firebase/services/runtimeConfigService";
 
 export interface GamificationTier {
   id?: string;
@@ -18,12 +18,8 @@ export const DEFAULT_GAMIFICATION_TIERS: GamificationTier[] = [
 export const useGamificationTiers = () => useQuery({
   queryKey: ["gamification-tiers"],
   queryFn: async (): Promise<GamificationTier[]> => {
-    const { data, error } = await supabase
-      .from("gamification_tiers")
-      .select("id, name, min_points")
-      .order("min_points", { ascending: true });
-    if (error || !data || data.length === 0) return DEFAULT_GAMIFICATION_TIERS;
-    return data as GamificationTier[];
+    const data = await runtimeConfigService.getGamificationTiers().catch(() => []);
+    return data.length > 0 ? data : DEFAULT_GAMIFICATION_TIERS;
   },
   staleTime: 60_000,
 });
