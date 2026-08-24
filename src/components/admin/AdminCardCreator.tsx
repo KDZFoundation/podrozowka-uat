@@ -27,7 +27,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { deleteCardDesignCascade } from "@/lib/cardDesignUtils";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import type { FirestoreCardDesign } from "@/integrations/firebase/types";
 import type { Json } from "@/integrations/supabase/types";
@@ -128,7 +128,7 @@ export const AdminCardCreator = ({
 
   // Fetch Countries, Categories & Templates
   const loadData = useCallback(async () => {
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       const [fireCountries, fireTemplates, fireCategories, fireAuthors] = await Promise.all([
         firestoreService.getCountries(),
         // Templates are filtered after country selection, but load all once for the local creator.
@@ -177,7 +177,7 @@ export const AdminCardCreator = ({
   const handleCountrySelect = async (cId: string) => {
     setCountryId(cId);
     setSelectedTemplateId("");
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       const templates = await firestoreService.getLanguageTemplatesForCountry(cId);
       setLangTemplates(templates.map((template) => ({
         id: template.id,
@@ -196,7 +196,7 @@ export const AdminCardCreator = ({
       }
     }
     // Find first template for this country
-    const firstTpl = !isUsingFirebaseEmulators ? langTemplates.find((t) => t.country_id === cId) : undefined;
+    const firstTpl = !isFirestoreCatalogEnabled ? langTemplates.find((t) => t.country_id === cId) : undefined;
     if (firstTpl) {
       setSelectedTemplateId(firstTpl.id);
       setLanguageCode(firstTpl.language_code);
@@ -204,11 +204,11 @@ export const AdminCardCreator = ({
       setBackQrLabel(firstTpl.back_qr_label);
     }
 
-    if (cId && categoryId && !initialDesign?.id && isUsingFirebaseEmulators) {
+    if (cId && categoryId && !initialDesign?.id && isFirestoreCatalogEnabled) {
       const designs = await firestoreService.getCardDesigns({ includeInactive: true });
       const matching = designs.filter((design) => design.country_id === cId && design.category_id === categoryId);
       setViewNo(Math.max(0, ...matching.map((design) => design.view_no || 0)) + 1);
-    } else if (cId && categoryId && !initialDesign?.id) {
+    } else if (cId && categoryId && !initialDesign?.id && !isFirestoreCatalogEnabled) {
       const { data } = await supabase
         .from("card_designs")
         .select("view_no")
@@ -227,11 +227,11 @@ export const AdminCardCreator = ({
 
   const handleCategorySelect = async (catId: string) => {
     setCategoryId(catId);
-    if (countryId && catId && !initialDesign?.id && isUsingFirebaseEmulators) {
+    if (countryId && catId && !initialDesign?.id && isFirestoreCatalogEnabled) {
       const designs = await firestoreService.getCardDesigns({ includeInactive: true });
       const matching = designs.filter((design) => design.country_id === countryId && design.category_id === catId);
       setViewNo(Math.max(0, ...matching.map((design) => design.view_no || 0)) + 1);
-    } else if (countryId && catId && !initialDesign?.id) {
+    } else if (countryId && catId && !initialDesign?.id && !isFirestoreCatalogEnabled) {
       const { data } = await supabase
         .from("card_designs")
         .select("view_no")
@@ -268,7 +268,7 @@ export const AdminCardCreator = ({
       return;
     }
 
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       toast({
         title: "Upload z panelu jest wyłączony w trybie Spark",
         description: "Podglądy wzorów są optymalizowane i publikowane jako statyczne pliki Firebase Hosting.",
@@ -353,7 +353,7 @@ export const AdminCardCreator = ({
     const supabasePayload = { ...payload, crop_settings: cropSettingsObj as unknown as Json };
 
     try {
-      if (isUsingFirebaseEmulators) {
+      if (isFirestoreCatalogEnabled) {
         const id = initialDesign?.id || crypto.randomUUID();
         await firestoreService.upsertCardDesign(id, {
           ...payload,
@@ -391,7 +391,7 @@ export const AdminCardCreator = ({
     if (!confirm(`Czy na pewno chcesz usunąć ten wzór kartki (Widok #${initialDesign.view_no})?`)) return;
     setIsSaving(true);
     try {
-      if (isUsingFirebaseEmulators) {
+      if (isFirestoreCatalogEnabled) {
         await firestoreService.deleteCardDesign(initialDesign.id);
         toast({ title: "Wzór usunięty lokalnie" });
         onSaveSuccess();

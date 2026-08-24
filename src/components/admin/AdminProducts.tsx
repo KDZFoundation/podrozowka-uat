@@ -19,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { diagnoseUploadError, logUploadAttempt } from "@/lib/uploadDiagnostics";
 
 interface Country {
@@ -154,7 +154,7 @@ const AdminProducts = () => {
 
   const fetchAll = useCallback(async () => {
     setIsLoading(true);
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       const [firestoreDesigns, firestoreCountries, firestoreCategories] = await Promise.all([
         firestoreService.getCardDesigns({ includeInactive: true }),
         firestoreService.getCountries(),
@@ -263,7 +263,7 @@ const AdminProducts = () => {
     setErrors({});
     setShowDialog(true);
 
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       const design = await firestoreService.getCardDesignById(p.id);
       setExtraImages((design?.images || []).map((image) => ({
         id: image.id,
@@ -365,7 +365,7 @@ const AdminProducts = () => {
     };
 
     if (editingId) {
-      if (isUsingFirebaseEmulators) {
+      if (isFirestoreCatalogEnabled) {
         await firestoreService.upsertCardDesign(editingId, {
           ...payload,
           currency: "PLN",
@@ -404,7 +404,7 @@ const AdminProducts = () => {
         return;
       }
       const title = buildProductTitle(sourceDesign);
-      if (isUsingFirebaseEmulators) {
+      if (isFirestoreCatalogEnabled) {
         await firestoreService.upsertCardDesign(sourceDesignId, {
           title,
           price_grosze: priceGrosze,
@@ -548,7 +548,7 @@ const AdminProducts = () => {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       await firestoreService.setCardDesignActive(deleteTarget.id, false);
       toast({ title: "Produkt wycofany lokalnie ze sklepu. Wzór pozostał w kreatorze." });
       fetchAll();
@@ -569,7 +569,7 @@ const AdminProducts = () => {
   };
 
   const toggleActive = async (p: ProductRow) => {
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       await firestoreService.setCardDesignActive(p.id, !p.active);
       fetchAll();
       return;

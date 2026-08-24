@@ -6,6 +6,8 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { WORLD_COUNTRIES } from "@/data/worldCountries";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 
 interface Country {
   id: string;
@@ -33,6 +35,21 @@ const AdminCountries = () => {
   const [form, setForm] = useState({ iso2: '', iso3: '', name_pl: '', slug: '', flag_url: '', active: true });
 
   const fetchCountries = useCallback(async () => {
+    if (isFirestoreCatalogEnabled) {
+      const data = await firestoreService.getCountries();
+      setCountries(data.map((country) => ({
+        id: country.id,
+        iso2: country.iso2 || "",
+        iso3: (country as Country).iso3 || null,
+        name_pl: country.name_pl || country.name,
+        slug: (country as Country).slug || null,
+        active: country.is_active !== false && (country as Country).active !== false,
+        created_at: country.created_at || "",
+        flag_url: country.flag_url || null,
+      })));
+      setIsLoading(false);
+      return;
+    }
     const { data, error } = await supabase
       .from('countries')
       .select('*')
@@ -53,6 +70,12 @@ const AdminCountries = () => {
   const handleSeedAllWorldCountries = async () => {
     setIsSeeding(true);
     try {
+      if (isFirestoreCatalogEnabled) {
+        await Promise.all(WORLD_COUNTRIES.map((country) => firestoreService.upsertCountry(country.iso2, country)));
+        toast({ title: "Słownik krajów zaktualizowany!", description: `Pomyślnie zaimportowano/zaktualizowano ${WORLD_COUNTRIES.length} krajów świata.` });
+        fetchCountries();
+        return;
+      }
       // Chunking upserts in batches of 50 for safety
       const batchSize = 50;
       let successCount = 0;
@@ -93,6 +116,21 @@ const AdminCountries = () => {
 
     const slug = form.slug || form.name_pl.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
+    if (isFirestoreCatalogEnabled) {
+      try {
+        await firestoreService.upsertCountry(editingId || form.iso2.toUpperCase(), {
+          iso2: form.iso2.toUpperCase(), iso3: form.iso3 || null, name_pl: form.name_pl, slug,
+          flag_url: form.flag_url || null, active: form.active,
+        });
+        toast({ title: editingId ? "Kraj zaktualizowany" : "Kraj dodany" });
+        resetForm();
+        fetchCountries();
+      } catch (error) {
+        toast({ title: "Błąd zapisu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      }
+      return;
+    }
+
     if (editingId) {
       const { error } = await supabase
         .from('countries')
@@ -128,6 +166,11 @@ const AdminCountries = () => {
   };
 
   const handleFlagUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (isFirestoreCatalogEnabled) {
+      toast({ title: "Wgrywanie flag jest wyłączone w trybie Spark", description: "Użyj adresu HTTPS do gotowego obrazu flagi." });
+      event.target.value = "";
+      return;
+    }
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -166,6 +209,21 @@ const AdminCountries = () => {
 
   const handleDelete = async (id: string) => {
     const country = countries.find((item) => item.id === id);
+    if (isFirestoreCatalogEnabled) {
+      const designCount = (await firestoreService.getCardDesigns({ includeInactive: true })).filter((design) => design.country_id === id).length;
+      if (designCount > 0) {
+        toast({ title: "Nie można usunąć kraju używanego przez wzory", description: `${country?.name_pl ?? "Ten kraj"} ma przypisane wzory (${designCount}). Ustaw kraj jako nieaktywny zamiast go usuwać.`, variant: "destructive" });
+        return;
+      }
+      try {
+        await firestoreService.deleteCountry(id);
+        toast({ title: "Kraj usunięty" });
+        fetchCountries();
+      } catch (error) {
+        toast({ title: "Błąd usuwania", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      }
+      return;
+    }
     const { count, error: usageError } = await supabase
       .from('card_designs')
       .select('id', { count: 'exact', head: true })
@@ -195,6 +253,11 @@ const AdminCountries = () => {
   };
 
   const toggleActive = async (id: string, active: boolean) => {
+    if (isFirestoreCatalogEnabled) {
+      await firestoreService.setCountryActive(id, !active);
+      fetchCountries();
+      return;
+    }
     await supabase.from('countries').update({ active: !active }).eq('id', id);
     fetchCountries();
   };

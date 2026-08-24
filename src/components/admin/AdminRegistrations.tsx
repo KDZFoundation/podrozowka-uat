@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -61,6 +63,14 @@ const AdminRegistrations = () => {
 
   const fetchRegistrations = useCallback(async () => {
     setIsLoading(true);
+
+    if (isFirestoreCatalogEnabled) {
+      const rows = await firestoreService.getAdminRegistrations(250);
+      const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+      setRegistrations(pageRows);
+      setIsLoading(false);
+      return;
+    }
 
     // Admin-only RPC: returns full registration rows (incl. recipient_email/lat/lng)
     // The base table no longer exposes those columns to clients.

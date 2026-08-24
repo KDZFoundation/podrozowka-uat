@@ -19,6 +19,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { diagnoseUploadError, logUploadAttempt } from "@/lib/uploadDiagnostics";
 import { slugify } from "@/lib/slugify";
 import { getCategoryIcon } from "@/lib/categoryIcons";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 
 interface Category {
   id: string;
@@ -55,6 +57,27 @@ const AdminCategories = () => {
 
   const fetchAll = useCallback(async () => {
     setIsLoading(true);
+    if (isFirestoreCatalogEnabled) {
+      const [categoryData, designData] = await Promise.all([
+        firestoreService.getCategories(),
+        firestoreService.getCardDesigns({ includeInactive: true }),
+      ]);
+      setCategories(categoryData.map((category) => ({
+        id: category.id,
+        name: category.name_pl || category.name || category.slug,
+        slug: category.slug,
+        icon_url: category.icon_url || category.icon || null,
+        sort_order: category.sort_order || 0,
+        created_at: category.created_at || "",
+      })));
+      const counts: Record<string, number> = {};
+      designData.forEach((design) => {
+        if (design.category_id) counts[design.category_id] = (counts[design.category_id] || 0) + 1;
+      });
+      setUsage(counts);
+      setIsLoading(false);
+      return;
+    }
     const [{ data: cats }, { data: designs }] = await Promise.all([
       supabase.from("categories").select("*").order("sort_order").order("name"),
       supabase.from("card_designs").select("category_id"),
@@ -111,6 +134,10 @@ const AdminCategories = () => {
   };
 
   const uploadIcon = async (file: File) => {
+    if (isFirestoreCatalogEnabled) {
+      toast({ title: "Wgrywanie ikon jest wyłączone w trybie Spark", description: "Użyj domyślnej ikony kategorii lub opublikowanego adresu HTTPS." });
+      return;
+    }
     if (!file.type.startsWith("image/")) {
       toast({ title: "Wybierz plik graficzny", description: `Otrzymany typ: ${file.type || "nieznany"}`, variant: "destructive" });
       return;
@@ -157,6 +184,19 @@ const AdminCategories = () => {
       icon_url: form.icon_url.trim() || null,
       sort_order: Number(form.sort_order) || 0,
     };
+    if (isFirestoreCatalogEnabled) {
+      try {
+        await firestoreService.upsertCategory(editingId || crypto.randomUUID(), payload);
+        toast({ title: editingId ? "Kategoria zaktualizowana" : "Kategoria dodana" });
+        closeDialog();
+        fetchAll();
+      } catch (error) {
+        toast({ title: "Błąd zapisu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     const { error } = editingId
       ? await supabase.from("categories").update(payload).eq("id", editingId)
       : await supabase.from("categories").insert(payload);
@@ -181,6 +221,17 @@ const AdminCategories = () => {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
+    if (isFirestoreCatalogEnabled) {
+      try {
+        await firestoreService.deleteCategory(deleteTarget.id);
+        toast({ title: "Kategoria usunięta" });
+        fetchAll();
+      } catch (error) {
+        toast({ title: "Nie udało się usunąć", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      }
+      setDeleteTarget(null);
+      return;
+    }
     const { error } = await supabase.from("categories").delete().eq("id", deleteTarget.id);
     if (error) {
       toast({ title: "Nie udało się usunąć", description: error.message, variant: "destructive" });

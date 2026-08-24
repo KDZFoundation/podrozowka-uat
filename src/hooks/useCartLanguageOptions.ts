@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import type { EnrichedCartItem } from "@/hooks/useCartItems";
 
 export interface CartLanguageOption {
@@ -26,6 +28,12 @@ export const useCartLanguageOptions = (items: EnrichedCartItem[]) => {
     enabled: countryIds.length > 0,
     staleTime: 5 * 60_000,
     queryFn: async () => {
+      if (isFirestoreCatalogEnabled) {
+        const templates = await firestoreService.getLanguageTemplates();
+        return templates
+          .filter((template) => countryIds.includes(template.country_id))
+          .sort((a, b) => a.language_name.localeCompare(b.language_name));
+      }
       const { data, error } = await supabase
         .from("card_language_templates")
         .select("country_id, language_code, language_name, front_thank_you_text")

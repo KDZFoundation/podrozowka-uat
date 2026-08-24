@@ -1,16 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { runtimeConfigService, type RuntimeFeatureFlag } from "@/integrations/firebase/services/runtimeConfigService";
 import { Switch } from "@/components/ui/switch";
 import { FlaskConical, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
-
-interface FeatureFlag {
-  key: string;
-  name: string;
-  description: string;
-  is_enabled: boolean;
-}
 
 const KNOWN_FLAGS = [
   { key: "travel_stats", name: "Statystyki Kilometrów", description: "Liczenie dystansu kartek od Warszawy", is_enabled: false },
@@ -26,50 +19,39 @@ const AdminLab = () => {
   const { data: flags = [], isLoading } = useQuery({
     queryKey: ["admin-feature-flags"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("feature_flags")
-        .select("*")
-        .order("name");
-      if (error) throw error;
-
-      const existingKeys = new Set((data || []).map((f) => f.key));
+      const data = await runtimeConfigService.getFeatureFlags();
+      const existingKeys = new Set(data.map((f) => f.key));
       const missingFlags = KNOWN_FLAGS.filter((kf) => !existingKeys.has(kf.key));
 
       if (missingFlags.length > 0) {
-        const { error: insertError } = await supabase
-          .from("feature_flags")
-          .insert(missingFlags);
-        
-        if (!insertError) {
-          const { data: refetchedData, error: refetchError } = await supabase
-            .from("feature_flags")
-            .select("*")
-            .order("name");
-          if (!refetchError && refetchedData) {
-            return refetchedData as FeatureFlag[];
-          }
-        }
+        await Promise.all(missingFlags.map((flag) => runtimeConfigService.setFeatureFlag(flag)));
+        data.push(...missingFlags);
       }
 
       const knownKeys = new Set(KNOWN_FLAGS.map((kf) => kf.key));
-      const filteredData = (data || []).filter((f) => knownKeys.has(f.key));
-      return filteredData as FeatureFlag[];
+      return data
+        .filter((f) => knownKeys.has(f.key))
+        .sort((a, b) => a.name.localeCompare(b.name, "pl"));
     },
   });
 
   const toggleFlag = async (key: string, currentValue: boolean) => {
     setTogglingKey(key);
-    const { error } = await supabase
-      .from("feature_flags")
-      .update({ is_enabled: !currentValue })
-      .eq("key", key);
-
-    if (error) {
+    const flag = flags.find((item) => item.key === key);
+    if (!flag) {
       toast.error("Nie udało się zmienić flagi");
     } else {
-      toast.success(`Flaga "${key}" ${!currentValue ? "włączona" : "wyłączona"}`);
-      queryClient.invalidateQueries({ queryKey: ["admin-feature-flags"] });
-      queryClient.invalidateQueries({ queryKey: ["feature-flags"] });
+      try {
+        await runtimeConfigService.setFeatureFlag({
+          ...flag,
+          is_enabled: !currentValue,
+        } satisfies RuntimeFeatureFlag);
+        toast.success(`Flaga "${key}" ${!currentValue ? "włączona" : "wyłączona"}`);
+        queryClient.invalidateQueries({ queryKey: ["admin-feature-flags"] });
+        queryClient.invalidateQueries({ queryKey: ["feature-flags"] });
+      } catch {
+        toast.error("Nie udało się zmienić flagi");
+      }
     }
     setTogglingKey(null);
   };

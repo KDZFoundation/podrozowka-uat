@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, Globe2, MapPin, Users } from "lucide-react";
 import L from "leaflet";
 import { supabase } from "@/integrations/supabase/client";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
@@ -117,6 +119,20 @@ const AdminGlobalMap = () => {
 
   useEffect(() => {
     const fetch = async () => {
+      if (isFirestoreCatalogEnabled) {
+        const registrations = await firestoreService.getAdminRegistrations(250);
+        if (registrations.length > 0) {
+          setData(registrations.map((registration) => ({
+            id: registration.id,
+            recipient_name: registration.recipient_name,
+            registered_at: registration.registered_at,
+            countryName: registration.country_name,
+          })));
+          setIsLoading(false);
+          return;
+        }
+      }
+
       const { data: rows, error } = await supabase
         .from("recipient_registrations")
         .select("id, recipient_name, registered_at, inventory_units!inner(card_designs!inner(countries!inner(name_pl)))");

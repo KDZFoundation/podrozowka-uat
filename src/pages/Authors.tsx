@@ -3,6 +3,8 @@ import { ExternalLink, Instagram, UserRound } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 
 type AuthorProfile = {
   id: string;
@@ -19,6 +21,19 @@ const Authors = () => {
 
   useEffect(() => {
     void (async () => {
+      if (isFirestoreCatalogEnabled) {
+        const data = await firestoreService.getAuthors();
+        setAuthors(data.map((author) => ({
+          id: author.id,
+          display_name: author.name,
+          bio: author.bio || null,
+          avatar_url: author.avatar_url || null,
+          social_handle: author.instagram_url || null,
+          website_url: author.website_url || null,
+        })));
+        setLoading(false);
+        return;
+      }
       const { data } = await supabase
         .from("author_profiles")
         .select("id, display_name, bio, avatar_url, social_handle, website_url")

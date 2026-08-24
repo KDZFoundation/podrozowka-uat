@@ -66,6 +66,21 @@ type TravelerInventoryUnit = {
   card_design_id?: string;
 };
 
+export interface FirestoreAdminRegistration {
+  id: string;
+  inventory_unit_id: string;
+  recipient_name: string;
+  recipient_message: string | null;
+  recipient_email: string | null;
+  contact_opt_in: boolean;
+  registered_at: string;
+  unit_code: string;
+  country_name: string | null;
+  design_title: string | null;
+  view_no: number | null;
+  traveler_name: string | null;
+}
+
 export const normalizeOrder = (id: string, raw: Record<string, unknown>): FirestoreOrder => ({
   ...raw,
   id,
@@ -477,6 +492,139 @@ export const firestoreService = {
         countryStats: [],
       };
     }
+  },
+
+  /**
+   * Administrative projection for the registrations screen and global map.
+   * It deliberately runs only under Firestore's admin rules; public pages
+   * continue to use anonymous aggregate data instead of exposing recipients.
+   */
+  async getAdminRegistrations(limitCount: number = 100): Promise<FirestoreAdminRegistration[]> {
+    if (!isFirebaseConfigured) return [];
+
+    try {
+      const [registrationsSnapshot, unitsSnapshot, designsSnapshot, countriesSnapshot, usersSnapshot] = await Promise.all([
+        getDocs(query(collection(db, "recipient_registrations"), orderBy("registered_at", "desc"), limit(limitCount))),
+        getDocs(collection(db, "inventory_units")),
+        getDocs(collection(db, "card_designs")),
+        getDocs(collection(db, "countries")),
+        getDocs(collection(db, "users")),
+      ]);
+
+      const units = new Map(unitsSnapshot.docs.map((snapshot) => [snapshot.id, snapshot.data()]));
+      const designs = new Map(designsSnapshot.docs.map((snapshot) => [snapshot.id, snapshot.data()]));
+      const countries = new Map(countriesSnapshot.docs.map((snapshot) => [snapshot.id, snapshot.data()]));
+      const users = new Map(usersSnapshot.docs.map((snapshot) => [snapshot.id, snapshot.data()]));
+
+      return registrationsSnapshot.docs.map((snapshot) => {
+        const registration = snapshot.data();
+        const unitId = typeof registration.inventory_unit_id === "string" ? registration.inventory_unit_id : "";
+        const unit = units.get(unitId) || {};
+        const design = designs.get(typeof unit.card_design_id === "string" ? unit.card_design_id : "") || {};
+        const country = countries.get(typeof design.country_id === "string" ? design.country_id : "") || {};
+        const travelerId = typeof unit.traveler_user_id === "string"
+          ? unit.traveler_user_id
+          : typeof registration.traveler_user_id === "string" ? registration.traveler_user_id : "";
+        const traveler = users.get(travelerId) || {};
+
+        return {
+          id: snapshot.id,
+          inventory_unit_id: unitId,
+          recipient_name: typeof registration.recipient_name === "string" ? registration.recipient_name : "",
+          recipient_message: typeof registration.recipient_message === "string"
+            ? registration.recipient_message
+            : typeof registration.message === "string" ? registration.message : null,
+          recipient_email: typeof registration.recipient_email === "string" ? registration.recipient_email : null,
+          contact_opt_in: Boolean(registration.contact_opt_in),
+          registered_at: createdAtValue(registration.registered_at),
+          unit_code: typeof unit.internal_inventory_code === "string" ? unit.internal_inventory_code : "",
+          country_name: typeof country.name_pl === "string"
+            ? country.name_pl
+            : typeof country.name === "string" ? country.name : null,
+          design_title: typeof design.title === "string" ? design.title : null,
+          view_no: typeof design.view_no === "number" ? design.view_no : null,
+          traveler_name: typeof traveler.display_name === "string"
+            ? traveler.display_name
+            : typeof traveler.full_name === "string" ? traveler.full_name : null,
+        } satisfies FirestoreAdminRegistration;
+      });
+    } catch (error) {
+      console.warn("Firestore getAdminRegistrations error:", error);
+      return [];
+    }
+  },
+
+  async upsertAuthor(id: string, data: Record<string, unknown>): Promise<void> {
+    if (!isFirebaseConfigured) return;
+    await setDoc(doc(db, "authors", id), {
+      ...data,
+      name: data.name ?? data.display_name ?? "",
+      is_active: data.is_active ?? data.active ?? true,
+      updated_at: new Date().toISOString(),
+    }, { merge: true });
+  },
+
+  async deleteAuthor(id: string): Promise<void> {
+    if (!isFirebaseConfigured) return;
+    await deleteDoc(doc(db, "authors", id));
+  },
+
+  async upsertCountry(id: string, data: Record<string, unknown>): Promise<void> {
+    if (!isFirebaseConfigured) return;
+    await setDoc(doc(db, "countries", id), {
+      ...data,
+      is_active: data.active ?? data.is_active ?? true,
+      updated_at: new Date().toISOString(),
+    }, { merge: true });
+  },
+
+  async deleteCountry(id: string): Promise<void> {
+    if (!isFirebaseConfigured) return;
+    await deleteDoc(doc(db, "countries", id));
+  },
+
+  async setCountryActive(id: string, active: boolean): Promise<void> {
+    await this.upsertCountry(id, { active, is_active: active });
+  },
+
+  async upsertCategory(id: string, data: Record<string, unknown>): Promise<void> {
+    if (!isFirebaseConfigured) return;
+    await setDoc(doc(db, "categories", id), {
+      ...data,
+      is_active: data.active ?? data.is_active ?? true,
+      updated_at: new Date().toISOString(),
+    }, { merge: true });
+  },
+
+  async deleteCategory(id: string): Promise<void> {
+    if (!isFirebaseConfigured) return;
+    await deleteDoc(doc(db, "categories", id));
+  },
+
+  async getLanguageTemplates(): Promise<FirestoreLanguageTemplate[]> {
+    if (!isFirebaseConfigured) return [];
+    try {
+      const snap = await getDocs(collection(db, "card_language_templates"));
+      return snap.docs.map((item) => ({ id: item.id, ...item.data() } as FirestoreLanguageTemplate));
+    } catch {
+      return [];
+    }
+  },
+
+  async upsertLanguageTemplate(
+    id: string,
+    data: Omit<FirestoreLanguageTemplate, "id">,
+  ): Promise<void> {
+    if (!isFirebaseConfigured) return;
+    await setDoc(doc(db, "card_language_templates", id), {
+      ...data,
+      updated_at: new Date().toISOString(),
+    }, { merge: true });
+  },
+
+  async deleteLanguageTemplate(id: string): Promise<void> {
+    if (!isFirebaseConfigured) return;
+    await deleteDoc(doc(db, "card_language_templates", id));
   },
 
   async getPaidTravelerUnits(userId: string): Promise<Array<Record<string, unknown> & { id: string }>> {

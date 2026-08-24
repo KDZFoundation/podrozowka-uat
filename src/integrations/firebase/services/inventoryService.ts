@@ -11,7 +11,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { db, isUsingFirebaseEmulators } from "../config";
+import { db, isFirestoreCatalogEnabled } from "../config";
 
 const MAX_WRITE_OPERATIONS = 400;
 
@@ -63,8 +63,8 @@ export const inventoryService = {
     name: string;
     adminUid: string;
   }): Promise<PreparedStockPrintOrder> {
-    if (!isUsingFirebaseEmulators) {
-      throw new Error("Tworzenie zleceń magazynowych jest dostępne lokalnie wyłącznie przez emulator.");
+    if (!isFirestoreCatalogEnabled) {
+      throw new Error("Magazyn Firestore nie jest włączony w tym środowisku.");
     }
     if (!Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > 10000) {
       throw new Error("Ilość musi mieścić się w zakresie 1–10000.");
@@ -203,7 +203,7 @@ export const inventoryService = {
   },
 
   async receiveStockProductionOrder(stockOrderId: string): Promise<number> {
-    if (!isUsingFirebaseEmulators) throw new Error("Przyjęcie wydruku jest dostępne lokalnie wyłącznie przez emulator.");
+    if (!isFirestoreCatalogEnabled) throw new Error("Magazyn Firestore nie jest włączony w tym środowisku.");
     const stockOrderRef = doc(db, "stock_production_orders", stockOrderId);
     const stockOrder = await getDoc(stockOrderRef);
     if (!stockOrder.exists()) throw new Error("Nie znaleziono zlecenia magazynowego.");

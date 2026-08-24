@@ -28,6 +28,9 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { inventoryService } from "@/integrations/firebase/services/inventoryService";
 import AdminCountries from "@/components/admin/AdminCountries";
 import AdminCardDesigns from "@/components/admin/AdminCardDesigns";
 import AdminInventory from "@/components/admin/AdminInventory";
@@ -97,6 +100,27 @@ const AdminPanel = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchStats = useCallback(async () => {
+    if (isFirestoreCatalogEnabled) {
+      const [inventory, countries, designs] = await Promise.all([
+        inventoryService.getInventorySnapshot(),
+        firestoreService.getCountries(),
+        firestoreService.getCardDesigns({ includeInactive: true }),
+      ]);
+      const units = inventory.units;
+      setStats({
+        totalUnits: units.length,
+        inStock: units.filter((unit) => unit.fulfillment_status === "in_stock").length,
+        reserved: units.filter((unit) => unit.fulfillment_status === "reserved").length,
+        shipped: units.filter((unit) => unit.fulfillment_status === "shipped").length,
+        registered: units.filter((unit) => unit.business_status === "registered").length,
+        voided: units.filter((unit) => ["voided", "damaged"].includes(unit.fulfillment_status || "")).length,
+        countries: countries.length,
+        designs: designs.length,
+      });
+      setIsLoading(false);
+      return;
+    }
+
     const [
       { count: totalUnits },
       { count: inStock },

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { inventoryService, type LocalInventoryBatch, type LocalInventoryCountry, type LocalInventoryDesign, type LocalInventoryUnit, type LocalStockOrder } from "@/integrations/firebase/services/inventoryService";
 import { useAuth } from "@/hooks/useAuth";
 import type { Database } from "@/integrations/supabase/types";
@@ -185,7 +185,7 @@ const AdminInventory = () => {
   const openUnitDetail = async (unit: InventoryUnit) => {
     setSelectedUnit(unit);
     setEventsLoading(true);
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       const events = await inventoryService.getUnitEvents(unit.id);
       setUnitEvents(events as typeof unitEvents);
       setEventsLoading(false);
@@ -201,7 +201,7 @@ const AdminInventory = () => {
   };
 
   const fetchFilters = useCallback(async () => {
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       const snapshot = await inventoryService.getInventorySnapshot();
       setCountries(snapshot.countries.map((country: LocalInventoryCountry) => ({ id: country.id, name_pl: country.name_pl || country.name || "" })));
       setDesigns(snapshot.designs.map((design: LocalInventoryDesign) => ({ id: design.id, title: design.title || null, view_no: design.view_no || 1, country_id: design.country_id || "" })));
@@ -217,7 +217,7 @@ const AdminInventory = () => {
 
   const fetchUnits = useCallback(async () => {
     setIsLoading(true);
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       const snapshot = await inventoryService.getInventorySnapshot();
       const countriesById = new Map<string, LocalInventoryCountry>(snapshot.countries.map((country) => [country.id, country]));
       const designsById = new Map<string, LocalInventoryDesign>(snapshot.designs.map((design) => [design.id, design]));
@@ -315,7 +315,7 @@ const AdminInventory = () => {
   }, [fetchUnits]);
 
   const fetchStockOrders = useCallback(async () => {
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       const snapshot = await inventoryService.getInventorySnapshot();
       setStockOrders(snapshot.orders
         .filter((order: LocalStockOrder) => ["draft", "ordered", "in_production"].includes(order.status || ""))
@@ -363,7 +363,7 @@ const AdminInventory = () => {
     const design = designs.find((candidate) => candidate.id === initDesignId);
     const country = countries.find((candidate) => candidate.id === design?.country_id);
     const batchName = initBatchName.trim() || `Magazyn — ${country?.name_pl || "Wzór"} V${design?.view_no || 0} — ${new Date().toLocaleDateString("pl-PL")}`;
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       try {
         const result = await inventoryService.prepareStockPrintOrder({
           cardDesignId: initDesignId,
@@ -422,7 +422,7 @@ const AdminInventory = () => {
 
   const receiveStockOrder = async (stockOrder: StockProductionOrder) => {
     setReceivingOrderId(stockOrder.id);
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       try {
         const receivedUnits = await inventoryService.receiveStockProductionOrder(stockOrder.id);
         toast({ title: "Wydruk przyjęty na magazyn", description: `${receivedUnits} szt. jest dostępnych fizycznie na magazynie.` });
@@ -456,7 +456,7 @@ const AdminInventory = () => {
   };
 
   const handleVoid = async (unitId: string) => {
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       await inventoryService.setUnitStatus(unitId, "voided");
       toast({ title: "Sztuka unieważniona" });
       fetchUnits();
@@ -475,7 +475,7 @@ const AdminInventory = () => {
   };
 
   const handleDamaged = async (unitId: string) => {
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       await inventoryService.setUnitStatus(unitId, "damaged");
       toast({ title: "Sztuka oznaczona jako uszkodzona" });
       fetchUnits();
@@ -495,7 +495,7 @@ const AdminInventory = () => {
 
   const handleDeleteUnit = async (unitId: string) => {
     setIsDeletingUnit(true);
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       try {
         await inventoryService.deleteUnit(unitId);
         toast({ title: "Pozycja usunięta z magazynu" });
@@ -702,7 +702,7 @@ const AdminInventory = () => {
         <div className="bg-card border border-border rounded-xl p-6 space-y-4">
           <h3 className="font-display text-lg font-semibold">Nowe zamówienie magazynowe</h3>
           <p className="text-sm text-muted-foreground">
-            {isUsingFirebaseEmulators
+            {isFirestoreCatalogEnabled
               ? "System przygotuje jednostki i kody QR. Generator PDF SRA3 zostanie podłączony w kolejnym etapie backendu."
               : "System wygeneruje PDF SRA3 z QR dla drukarni. Stan magazynowy powstanie dopiero po potwierdzeniu odbioru fizycznego wydruku."}
           </p>
@@ -734,7 +734,7 @@ const AdminInventory = () => {
           </div>
           <div className="flex gap-2">
             <Button onClick={initializeBatch} disabled={isInitializing}>
-              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Przygotowuję...</> : <><Package className="w-4 h-4 mr-2" /> {isUsingFirebaseEmulators ? "Utwórz zamówienie i kody QR" : "Utwórz zamówienie i PDF"}</>}
+              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Przygotowuję...</> : <><Package className="w-4 h-4 mr-2" /> {isFirestoreCatalogEnabled ? "Utwórz zamówienie i kody QR" : "Utwórz zamówienie i PDF"}</>}
             </Button>
             <Button variant="outline" onClick={() => setShowInitDialog(false)} disabled={isInitializing}>Anuluj</Button>
           </div>
@@ -756,7 +756,7 @@ const AdminInventory = () => {
                 <div>
                   <p className="font-medium">{stockOrder.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {stockOrder.order_number} · {stockOrder.total_quantity} szt. · {isUsingFirebaseEmulators ? "kody QR gotowe — PDF SRA3 jeszcze nie wygenerowany" : "PDF przekazany do drukarni"}
+                    {stockOrder.order_number} · {stockOrder.total_quantity} szt. · {isFirestoreCatalogEnabled ? "kody QR gotowe — PDF SRA3 jeszcze nie wygenerowany" : "PDF przekazany do drukarni"}
                   </p>
                 </div>
                 <Button size="sm" onClick={() => receiveStockOrder(stockOrder)} disabled={receivingOrderId === stockOrder.id}>

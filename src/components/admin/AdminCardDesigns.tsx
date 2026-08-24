@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { isUsingFirebaseEmulators } from "@/integrations/firebase/config";
+import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { AdminCardCreator } from "./AdminCardCreator";
 import { AdminLanguageTemplates } from "./AdminLanguageTemplates";
@@ -67,7 +67,7 @@ const AdminCardDesigns = () => {
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       const [firestoreDesigns, firestoreCountries, firestoreCategories] = await Promise.all([
         firestoreService.getCardDesigns({ includeInactive: true }),
         firestoreService.getCountries(),
@@ -129,7 +129,7 @@ const AdminCardDesigns = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć ten wzór kartki?")) return;
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       try {
         await firestoreService.deleteCardDesign(id);
         toast({ title: "Wzór usunięty lokalnie z Firestore" });
@@ -149,7 +149,7 @@ const AdminCardDesigns = () => {
   };
 
   const toggleActive = async (id: string, active: boolean) => {
-    if (isUsingFirebaseEmulators) {
+    if (isFirestoreCatalogEnabled) {
       await firestoreService.setCardDesignActive(id, !active);
       fetchData();
       return;
