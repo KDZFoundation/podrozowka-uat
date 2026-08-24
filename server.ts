@@ -1,71 +1,10 @@
 import express from "express";
 import cors from "cors";
 import path from "path";
-import fs from "fs";
-import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 
-function sha256Hex(input: string): string {
-  return crypto.createHash("sha256").update(input, "utf8").digest("hex");
-}
-
-function secureEquals(left: string, right: string): boolean {
-  if (!left || !right || left.length !== right.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(left), Buffer.from(right));
-}
-
-async function markOrderPaidInFirestore(orderNumber: string, paymentId: string, _amount: string) {
-  try {
-    const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-    if (!fs.existsSync(configPath)) return;
-    const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    const { projectId, apiKey, firestoreDatabaseId } = config;
-    if (!projectId || !firestoreDatabaseId) return;
-
-    // Run structured query to find document by order_number
-    const queryUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${firestoreDatabaseId}/documents:runQuery?key=${apiKey}`;
-    const queryBody = {
-      structuredQuery: {
-        from: [{ collectionId: "orders" }],
-        where: {
-          fieldFilter: {
-            field: { fieldPath: "order_number" },
-            op: "EQUAL",
-            value: { stringValue: orderNumber },
-          },
-        },
-        limit: 1,
-      },
-    };
-
-    const qRes = await fetch(queryUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(queryBody),
-    });
-
-    const qData = (await qRes.json()) as Array<{ document?: { name: string } }>;
-    if (Array.isArray(qData) && qData[0]?.document?.name) {
-      const docPath = qData[0].document.name;
-      const patchUrl = `https://firestore.googleapis.com/v1/${docPath}?updateMask.fieldPaths=payment_status&updateMask.fieldPaths=status&updateMask.fieldPaths=hotpay_payment_id&updateMask.fieldPaths=paid_at&key=${apiKey}`;
-      await fetch(patchUrl, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fields: {
-            payment_status: { stringValue: "paid" },
-            status: { stringValue: "paid" },
-            hotpay_payment_id: { stringValue: paymentId },
-            paid_at: { stringValue: new Date().toISOString() },
-          },
-        }),
-      });
-      console.log(`[Firestore]: Zamówienie ${orderNumber} zostało zaktualizowane jako OPŁACONE (paid).`);
-    }
-  } catch (err) {
-    console.error("[Firestore Webhook Update Error]:", err);
-  }
-}
+import hotpayWebhookHandler from "./api/payments/hotpay-webhook";
+import registerPostcardHandler from "./api/register-postcard";
 
 async function startServer() {
   const app = express();
@@ -81,6 +20,28 @@ async function startServer() {
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
+
+  // QR registration uses short-lived local Application Default Credentials in
+  // development and Vercel Workload Identity in deployed environments.
+  app.all("/api/register-postcard", async (req, res) => {
+    try {
+      const requestUrl = `http://localhost:${PORT}${req.originalUrl}`;
+      const response = await registerPostcardHandler.fetch(new Request(requestUrl, {
+        method: req.method,
+        headers: { "Content-Type": "application/json" },
+        body: ["POST", "PUT", "PATCH"].includes(req.method) ? JSON.stringify(req.body || {}) : undefined,
+      }));
+      const body = await response.text();
+      res.status(response.status);
+      const contentType = response.headers.get("content-type");
+      if (contentType) res.setHeader("Content-Type", contentType);
+      res.send(body);
+    } catch (e) {
+      console.error("[server.ts /api/register-postcard error]:", e);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
 
   // Payment configuration status
   app.get("/api/payments/status", (_req, res) => {
@@ -99,173 +60,40 @@ async function startServer() {
     });
   });
 
-  // Initialize HotPay Payment
+  // The browser is local, but orders and payment credentials live in the UAT
+  // backend. The previous local endpoint initialized HotPay without storing an
+  // order in Firestore, so the return page could not find ORD-… afterwards.
   app.post("/api/payments/create-hotpay", async (req, res) => {
+    const backendBaseUrl = (process.env.PAYMENT_BACKEND_API_URL || "https://podrozowka-uat-one.vercel.app").replace(/\/$/, "");
     try {
-      const {
-        items,
-        shipping_cost_grosze = 0,
-        pickup_point,
-        shipping_address,
-        invoice,
-        payment_method = "online",
-        customer_email = "",
-        origin_url,
-      } = req.body || {};
-
-      const totalQty = Array.isArray(items)
-        ? items.reduce((sum: number, it: { quantity?: number }) => sum + (Number(it?.quantity) || 0), 0)
-        : 0;
-
-      if (totalQty < 10 && items && items.length > 0) {
-        return res.status(400).json({ error: "Minimalne zamówienie to 10 podróżówek" });
-      }
-
-      // Calculate total amount in PLN
-      let calculatedTotal = (Number(shipping_cost_grosze) || 0) / 100;
-      if (Array.isArray(items)) {
-        calculatedTotal += items.reduce(
-          (sum: number, it: { quantity?: number; unit_price?: number }) =>
-            sum + (Number(it?.quantity) || 1) * (Number(it?.unit_price) || 1.2),
-          0
-        );
-      }
-
-      const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}`;
-      const amountStr = calculatedTotal.toFixed(2);
-      const serviceName = `Podróżówka - zamówienie ${orderNumber}`;
-      const clientOrigin = origin_url || req.headers.origin || `http://${req.headers.host}`;
-      const returnUrl = `${clientOrigin}/checkout/potwierdzenie?order=${encodeURIComponent(orderNumber)}`;
-
-      const hotpaySecret = process.env.HOTPAY_SECRET;
-      const hotpayPassword = process.env.HOTPAY_NOTIFICATION_PASSWORD;
-
-      if (payment_method === "cod") {
-        return res.json({
-          ok: true,
-          payment_method: "cod",
-          order_number: orderNumber,
-          redirect_url: `${returnUrl}&cod=1`,
-        });
-      }
-
-      // If HotPay credentials are fully configured, call the official HotPay API
-      if (hotpaySecret && hotpayPassword) {
-        const hashInput = `${hotpayPassword};${amountStr};${serviceName};${returnUrl};${orderNumber};${hotpaySecret}`;
-        const hash = sha256Hex(hashInput);
-
-        const formData = new URLSearchParams();
-        formData.append("SEKRET", hotpaySecret);
-        formData.append("KWOTA", amountStr);
-        formData.append("NAZWA_USLUGI", serviceName);
-        formData.append("ADRES_WWW", returnUrl);
-        formData.append("ID_ZAMOWIENIA", orderNumber);
-        formData.append("EMAIL", customer_email || "");
-        formData.append("TYP", "INIT");
-        formData.append("HASH", hash);
-
-        try {
-          const hotpayResponse = await fetch("https://platnosc.hotpay.pl/", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: formData.toString(),
-          });
-
-          const hotpayData = (await hotpayResponse.json().catch(() => null)) as {
-            STATUS?: boolean;
-            URL?: string;
-            WIADOMOSC?: string;
-          } | null;
-
-          if (hotpayResponse.ok && hotpayData?.STATUS && hotpayData.URL) {
-            return res.json({
-              ok: true,
-              order_number: orderNumber,
-              payment_gateway: "hotpay",
-              redirect_url: hotpayData.URL,
-            });
-          }
-
-          console.warn("[HotPay INIT Response]:", hotpayData);
-          // If HotPay returned an error (e.g. invalid service in test), provide informative feedback
-          return res.status(502).json({
-            error: hotpayData?.WIADOMOSC || "Błąd inicjalizacji płatności w bramce HotPay",
-            details: hotpayData,
-            order_number: orderNumber,
-          });
-        } catch (fetchError) {
-          console.error("[HotPay Fetch Error]:", fetchError);
-          return res.status(502).json({
-            error: "Nie udało się połączyć z bramką HotPay",
-            order_number: orderNumber,
-          });
-        }
-      }
-
-      // If credentials are not set yet, simulate graceful redirection to confirmation with warning
-      console.warn("[HotPay]: Brak HOTPAY_SECRET lub HOTPAY_NOTIFICATION_PASSWORD w środowisku. Przekierowanie do potwierdzenia testowego.");
-      return res.json({
-        ok: true,
-        order_number: orderNumber,
-        payment_gateway: "hotpay",
-        redirect_url: returnUrl,
-        warning: "Brak skonfigurowanych kluczy HotPay w zmiennych środowiskowych.",
+      const response = await fetch(`${backendBaseUrl}/api/payments/create-hotpay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body || {}),
       });
+      const body = await response.text();
+      res.status(response.status);
+      const contentType = response.headers.get("content-type");
+      if (contentType) res.setHeader("Content-Type", contentType);
+      res.send(body);
     } catch (error) {
-      console.error("[API payments/create-hotpay]:", error);
-      res.status(500).json({ error: "Błąd serwera podczas tworzenia płatności" });
+      console.error("[API payments/create-hotpay proxy error]:", error);
+      res.status(502).json({ error: "payment_backend_unavailable" });
     }
   });
 
   // HotPay IPN Webhook
   app.post("/api/payments/hotpay-webhook", async (req, res) => {
     try {
-      const body = req.body || {};
-      const amount = String(body.KWOTA || "").trim();
-      const paymentId = String(body.ID_PLATNOSCI || "").trim();
-      const orderNumber = String(body.ID_ZAMOWIENIA || "").trim();
-      const status = String(body.STATUS || "").trim();
-      const secure = String(body.SECURE || "").trim();
-      const secret = String(body.SEKRET || "").trim();
-      const incomingHash = String(body.HASH || "").trim().toLowerCase();
-
-      if (!amount || !paymentId || !orderNumber || !status || !secure || !secret || !incomingHash) {
-        console.warn("[HotPay Webhook]: Brak wymaganych pól w notyfikacji.");
-        return res.status(400).send("bad request");
-      }
-
-      const hotpaySecret = process.env.HOTPAY_SECRET || "";
-      const hotpayPassword = process.env.HOTPAY_NOTIFICATION_PASSWORD || "";
-
-      if (!hotpaySecret || !hotpayPassword) {
-        console.error("[HotPay Webhook]: Brak skonfigurowanych kluczy HotPay na serwerze.");
-        return res.status(503).send("gateway not configured");
-      }
-
-      if (!secureEquals(secret, hotpaySecret)) {
-        console.error("[HotPay Webhook]: Niezgodny sekret usługi.", orderNumber);
-        return res.status(400).send("invalid secret");
-      }
-
-      const expectedHash = sha256Hex(
-        `${hotpayPassword};${amount};${paymentId};${orderNumber};${status};${secure};${secret}`
-      ).toLowerCase();
-
-      if (!secureEquals(expectedHash, incomingHash)) {
-        console.error("[HotPay Webhook]: Niezgodny podpis HASH.", orderNumber);
-        return res.status(400).send("invalid signature");
-      }
-
-      console.log(`[HotPay Webhook]: Otrzymano poprawne powiadomienie dla ${orderNumber}, status: ${status}, kwota: ${amount} PLN.`);
-
-      if (status === "SUCCESS") {
-        await markOrderPaidInFirestore(orderNumber, paymentId, amount);
-      }
-
-      // Return OK response to HotPay
-      res.status(200).send("OK");
+      const form = new URLSearchParams();
+      for (const [key, value] of Object.entries(req.body || {})) form.set(key, String(value));
+      const webhookRequest = new Request(`http://${req.headers.host || "localhost"}${req.originalUrl}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: form.toString(),
+      });
+      const webhookResponse = await hotpayWebhookHandler.fetch(webhookRequest);
+      res.status(webhookResponse.status).send(await webhookResponse.text());
     } catch (error) {
       console.error("[HotPay Webhook Error]:", error);
       res.status(500).send("internal server error");

@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { trackEvent } from "@/lib/analytics";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 
 interface InventoryCard {
   id: string;
@@ -30,20 +31,27 @@ const statusLabels: Record<string, { label: string; color: string; icon: typeof 
 };
 
 const fetchPostcards = async (userId: string): Promise<InventoryCard[]> => {
-  const [unitsSnapshot, designsSnapshot, countriesSnapshot] = await Promise.all([
-    getDocs(query(collection(db, "inventory_units"), where("traveler_user_id", "==", userId))),
+  const [units, designsSnapshot, countriesSnapshot, registrationsSnapshot] = await Promise.all([
+    firestoreService.getPaidTravelerUnits(userId),
     getDocs(collection(db, "card_designs")),
     getDocs(collection(db, "countries")),
+    getDocs(query(collection(db, "recipient_registrations"), where("traveler_user_id", "==", userId))),
   ]);
   const designs = new Map(designsSnapshot.docs.map((document) => [document.id, document.data()]));
   const countries = new Map(countriesSnapshot.docs.map((document) => [document.id, document.data()]));
-  const units = unitsSnapshot.docs
-    .map((document) => ({ id: document.id, ...document.data() } as Record<string, unknown> & { id: string }))
+  const registrationsByUnitId = new Map(
+    registrationsSnapshot.docs
+      .map((document) => document.data())
+      .filter((registration) => typeof registration.inventory_unit_id === "string")
+      .map((registration) => [registration.inventory_unit_id as string, registration]),
+  );
+  const sortedUnits = units
     .sort((left, right) => String(right.created_at || "").localeCompare(String(left.created_at || "")));
 
-  return units.map((unit) => {
+  return sortedUnits.map((unit) => {
     const design = designs.get(String(unit.card_design_id || ""));
     const country = design ? countries.get(String(design.country_id || "")) : null;
+    const registration = registrationsByUnitId.get(unit.id);
     return {
       id: unit.id,
       business_status: typeof unit.business_status === "string" ? unit.business_status : null,
@@ -51,10 +59,10 @@ const fetchPostcards = async (userId: string): Promise<InventoryCard[]> => {
       country_name: typeof country?.name_pl === "string" ? country.name_pl : null,
       design_title: typeof design?.title === "string" ? design.title : null,
       view_no: Number(design?.view_no || 0),
-      recipient_name: null,
-      recipient_message: null,
-      recipient_email: null,
-      contact_opt_in: false,
+      recipient_name: typeof registration?.recipient_name === "string" ? registration.recipient_name : null,
+      recipient_message: typeof registration?.recipient_message === "string" ? registration.recipient_message : null,
+      recipient_email: registration?.contact_opt_in && typeof registration.recipient_email === "string" ? registration.recipient_email : null,
+      contact_opt_in: registration?.contact_opt_in === true,
     };
   });
 };

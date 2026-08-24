@@ -75,8 +75,8 @@ const RegisterPostcardForm = ({ postcard, onSubmit }: Props) => {
       await onSubmit(values);
     } catch (err) {
       toast({
-        title: "Wystąpił błąd",
-        description: err instanceof Error ? err.message : "Spróbuj ponownie",
+        title: copy.genericErrorTitle,
+        description: err instanceof Error ? err.message : copy.genericErrorText,
         variant: "destructive",
       });
     } finally {
@@ -88,7 +88,7 @@ const RegisterPostcardForm = ({ postcard, onSubmit }: Props) => {
   const designCountryName = getLocalizedCountryName(postcard.design.country_iso2, postcard.design.country_name, copy.locale);
 
   return (
-    <div className="min-h-screen bg-gradient-hero px-4 py-8 md:py-12">
+    <div className="min-h-screen bg-gradient-hero px-4 py-8 md:py-12" lang={copy.locale}>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-lg">
         <div className="mb-4 text-center">
           <a href="/" className="font-display text-xl font-semibold text-foreground">Podróżówka</a>

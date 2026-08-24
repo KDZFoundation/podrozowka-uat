@@ -51,7 +51,6 @@ const numericValue = (value: unknown, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
-
 const createdAtValue = (value: unknown): string => {
   if (typeof value === "string") return value;
   if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") {
@@ -364,4 +363,144 @@ export const firestoreService = {
       await updateDoc(userRef, { gamification_points: current });
     }
   },
+
+  async getTravelerStats(userId: string) {
+    if (!isFirebaseConfigured || !userId) {
+      return {
+        totalPoints: 0,
+        currentRank: "Zwiadowca",
+        uniqueCountries: 0,
+        registeredRelations: 0,
+        totalKilometers: 0,
+        totalUnits: 0,
+        purchasedCount: 0,
+        registeredCount: 0,
+        countryStats: [] as Array<{ name: string; total: number; registered: number }>,
+      };
+    }
+
+    try {
+      const [userProfile, orders, unitsSnap, regsSnap, designsSnap, countriesSnap] = await Promise.all([
+        this.getUserProfile(userId),
+        this.getOrdersByUser(userId),
+        getDocs(query(collection(db, "inventory_units"), where("traveler_user_id", "==", userId))),
+        getDocs(query(collection(db, "recipient_registrations"), where("traveler_user_id", "==", userId))),
+        getDocs(collection(db, "card_designs")),
+        getDocs(collection(db, "countries")),
+      ]);
+
+      const designsMap = new Map(designsSnap.docs.map((d) => [d.id, d.data()]));
+      const countriesMap = new Map(countriesSnap.docs.map((c) => [c.id, c.data().name_pl || c.data().name || c.id]));
+
+      // A traveler earns progress only for postcards from an order that has
+      // actually been paid. Inventory imported for tests, stock, or a draft
+      // order must never appear in the traveler's game profile.
+      const paidOrderIds = new Set(
+        orders.filter((order) => order.payment_status === "paid").map((order) => order.id),
+      );
+      const units = unitsSnap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .filter((unit: any) => typeof unit.order_id === "string" && paidOrderIds.has(unit.order_id));
+      const totalUnits = units.length;
+      const registeredUnitIds = new Set(
+        regsSnap.docs
+          .map((registration) => registration.data().inventory_unit_id)
+          .filter((unitId): unitId is string => typeof unitId === "string"),
+      );
+      const registeredCount = units.filter(
+        (unit: any) => unit.business_status === "registered" || registeredUnitIds.has(unit.id),
+      ).length;
+      const purchasedCount = units.filter((u: any) => ["purchased", "assigned"].includes(u.business_status || "")).length;
+
+      const countrySet = new Set<string>();
+      const countryMap = new Map<string, { total: number; registered: number }>();
+
+      units.forEach((u: any) => {
+        const design = designsMap.get(u.card_design_id);
+        const countryId = design?.country_id || "PL";
+        countrySet.add(countryId);
+        const countryName = countriesMap.get(countryId) || countryId;
+        const existing = countryMap.get(countryName) || { total: 0, registered: 0 };
+        existing.total++;
+        if (u.business_status === "registered" || registeredUnitIds.has(u.id)) existing.registered++;
+        countryMap.set(countryName, existing);
+      });
+
+      const countryStats = Array.from(countryMap.entries())
+        .map(([name, s]) => ({ name, ...s }))
+        .sort((a, b) => b.total - a.total);
+
+      // Do not trust historical cached counters during migration. They can
+      // include deleted/test units, while the paid orders above are canonical.
+      const totalPoints = totalUnits * 10 + registeredCount * 50;
+      const currentRank = totalPoints >= 7500
+        ? "Legenda Podróżówki"
+        : totalPoints >= 3000
+          ? "Misjonarz Kultury"
+          : totalPoints >= 1500
+            ? "Ambasador"
+            : totalPoints >= 500
+              ? "Odkrywca"
+              : "Zwiadowca";
+      const totalKilometers = registeredCount > 0 ? Number((userProfile as any)?.total_kilometers || 0) : 0;
+
+      return {
+        totalPoints,
+        currentRank,
+        uniqueCountries: countrySet.size,
+        registeredRelations: registeredCount,
+        totalKilometers,
+        totalUnits,
+        purchasedCount,
+        registeredCount,
+        countryStats,
+      };
+    } catch (e) {
+      console.warn("Firestore getTravelerStats error:", e);
+      return {
+        totalPoints: 0,
+        currentRank: "Zwiadowca",
+        uniqueCountries: 0,
+        registeredRelations: 0,
+        totalKilometers: 0,
+        totalUnits: 0,
+        purchasedCount: 0,
+        registeredCount: 0,
+        countryStats: [],
+      };
+    }
+  },
+
+  async getPaidTravelerUnits(userId: string): Promise<Array<Record<string, unknown> & { id: string }>> {
+    if (!isFirebaseConfigured || !userId) return [];
+    try {
+      const [orders, unitsSnap] = await Promise.all([
+        this.getOrdersByUser(userId),
+        getDocs(query(collection(db, "inventory_units"), where("traveler_user_id", "==", userId))),
+      ]);
+      const paidOrderIds = new Set(
+        orders.filter((order) => order.payment_status === "paid").map((order) => order.id),
+      );
+      return unitsSnap.docs
+        .map((document) => ({ id: document.id, ...document.data() } as Record<string, unknown> & { id: string }))
+        .filter((unit) => typeof unit.order_id === "string" && paidOrderIds.has(unit.order_id));
+    } catch (error) {
+      console.warn("Firestore getPaidTravelerUnits error:", error);
+      return [];
+    }
+  },
+
+  async getTopTravelers(limitCount = 10): Promise<FirestoreUserProfile[]> {
+    if (!isFirebaseConfigured) return [];
+    try {
+      const snap = await getDocs(collection(db, "users"));
+      const users = snap.docs.map((d) => ({ id: d.id, user_id: d.id, ...d.data() } as unknown as FirestoreUserProfile));
+      return users
+        .sort((a, b) => (b.gamification_points || 0) - (a.gamification_points || 0))
+        .slice(0, limitCount);
+    } catch {
+      return [];
+    }
+  },
 };
+

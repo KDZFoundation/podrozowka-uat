@@ -1,7 +1,9 @@
 import { useAuth } from "@/hooks/useAuth";
 import { MapPin, Mail, Calendar } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { db, isFirebaseConfigured } from "@/integrations/firebase/config";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
@@ -47,67 +49,59 @@ const TravelerJournal = () => {
     queryKey: ["traveler-journal", user?.id],
     enabled: !!user?.id,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("inventory_units")
-        .select(`
-          id,
-          created_at,
-          registered_at,
-          card_designs!inventory_units_card_design_id_fkey (
-            title,
-            country_id,
-            countries!designs_country_id_fkey ( name_pl )
-          ),
-          recipient_registrations (
-            registered_at,
-            recipient_name,
-            recipient_message
-          )
-        `)
-        .eq("traveler_user_id", user!.id)
-        .order("created_at", { ascending: false });
+      // 1. Try Firestore
+      if (isFirebaseConfigured && user?.id) {
+        try {
+          const [units, regsSnap, designsSnap, countriesSnap] = await Promise.all([
+            firestoreService.getPaidTravelerUnits(user.id),
+            getDocs(query(collection(db, "recipient_registrations"), where("traveler_user_id", "==", user.id))),
+            getDocs(collection(db, "card_designs")),
+            getDocs(collection(db, "countries")),
+          ]);
 
-      if (error) throw error;
+          const designsMap = new Map(designsSnap.docs.map(d => [d.id, d.data()]));
+          const countriesMap = new Map(countriesSnap.docs.map(c => [c.id, c.data().name_pl || c.data().name || c.id]));
+          const regsByUnit = new Map(regsSnap.docs.map(r => [r.data().inventory_unit_id, r.data()]));
 
-      const typedData = (data ?? []) as unknown as JournalUnit[];
-      const timeline: TimelineEvent[] = [];
+          const timeline: TimelineEvent[] = [];
+          units.forEach(unit => {
+              const u = unit;
+              const design = designsMap.get(u.card_design_id);
+              const country = countriesMap.get(design?.country_id) || "Polska";
+              const designTitle = design?.title || "Podróżówka";
 
-      typedData.forEach((unit: JournalUnit) => {
-        const country = unit.card_designs?.countries?.name_pl;
-        const designTitle = unit.card_designs?.title || undefined;
+              timeline.push({
+                id: `${unit.id}-received`,
+                date: u.created_at || new Date().toISOString(),
+                type: "received",
+                country,
+                designTitle,
+              });
 
-        // Event: received / created
-        timeline.push({
-          id: `${unit.id}-received`,
-          date: unit.created_at,
-          type: "received",
-          country,
-          designTitle,
-        });
-
-        // Event: registered
-        const reg = unit.recipient_registrations;
-        const registration = Array.isArray(reg) ? reg[0] : reg;
-        if (registration) {
-          timeline.push({
-            id: `${unit.id}-registered`,
-            date: registration.registered_at || unit.registered_at || undefined,
-            type: "registered",
-            country,
-            designTitle,
-            recipientName: registration.recipient_name,
-            recipientMessage: registration.recipient_message || undefined,
+              const reg = regsByUnit.get(unit.id);
+              if (reg || u.business_status === "registered") {
+                timeline.push({
+                  id: `${unit.id}-registered`,
+                  date: reg?.registered_at || u.registered_at || new Date().toISOString(),
+                  type: "registered",
+                  country: reg?.registered_country_iso2 ? (countriesMap.get(reg.registered_country_iso2) || reg.registered_country_iso2) : country,
+                  recipientName: reg?.recipient_name,
+                  recipientMessage: reg?.recipient_message,
+                  designTitle,
+                });
+              }
           });
+
+          return timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        } catch (e) {
+          console.warn("Firestore traveler-journal error:", e);
         }
-      });
-
-      timeline.sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
-
-      return timeline;
+      }
+      return [];
     },
   });
+
+
 
   if (isLoading) {
     return (

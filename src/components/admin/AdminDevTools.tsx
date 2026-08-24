@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Database, Globe, Loader2, QrCode, ExternalLink, Copy, Check, ShoppingBag, Flame, Sparkles } from "lucide-react";
+import { Database, Globe, Loader2, QrCode, ExternalLink, Copy, Check, ShoppingBag, Flame, Sparkles, Trash2 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -7,7 +7,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { seedFirestoreIfEmpty } from "@/integrations/firebase/services/seedService";
-import { isFirebaseConfigured } from "@/integrations/firebase/config";
+import { db, isFirebaseConfigured } from "@/integrations/firebase/config";
+import { collection, deleteDoc, doc, getDocs, limit, query, setDoc, where } from "firebase/firestore";
+import QRCode from "qrcode";
 
 const MOCK_COUNTRIES = [
   { name_pl: "Japonia", iso2: "JP", iso3: "JPN", slug: "japonia" },
@@ -43,6 +45,17 @@ const randomHex = (len: number) => {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("").slice(0, len);
 };
 
+type TestCard = {
+  token: string;
+  unitId: string;
+  batchId: string;
+  registrationUrl: string;
+  qrImage: string;
+};
+
+const registrationBaseUrl = () =>
+  (import.meta.env.VITE_TEST_QR_BASE_URL || window.location.origin).replace(/\/$/, "");
+
 const GLOBAL_LOCATIONS = [
   { city: "Tokio", country_name: "Japonia", iso2: "JP", iso3: "JPN", lat: 35.68, lng: 139.69, name: "Yuki", message: "Arigato! Niesamowita inicjatywa! 🎌" },
   { city: "Sydney", country_name: "Australia", iso2: "AU", iso3: "AUS", lat: -33.86, lng: 151.20, name: "Oliver", message: "G'day mate! Kartka dotarła aż tutaj! 🦘" },
@@ -65,7 +78,8 @@ const AdminDevTools = () => {
   const [isSeedingFirebase, setIsSeedingFirebase] = useState(false);
   const [isCreatingTestCard, setIsCreatingTestCard] = useState(false);
   const [isCreatingFranceOrder, setIsCreatingFranceOrder] = useState(false);
-  const [createdTestToken, setCreatedTestToken] = useState<string | null>(null);
+  const [createdTestCard, setCreatedTestCard] = useState<TestCard | null>(null);
+  const [isDeletingTestCard, setIsDeletingTestCard] = useState(false);
 
   const handleSeedFirebase = async () => {
     setIsSeedingFirebase(true);
@@ -222,90 +236,50 @@ const AdminDevTools = () => {
     setIsCreatingTestCard(true);
 
     try {
-      // 1. Get or create a country
-      let countryId: string;
-      const { data: country } = await supabase
-        .from("countries")
-        .select("id")
-        .eq("iso2", "JP")
-        .maybeSingle();
+      const designs = await getDocs(query(collection(db, "card_designs"), where("active", "==", true), limit(1)));
+      const design = designs.docs[0];
+      if (!design) throw new Error("Brak aktywnego wzoru Podróżówki w Firestore.");
 
-      if (country) {
-        countryId = country.id;
-      } else {
-        const { data: newCountry, error: cErr } = await supabase
-          .from("countries")
-          .insert({ name_pl: "Japonia", iso2: "JP", iso3: "JPN", slug: "japonia", active: true })
-          .select("id")
-          .single();
-        if (cErr) throw cErr;
-        countryId = newCountry.id;
-      }
-
-      // 2. Get or create a card design
-      let designId: string;
-      const { data: design } = await supabase
-        .from("card_designs")
-        .select("id")
-        .eq("country_id", countryId)
-        .eq("language_code", "ja")
-        .limit(1)
-        .maybeSingle();
-
-      if (design) {
-        designId = design.id;
-      } else {
-        const { data: newDesign, error: dErr } = await supabase
-          .from("card_designs")
-          .insert({ country_id: countryId, view_no: 999, title: "テスト用ポストカード：日本", language_code: "ja", active: true })
-          .select("id")
-          .single();
-        if (dErr) throw dErr;
-        designId = newDesign.id;
-      }
-
-      // 3. Create stock batch if needed
-      let batchId: string;
-      const { data: batch } = await supabase
-        .from("stock_batches")
-        .select("id")
-        .eq("card_design_id", designId)
-        .limit(1)
-        .maybeSingle();
-
-      if (batch) {
-        batchId = batch.id;
-      } else {
-        const { data: newBatch, error: bErr } = await supabase
-          .from("stock_batches")
-          .insert({ card_design_id: designId, name: `Batch Test ${Date.now()}`, quantity: 10 })
-          .select("id")
-          .single();
-        if (bErr) throw bErr;
-        batchId = newBatch.id;
-      }
-
-      // 4. Generate test token and its SHA256 hash
-      const token = `test-card-${Date.now().toString(36)}`;
+      const now = new Date().toISOString();
+      const batchId = crypto.randomUUID();
+      const unitId = crypto.randomUUID();
+      const token = `test-${crypto.randomUUID().replace(/-/g, "")}`;
       const tokenHash = await hashToken(token);
 
-      // 5. Insert inventory_unit in 'purchased' state
-      const { error: unitErr } = await supabase.from("inventory_units").insert({
+      await setDoc(doc(db, "stock_batches", batchId), {
+        id: batchId,
+        name: "TEST — obdarowany (usunąć po teście)",
+        card_design_id: design.id,
+        quantity: 1,
+        source_type: "test",
+        purpose: "Test rejestracji obdarowanego",
+        distribution_channel: "test",
+        created_by: user.id,
+        created_at: now,
+        updated_at: now,
+        schema_version: 1,
+      });
+      await setDoc(doc(db, "inventory_units", unitId), {
+        id: unitId,
         stock_batch_id: batchId,
-        card_design_id: designId,
+        card_design_id: design.id,
         internal_inventory_code: `TEST-${Date.now().toString(36).toUpperCase()}`,
-        fulfillment_status: "shipped",
+        fulfillment_status: "qr_generated",
         business_status: "purchased",
         traveler_user_id: user.id,
-        shipped_at: new Date().toISOString(),
         public_claim_code: `PDZ-TEST-${Date.now().toString(36).toUpperCase()}`,
         public_claim_token_hash: tokenHash,
+        qr_generated_at: now,
+        created_at: now,
+        updated_at: now,
+        is_test: true,
+        schema_version: 1,
       });
 
-      if (unitErr) throw unitErr;
-
-      setCreatedTestToken(token);
-      toast.success("Utworzono kartkę testową gotową do rejestracji!");
+      const registrationUrl = `${registrationBaseUrl()}/r/${token}`;
+      const qrImage = await QRCode.toDataURL(registrationUrl, { width: 600, margin: 2, errorCorrectionLevel: "M" });
+      setCreatedTestCard({ token, unitId, batchId, registrationUrl, qrImage });
+      toast.success("Utworzono jedną kartkę testową gotową do rejestracji.");
       queryClient.invalidateQueries();
     } catch (err) {
       console.error("Test card creation error:", err);
@@ -315,8 +289,24 @@ const AdminDevTools = () => {
     }
   };
 
-  const handleCopyLink = (token: string) => {
-    const url = `${window.location.origin}/r/${token}`;
+  const deleteTestCardForObdarowany = async () => {
+    if (!createdTestCard || !window.confirm("Usunąć wyłącznie tę testową kartkę i jej partię?")) return;
+    setIsDeletingTestCard(true);
+    try {
+      await deleteDoc(doc(db, "inventory_units", createdTestCard.unitId));
+      await deleteDoc(doc(db, "stock_batches", createdTestCard.batchId));
+      setCreatedTestCard(null);
+      toast.success("Usunięto kartkę testową oraz jej partię.");
+      queryClient.invalidateQueries();
+    } catch (err) {
+      console.error("Test card cleanup error:", err);
+      toast.error("Nie udało się usunąć kartki testowej: " + (err instanceof Error ? err.message : "nieznany błąd"));
+    } finally {
+      setIsDeletingTestCard(false);
+    }
+  };
+
+  const handleCopyLink = (url: string) => {
     navigator.clipboard.writeText(url);
     setCopied(true);
     toast.success("Skopiowano link do schowka!");
@@ -709,19 +699,21 @@ const AdminDevTools = () => {
             {isCreatingTestCard ? "Tworzenie kartki testowej…" : "Wygeneruj nową kartkę do testów"}
           </Button>
 
-          {createdTestToken && (
+          {createdTestCard && (
             <div className="p-4 bg-muted/60 rounded-lg border space-y-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 Wygenerowana kartka testowa
               </p>
               <p className="text-sm font-mono bg-background p-2 rounded border break-all text-foreground">
-                {window.location.origin}/r/{createdTestToken}
+                {createdTestCard.registrationUrl}
               </p>
+              <img src={createdTestCard.qrImage} alt="Kod QR do testowej rejestracji" className="mx-auto w-48 rounded-lg bg-white p-2" />
+              <p className="text-xs text-muted-foreground">To jednorazowa kartka testowa. Po rejestracji usuń ją tym samym przyciskiem.</p>
               <div className="flex gap-2">
                 <Button
                   size="sm"
                   className="flex-1"
-                  onClick={() => window.open(`/r/${createdTestToken}`, "_blank")}
+                  onClick={() => window.open(createdTestCard.registrationUrl, "_blank")}
                 >
                   <ExternalLink className="w-4 h-4 mr-1" />
                   Przejdź do rejestracji
@@ -729,11 +721,15 @@ const AdminDevTools = () => {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => handleCopyLink(createdTestToken)}
+                  onClick={() => handleCopyLink(createdTestCard.registrationUrl)}
                 >
                   {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
                 </Button>
               </div>
+              <Button size="sm" variant="destructive" className="w-full" onClick={deleteTestCardForObdarowany} disabled={isDeletingTestCard}>
+                {isDeletingTestCard ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Trash2 className="w-4 h-4 mr-1" />}
+                Usuń kartkę testową
+              </Button>
             </div>
           )}
         </CardContent>

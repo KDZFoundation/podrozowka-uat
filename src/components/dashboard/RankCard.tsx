@@ -4,7 +4,7 @@ import { Progress } from "@/components/ui/progress";
 import { useEffect, useRef, useState, useCallback } from "react";
 import html2canvas from "html2canvas";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { useAuth } from "@/hooks/useAuth";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import { DEFAULT_GAMIFICATION_TIERS, useGamificationTiers } from "@/hooks/useGamificationTiers";
@@ -36,50 +36,13 @@ interface RankCardProps {
   userId: string;
 }
 
-interface RankUnitJoin {
-  id: string;
-  card_designs: {
-    country_id: string;
-  } | null;
-}
-
 const fetchRankData = async (userId: string) => {
-  // Fetch profile gamification fields
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("total_points, current_rank, total_kilometers")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  // Fetch unique countries & registration count
-  const { data: units } = await supabase
-    .from("inventory_units")
-    .select("id, card_designs!inner(country_id)")
-    .eq("traveler_user_id", userId);
-
-  const typedUnits = (units || []) as unknown as RankUnitJoin[];
-  const unitIds = typedUnits.map((u) => u.id);
-  const countrySet = new Set(
-    typedUnits.map((u) => u.card_designs?.country_id).filter(Boolean)
-  );
-
-  let regCount = 0;
-  if (unitIds.length > 0) {
-    const { count } = await supabase
-      .from("recipient_registrations")
-      .select("id", { count: "exact", head: true })
-      .in("inventory_unit_id", unitIds);
-    regCount = count || 0;
-  }
-
-  return {
-    totalPoints: profile?.total_points ?? 0,
-    currentRank: (profile?.current_rank as string) ?? "Zwiadowca",
-    uniqueCountries: countrySet.size,
-    registeredRelations: regCount,
-    totalKilometers: profile?.total_kilometers ?? 0,
-  };
+  // Firestore is the sole source of truth for gamification data
+  const stats = await firestoreService.getTravelerStats(userId);
+  return stats;
 };
+
+
 
 const RankCard = ({ userId }: RankCardProps) => {
   const shareRef = useRef<HTMLDivElement>(null);

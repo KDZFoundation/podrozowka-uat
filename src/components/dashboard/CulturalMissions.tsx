@@ -3,19 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Medal, Globe, Trophy } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-
-interface MissionUnit {
-  id: string;
-  card_design_id: string;
-  card_designs: {
-    country_id: string;
-    countries: {
-      name_pl: string;
-    } | null;
-  } | null;
-  recipient_registrations: { id: string }[] | null;
-}
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 
 const CulturalMissions = () => {
   const { user } = useAuth();
@@ -24,35 +12,14 @@ const CulturalMissions = () => {
     queryKey: ["cultural-missions", user?.id],
     enabled: !!user?.id,
     queryFn: async () => {
-      const { data: units, error } = await supabase
-        .from("inventory_units")
-        .select(`
-          id,
-          card_design_id,
-          card_designs!inventory_units_card_design_id_fkey (
-            country_id,
-            countries!designs_country_id_fkey ( name_pl )
-          ),
-          recipient_registrations ( id )
-        `)
-        .eq("traveler_user_id", user!.id)
-        .not("recipient_registrations", "is", null);
-
-      if (error) throw error;
-
-      const typedUnits = (units ?? []) as unknown as MissionUnit[];
-      const registered = typedUnits.filter(
-        (u) => u.recipient_registrations && u.recipient_registrations.length > 0
-      );
-
-      const totalRegistered = registered.length;
-      const uniqueCountries = new Set(
-        registered.map((u) => u.card_designs?.country_id).filter(Boolean)
-      ).size;
-
-      return { totalRegistered, uniqueCountries };
+      const stats = await firestoreService.getTravelerStats(user!.id);
+      return {
+        totalRegistered: stats.registeredRelations,
+        uniqueCountries: stats.uniqueCountries,
+      };
     },
   });
+
 
   const totalRegistered = data?.totalRegistered ?? 0;
   const uniqueCountries = data?.uniqueCountries ?? 0;

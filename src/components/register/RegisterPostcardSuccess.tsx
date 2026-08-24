@@ -8,7 +8,7 @@ const RegisterPostcardSuccess = ({ postcard }: { postcard: PostcardInfo }) => {
   const countryName = getLocalizedCountryName(postcard.design.country_iso2, postcard.design.country_name, copy.locale);
 
   return (
-  <div className="min-h-screen bg-background flex items-center justify-center p-4">
+  <div className="min-h-screen bg-background flex items-center justify-center p-4" lang={copy.locale}>
     <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center max-w-md">
       <div className="w-20 h-20 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-6">
         <Heart className="w-10 h-10 text-accent" />

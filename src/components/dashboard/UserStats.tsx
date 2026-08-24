@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { ShoppingBag, Package, Globe2, Trophy, MapPin, Percent, Star, Award } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { DEFAULT_GAMIFICATION_TIERS, useGamificationTiers } from "@/hooks/useGamificationTiers";
 
 interface Profile {
@@ -37,45 +37,12 @@ const rankStyle = (name: string) => {
   return { color: "text-primary", bgColor: "bg-primary/10" };
 };
 
-interface StatsUnitJoin {
-  id: string;
-  business_status: string | null;
-  card_designs: {
-    countries: {
-      name_pl: string;
-    } | null;
-  } | null;
-}
-
 const fetchUserStats = async (userId: string) => {
-  const { data, error } = await supabase
-    .from('inventory_units')
-    .select('id, business_status, card_designs!inner(countries!inner(name_pl))')
-    .eq('traveler_user_id', userId);
-
-  if (error) throw error;
-
-  const typedUnits = (data || []) as unknown as StatsUnitJoin[];
-  const totalUnits = typedUnits.length;
-  const purchasedCount = typedUnits.filter((u) => ['purchased', 'assigned'].includes(u.business_status || '')).length;
-  const registeredCount = typedUnits.filter((u) => u.business_status === 'registered').length;
-
-  const countryMap = new Map<string, { total: number; registered: number }>();
-  typedUnits.forEach((u) => {
-    const name = u.card_designs?.countries?.name_pl;
-    if (!name) return;
-    const existing = countryMap.get(name) || { total: 0, registered: 0 };
-    existing.total++;
-    if (u.business_status === 'registered') existing.registered++;
-    countryMap.set(name, existing);
-  });
-
-  const countryStats: CountryStat[] = Array.from(countryMap.entries())
-    .map(([name, s]) => ({ name, ...s }))
-    .sort((a, b) => b.total - a.total);
-
-  return { totalUnits, purchasedCount, registeredCount, countryStats };
+  // Firestore is the sole source of truth for gamification data
+  return firestoreService.getTravelerStats(userId);
 };
+
+
 
 const UserStats = ({ profile, userId }: UserStatsProps) => {
   const { data, isLoading } = useQuery({
@@ -90,8 +57,8 @@ const UserStats = ({ profile, userId }: UserStatsProps) => {
   const countryStats = data?.countryStats ?? [];
   const regPercent = totalUnits > 0 ? Math.round((registeredCount / totalUnits) * 100) : 0;
 
-  const totalPoints = profile?.total_points ?? 0;
-  const currentRank = profile?.current_rank ?? 'Zwiadowca';
+  const totalPoints = data?.totalPoints ?? 0;
+  const currentRank = data?.currentRank ?? 'Zwiadowca';
   const rankIndex = configuredTiers.findIndex((tier) => tier.name === currentRank);
   const currentTier = configuredTiers[rankIndex >= 0 ? rankIndex : 0];
   const nextTier = rankIndex >= 0 ? configuredTiers[rankIndex + 1] : configuredTiers[1];

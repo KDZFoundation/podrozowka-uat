@@ -73,7 +73,12 @@ service cloud.firestore {
     }
 
     match /recipient_registrations/{registrationId} {
-      allow read: if isAdmin();
+      // The sender may review the registration of a postcard that belongs to
+      // their paid order. Other travelers must never be able to read the
+      // recipient's details.
+      allow read: if isAdmin() || (
+        signedIn() && resource.data.traveler_user_id == request.auth.uid
+      );
       allow create: if signedIn();
       allow update, delete: if isAdmin();
     }

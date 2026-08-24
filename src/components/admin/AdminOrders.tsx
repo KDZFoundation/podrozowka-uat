@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/integrations/firebase/config";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import type { Database } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
@@ -269,16 +271,14 @@ const AdminOrders = () => {
     setIsGeneratingPodPdf(true);
     try {
       // A PDF is generated from a prepared QR print job, not directly from an order.
-      const { data: printJob, error: printJobError } = await supabase
-        .from("qr_print_jobs")
-        .select("id")
-        .eq("order_id", order.id)
-        .in("status", ["ready", "printed"])
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const snapshot = await getDocs(
+        query(collection(db, "qr_print_jobs"), where("order_id", "==", order.id)),
+      );
+      const printJob = snapshot.docs
+        .map((job) => ({ id: job.id, ...job.data() }))
+        .filter((job) => job.status === "ready" || job.status === "printed")
+        .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))[0];
 
-      if (printJobError) throw printJobError;
       if (!printJob) {
         toast({
           title: "Brak przygotowanego pliku POD",

@@ -23,6 +23,15 @@ export type RegistrationCopy = {
   emailInvalid: string;
   locationUnsupported: string;
   locationFailed: string;
+  genericErrorTitle: string;
+  genericErrorText: string;
+  missingQrCode: string;
+  postcardNotFound: string;
+  loadFailed: string;
+  errorTitle: string;
+  backHome: string;
+  pageTitle: string;
+  pageDescription: string;
   registeredTitle: string;
   registeredText: string;
   alreadyRegisteredTitle: string;
@@ -41,6 +50,7 @@ const translations: Record<string, RegistrationCopy> = {
     gettingLocation: "Pobieranie lokalizacji...", locationAdded: "Lokalizacja dodana!", register: "Zarejestruj kartkę", registering: "Rejestrowanie...",
     nameRequired: "Podaj swoje imię", nameTooLong: "Maksymalnie 100 znaków", messageTooLong: "Maksymalnie 500 znaków", emailInvalid: "Podaj prawidłowy adres email",
     locationUnsupported: "Twoja przeglądarka nie obsługuje geolokalizacji", locationFailed: "Nie udało się pobrać lokalizacji",
+    genericErrorTitle: "Wystąpił błąd", genericErrorText: "Spróbuj ponownie", missingQrCode: "Brak kodu QR", postcardNotFound: "Nie znaleziono kartki", loadFailed: "Wystąpił błąd podczas ładowania", errorTitle: "Nie znaleziono kartki", backHome: "Wróć na stronę główną", pageTitle: "Zarejestruj Podróżówkę", pageDescription: "Otrzymałeś Podróżówkę? Zeskanuj kod QR i zarejestruj, kiedy i gdzie dostałeś pocztówkę z Polski.",
     registeredTitle: "Dziękujemy! 🎉", registeredText: "Twoja Podróżówka z", alreadyRegisteredTitle: "Kartka już zarejestrowana", alreadyRegisteredText: "Ta Podróżówka została zarejestrowana przez",
     sentBy: "Wysłana przez:", learnMore: "Dowiedz się więcej o Podróżówce", footer: "Kartki z Polski dla świata",
   },
@@ -52,6 +62,7 @@ const translations: Record<string, RegistrationCopy> = {
     gettingLocation: "Getting location...", locationAdded: "Location added!", register: "Register postcard", registering: "Registering...",
     nameRequired: "Please enter your name", nameTooLong: "Maximum 100 characters", messageTooLong: "Maximum 500 characters", emailInvalid: "Enter a valid email address",
     locationUnsupported: "Your browser does not support geolocation", locationFailed: "Unable to get your location",
+    genericErrorTitle: "Something went wrong", genericErrorText: "Please try again", missingQrCode: "Missing QR code", postcardNotFound: "Postcard not found", loadFailed: "An error occurred while loading", errorTitle: "Postcard not found", backHome: "Back to the homepage", pageTitle: "Register your Podróżówka", pageDescription: "Did you receive a Podróżówka? Scan the QR code and register where and when you received this postcard from Poland.",
     registeredTitle: "Thank you! 🎉", registeredText: "Your Podróżówka from", alreadyRegisteredTitle: "Postcard already registered", alreadyRegisteredText: "This Podróżówka was registered by",
     sentBy: "Sent by:", learnMore: "Learn more about Podróżówka", footer: "Postcards from Poland for the world",
   },
@@ -63,6 +74,7 @@ const translations: Record<string, RegistrationCopy> = {
     gettingLocation: "Standort wird ermittelt...", locationAdded: "Standort hinzugefügt!", register: "Postkarte registrieren", registering: "Wird registriert...",
     nameRequired: "Bitte gib deinen Namen ein", nameTooLong: "Maximal 100 Zeichen", messageTooLong: "Maximal 500 Zeichen", emailInvalid: "Bitte gib eine gültige E-Mail-Adresse ein",
     locationUnsupported: "Dein Browser unterstützt keine Standortfreigabe", locationFailed: "Standort konnte nicht ermittelt werden",
+    genericErrorTitle: "Es ist ein Fehler aufgetreten", genericErrorText: "Bitte versuche es erneut", missingQrCode: "QR-Code fehlt", postcardNotFound: "Postkarte nicht gefunden", loadFailed: "Beim Laden ist ein Fehler aufgetreten", errorTitle: "Postkarte nicht gefunden", backHome: "Zur Startseite", pageTitle: "Podróżówka registrieren", pageDescription: "Du hast eine Podróżówka erhalten? Scanne den QR-Code und registriere, wann und wo du diese Karte aus Polen erhalten hast.",
     registeredTitle: "Vielen Dank! 🎉", registeredText: "Deine Podróżówka aus", alreadyRegisteredTitle: "Postkarte bereits registriert", alreadyRegisteredText: "Diese Podróżówka wurde registriert von",
     sentBy: "Gesendet von:", learnMore: "Mehr über Podróżówka erfahren", footer: "Postkarten aus Polen für die Welt",
   },
@@ -74,6 +86,7 @@ const translations: Record<string, RegistrationCopy> = {
     gettingLocation: "Localisation en cours...", locationAdded: "Localisation ajoutée !", register: "Enregistrer la carte", registering: "Enregistrement...",
     nameRequired: "Indiquez votre prénom", nameTooLong: "100 caractères maximum", messageTooLong: "500 caractères maximum", emailInvalid: "Indiquez une adresse e-mail valide",
     locationUnsupported: "Votre navigateur ne prend pas en charge la géolocalisation", locationFailed: "Impossible d'obtenir votre position",
+    genericErrorTitle: "Une erreur s'est produite", genericErrorText: "Veuillez réessayer", missingQrCode: "Code QR manquant", postcardNotFound: "Carte introuvable", loadFailed: "Une erreur s'est produite pendant le chargement", errorTitle: "Carte introuvable", backHome: "Retour à l'accueil", pageTitle: "Enregistrer votre Podróżówka", pageDescription: "Vous avez reçu une Podróżówka ? Scannez le code QR et indiquez où et quand vous avez reçu cette carte de Pologne.",
     registeredTitle: "Merci ! 🎉", registeredText: "Votre Podróżówka de", alreadyRegisteredTitle: "Carte déjà enregistrée", alreadyRegisteredText: "Cette Podróżówka a été enregistrée par",
     sentBy: "Envoyée par :", learnMore: "En savoir plus sur Podróżówka", footer: "Des cartes de Pologne pour le monde",
   },
@@ -85,13 +98,27 @@ const translations: Record<string, RegistrationCopy> = {
     gettingLocation: "位置情報を取得しています…", locationAdded: "位置情報を追加しました！", register: "ポストカードを登録", registering: "登録しています…",
     nameRequired: "お名前を入力してください", nameTooLong: "100文字以内で入力してください", messageTooLong: "500文字以内で入力してください", emailInvalid: "有効なメールアドレスを入力してください",
     locationUnsupported: "このブラウザは位置情報に対応していません", locationFailed: "位置情報を取得できませんでした",
+    genericErrorTitle: "エラーが発生しました", genericErrorText: "もう一度お試しください", missingQrCode: "QRコードがありません", postcardNotFound: "ポストカードが見つかりません", loadFailed: "読み込み中にエラーが発生しました", errorTitle: "ポストカードが見つかりません", backHome: "トップページに戻る", pageTitle: "Podróżówka を登録", pageDescription: "Podróżówka を受け取りましたか？QRコードを読み取り、ポーランドからのポストカードをいつどこで受け取ったか登録してください。",
     registeredTitle: "ありがとうございます！🎉", registeredText: "次の Podróżówka を登録しました：", alreadyRegisteredTitle: "このポストカードは登録済みです", alreadyRegisteredText: "この Podróżówka を登録した人：",
     sentBy: "送信者：", learnMore: "Podróżówka について詳しく見る", footer: "ポーランドから世界へポストカードを",
+  },
+  es: {
+    locale: "es-ES", registration: "Registro de la postal", qrRecognized: "Código QR reconocido", heading: "¡Tienes una Podróżówka!", from: "De:",
+    yourName: "Tu nombre *", namePlaceholder: "¿Cómo te llamas?", shortMessage: "Mensaje breve (opcional)", messagePlaceholder: "Escribe algo para la persona viajera…",
+    receivedCountry: "País donde recibiste la postal", chooseCountry: "Elige un país…", email: "Correo electrónico (opcional)",
+    contactConsent: "Acepto que la persona viajera que envió esta postal se ponga en contacto conmigo", shareLocation: "Comparte tu ubicación (opcional)",
+    gettingLocation: "Obteniendo la ubicación…", locationAdded: "¡Ubicación añadida!", register: "Registrar la postal", registering: "Registrando…",
+    nameRequired: "Escribe tu nombre", nameTooLong: "Máximo 100 caracteres", messageTooLong: "Máximo 500 caracteres", emailInvalid: "Escribe una dirección de correo válida",
+    locationUnsupported: "Tu navegador no admite la geolocalización", locationFailed: "No se pudo obtener tu ubicación",
+    genericErrorTitle: "Se produjo un error", genericErrorText: "Inténtalo de nuevo", missingQrCode: "Falta el código QR", postcardNotFound: "No se encontró la postal", loadFailed: "Se produjo un error al cargar", errorTitle: "No se encontró la postal", backHome: "Volver a la página principal", pageTitle: "Registra tu Podróżówka", pageDescription: "¿Has recibido una Podróżówka? Escanea el código QR y registra cuándo y dónde recibiste esta postal de Polonia.",
+    registeredTitle: "¡Gracias! 🎉", registeredText: "Tu Podróżówka de", alreadyRegisteredTitle: "La postal ya está registrada", alreadyRegisteredText: "Esta Podróżówka fue registrada por",
+    sentBy: "Enviada por:", learnMore: "Conoce más sobre Podróżówka", footer: "Postales de Polonia para el mundo",
   },
 };
 
 export function getRegistrationCopy(languageCode?: string | null): RegistrationCopy {
-  return translations[languageCode?.toLowerCase() || ""] || translations.en;
+  const normalizedLanguage = languageCode?.trim().toLowerCase().split(/[-_]/)[0];
+  return translations[normalizedLanguage || ""] || translations.en;
 }
 
 export function getLocalizedCountryName(iso2: string | null | undefined, fallback: string, locale: string): string {

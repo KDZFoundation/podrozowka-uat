@@ -1,5 +1,5 @@
 import { getVercelOidcToken } from "@vercel/oidc";
-import { ExternalAccountClient } from "google-auth-library";
+import { ExternalAccountClient, GoogleAuth } from "google-auth-library";
 
 type FirestoreValue =
   | { nullValue: null }
@@ -10,20 +10,31 @@ type FirestoreValue =
   | { arrayValue: { values: FirestoreValue[] } }
   | { mapValue: { fields: Record<string, FirestoreValue> } };
 
-const required = (name: string) => {
-  const value = process.env[name];
-  if (!value) throw new Error(`missing_environment_${name}`);
-  return value;
+type WorkloadIdentityConfig = {
+  projectNumber: string;
+  serviceAccount: string;
+  poolId: string;
+  providerId: string;
 };
 
-const config = () => ({
-  projectId: required("GCP_PROJECT_ID"),
-  projectNumber: required("GCP_PROJECT_NUMBER"),
-  serviceAccount: required("GCP_SERVICE_ACCOUNT_EMAIL"),
-  poolId: required("GCP_WORKLOAD_IDENTITY_POOL_ID"),
-  providerId: required("GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID"),
-  databaseId: process.env.FIRESTORE_DATABASE_ID || "ai-studio-podrozowkauat-e1d9b39b-c759-477c-98ea-34396a1afd2f",
-});
+const config = () => {
+  const projectNumber = process.env.GCP_PROJECT_NUMBER;
+  const serviceAccount = process.env.GCP_SERVICE_ACCOUNT_EMAIL;
+  const poolId = process.env.GCP_WORKLOAD_IDENTITY_POOL_ID;
+  const providerId = process.env.GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID;
+  const workloadIdentity: WorkloadIdentityConfig | null = projectNumber && serviceAccount && poolId && providerId
+    ? { projectNumber, serviceAccount, poolId, providerId }
+    : null;
+
+  return {
+    // Local development may use the developer's short-lived Application Default
+    // Credentials. Production still requires all WIF values and therefore never
+    // falls back to a browser/client credential.
+    projectId: process.env.GCP_PROJECT_ID || "podrozowka",
+    workloadIdentity,
+    databaseId: process.env.FIRESTORE_DATABASE_ID || "ai-studio-podrozowkauat-e1d9b39b-c759-477c-98ea-34396a1afd2f",
+  };
+};
 
 export const firestoreDocumentsUrl = (projectId: string, databaseId: string, path: string) =>
   `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databaseId}/documents${path}`;
@@ -64,12 +75,24 @@ export const fromFirestoreFields = (fields: Record<string, Record<string, unknow
 
 const accessToken = async () => {
   const settings = config();
+  if (!settings.workloadIdentity) {
+    const auth = new GoogleAuth({
+      scopes: ["https://www.googleapis.com/auth/datastore"],
+    });
+    const client = await auth.getClient();
+    const accessTokenResponse = await client.getAccessToken();
+    const token = accessTokenResponse.token;
+    if (!token) throw new Error("local_gcp_access_token_unavailable");
+    return token;
+  }
+
+  const { projectNumber, serviceAccount, poolId, providerId } = settings.workloadIdentity;
   const client = ExternalAccountClient.fromJSON({
     type: "external_account",
-    audience: `//iam.googleapis.com/projects/${settings.projectNumber}/locations/global/workloadIdentityPools/${settings.poolId}/providers/${settings.providerId}`,
+    audience: `//iam.googleapis.com/projects/${projectNumber}/locations/global/workloadIdentityPools/${poolId}/providers/${providerId}`,
     subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
     token_url: "https://sts.googleapis.com/v1/token",
-    service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${settings.serviceAccount}:generateAccessToken`,
+    service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${serviceAccount}:generateAccessToken`,
     // google-auth-library calls a supplier with its own context argument.
     // Passing getVercelOidcToken directly made that context get interpreted as
     // Vercel OIDC options, causing Vercel to mint a token for the Google WIF
@@ -123,7 +146,17 @@ export const setDocument = async (collection: string, id: string, data: Record<s
   });
 
 export const readDocument = async (collection: string, id: string) =>
-  firestoreApi(`/${collection}/${encodeURIComponent(id)}`) as Promise<{ name: string; fields?: Record<string, Record<string, unknown>> }>;
+  firestoreApi(`/${collection}/${encodeURIComponent(id)}`) as Promise<{
+    name: string;
+    fields?: Record<string, Record<string, unknown>>;
+    updateTime?: string;
+  }>;
+
+export const commitWrites = async (writes: unknown[]) =>
+  firestoreApi(":commit", {
+    method: "POST",
+    body: JSON.stringify({ writes }),
+  });
 
 export const queryDocuments = async (collectionId: string, fieldPath: string, value: FirestoreValue, queryLimit = 500) => {
   const results = await firestoreApi(":runQuery", {
@@ -135,11 +168,13 @@ export const queryDocuments = async (collectionId: string, fieldPath: string, va
         limit: queryLimit,
       },
     }),
-  }) as Array<{ document?: { name: string; fields?: Record<string, Record<string, unknown>> } }>;
+  }) as Array<{ document?: { name: string; fields?: Record<string, Record<string, unknown>>; updateTime?: string } }>;
   return results.flatMap((result) => result.document ? [{
     path: result.document.name.split("/documents/")[1],
     id: result.document.name.split("/").pop() || "",
     data: fromFirestoreFields(result.document.fields),
+    name: result.document.name,
+    updateTime: result.document.updateTime,
   }] : []);
 };
 

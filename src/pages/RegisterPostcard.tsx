@@ -5,11 +5,11 @@ import { motion } from "framer-motion";
 import { Loader2, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase, supabaseAnonKey, supabaseUrl } from "@/integrations/supabase/client";
 import RegisterPostcardForm from "@/components/register/RegisterPostcardForm";
 import RegisterPostcardSuccess from "@/components/register/RegisterPostcardSuccess";
 import RegisterPostcardAlreadyRegistered from "@/components/register/RegisterPostcardAlreadyRegistered";
 import { trackEvent } from "@/lib/analytics";
+import { getRegistrationCopy } from "@/lib/registrationI18n";
 
 export interface PostcardInfo {
   business_status: string | null;
@@ -35,28 +35,29 @@ const RegisterPostcard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const copy = getRegistrationCopy(postcard?.design.language_code);
 
   const requestRegistration = async (method: "GET" | "POST", body?: Record<string, unknown>) => {
-    const url = new URL("/functions/v1/register-postcard", supabaseUrl);
-    if (method === "GET") url.searchParams.set("token", qrToken || "");
-    const response = await fetch(url.toString(), {
+    const apiEndpoint = method === "GET"
+      ? `/api/register-postcard?token=${encodeURIComponent(qrToken || "")}`
+      : "/api/register-postcard";
+    const response = await fetch(apiEndpoint, {
       method,
       headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     });
     const payload = await response.json().catch(() => null) as { error?: string; message?: string } | null;
-    if (!response.ok) throw new Error(payload?.error || payload?.message || "Nie znaleziono kartki");
+    if (!response.ok) throw new Error(payload?.error || payload?.message || copy.postcardNotFound);
     return payload;
   };
+
 
   useEffect(() => {
     const fetchPostcard = async () => {
       if (!qrToken) {
-        setError("Brak kodu QR");
+        setError(copy.missingQrCode);
         setIsLoading(false);
         return;
       }
@@ -65,13 +66,13 @@ const RegisterPostcard = () => {
         const data = await requestRegistration("GET");
         setPostcard(data as PostcardInfo);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Wystąpił błąd podczas ładowania");
+        setError(err instanceof Error ? err.message : copy.loadFailed);
       }
       setIsLoading(false);
     };
 
     fetchPostcard();
-  }, [qrToken]);
+  }, [qrToken, copy.loadFailed, copy.missingQrCode]);
 
   const handleSubmit = async (data: {
     recipientName: string;
@@ -95,7 +96,7 @@ const RegisterPostcard = () => {
 
     setIsSuccess(true);
     trackEvent("postcard_registered");
-    toast({ title: "Kartka zarejestrowana! 🎉" });
+    toast({ title: copy.registeredTitle });
 
     // Invalidate related queries so dashboard/stats refresh automatically
     queryClient.invalidateQueries({ queryKey: ['platform-stats'] });
@@ -115,14 +116,14 @@ const RegisterPostcard = () => {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4" lang={copy.locale}>
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center max-w-md">
           <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-4">
             <AlertCircle className="w-8 h-8 text-destructive" />
           </div>
-          <h1 className="font-display text-2xl font-bold text-foreground mb-2">Nie znaleziono kartki</h1>
+          <h1 className="font-display text-2xl font-bold text-foreground mb-2">{copy.errorTitle}</h1>
           <p className="text-muted-foreground mb-6">{error}</p>
-          <a href="/" className="text-primary hover:underline">Wróć na stronę główną</a>
+          <a href="/" className="text-primary hover:underline">{copy.backHome}</a>
         </motion.div>
       </div>
     );
@@ -141,12 +142,13 @@ const RegisterPostcard = () => {
   return (
     <>
       <Helmet>
-        <title>Zarejestruj Podróżówkę — Podróżówka</title>
-        <meta name="description" content="Otrzymałeś Podróżówkę? Zeskanuj kod QR i zarejestruj, kiedy i gdzie dostałeś pocztówkę z Polski." />
+        <html lang={copy.locale} />
+        <title>{copy.pageTitle} — Podróżówka</title>
+        <meta name="description" content={copy.pageDescription} />
         <link rel="canonical" href="https://podrozowka.lovable.app/r" />
         <meta name="robots" content="noindex, follow" />
-        <meta property="og:title" content="Zarejestruj Podróżówkę" />
-        <meta property="og:description" content="Zarejestruj otrzymaną pocztówkę z Polski i dołącz do globalnej mapy spotkań." />
+        <meta property="og:title" content={copy.pageTitle} />
+        <meta property="og:description" content={copy.pageDescription} />
         <meta property="og:url" content="https://podrozowka.lovable.app/r" />
       </Helmet>
       <RegisterPostcardForm postcard={postcard} onSubmit={handleSubmit} />

@@ -1,7 +1,8 @@
 import { createRoot } from "react-dom/client";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
-import { supabase } from "@/integrations/supabase/client";
+import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
+import { db } from "@/integrations/firebase/config";
 import { PostcardFront, type CropSettings } from "@/components/postcard/PostcardFront";
 import { PostcardBack } from "@/components/postcard/PostcardBack";
 
@@ -41,11 +42,6 @@ interface PodUnitRow {
   order_item_id: string | null;
 }
 
-interface OrderItemLanguageRow {
-  id: string;
-  secondary_front_thank_you_text: string | null;
-}
-
 interface PodJobItemRow {
   id: string;
   print_job_id: string;
@@ -53,6 +49,13 @@ interface PodJobItemRow {
   public_claim_code: string;
   qr_url: string;
   generated_at: string;
+}
+
+interface PodPrintJobRow {
+  id: string;
+  total_items: number;
+  generated_items: number;
+  status: string;
 }
 
 interface RenderedPodItem {
@@ -224,30 +227,26 @@ const generatePodPrintPdfForJobs = async (
   documentNumber: string,
 ): Promise<PodPrintPdfResult> => {
   if (printJobIds.length === 0) throw new Error("No POD print jobs selected.");
-  const { data: jobsData, error: jobError } = await supabase
-    .from("qr_print_jobs")
-    .select("id, total_items, generated_items, status")
-    .in("id", printJobIds);
-
-  if (jobError) throw new Error(`Nie udało się odczytać zadania POD: ${jobError.message}`);
-  if (!jobsData || jobsData.length !== printJobIds.length) {
+  const jobsData = (await Promise.all(
+    printJobIds.map(async (jobId) => {
+      const snapshot = await getDoc(doc(db, "qr_print_jobs", jobId));
+      return snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as PodPrintJobRow) : null;
+    }),
+  )).filter((job): job is PodPrintJobRow => job !== null);
+  if (jobsData.length !== printJobIds.length) {
     throw new Error("Nie znaleziono wszystkich zadań POD paczki.");
   }
 
   const jobItemsData: PodJobItemRow[] = [];
-  for (let offset = 0; ; offset += 1000) {
-    const { data: itemPage, error: itemsError } = await supabase
-      .from("qr_print_job_items")
-      .select("id, print_job_id, inventory_unit_id, public_claim_code, qr_url, generated_at")
-      .in("print_job_id", printJobIds)
-      .order("generated_at", { ascending: true })
-      .order("id", { ascending: true })
-      .range(offset, offset + 999);
-
-    if (itemsError) throw new Error(`Nie udało się odczytać kodów QR: ${itemsError.message}`);
-    jobItemsData.push(...((itemPage ?? []) as PodJobItemRow[]));
-    if (!itemPage || itemPage.length < 1000) break;
+  // Firestore's `in` filter has a 30 value limit. A production batch may
+  // contain more orders, so fetch each job separately and sort afterwards.
+  for (const printJobId of printJobIds) {
+    const snapshot = await getDocs(query(collection(db, "qr_print_job_items"), where("print_job_id", "==", printJobId)));
+    jobItemsData.push(...snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as PodJobItemRow)));
   }
+  jobItemsData.sort((left, right) =>
+    String(left.generated_at || "").localeCompare(String(right.generated_at || "")) || left.id.localeCompare(right.id),
+  );
 
   if (!jobItemsData.length) throw new Error("Zadanie POD nie zawiera kartek do wydruku.");
   const itemCounts = new Map<string, number>();
@@ -268,45 +267,23 @@ const generatePodPrintPdfForJobs = async (
   // small order. Primary-key lookups keep the POD download predictable.
   const jobItems = jobItemsData;
   const inventoryUnitIds = [...new Set(jobItems.map((item) => item.inventory_unit_id))];
-  const units: PodUnitRow[] = [];
-  for (let offset = 0; offset < inventoryUnitIds.length; offset += 500) {
-    const unitIdChunk = inventoryUnitIds.slice(offset, offset + 500);
-    const { data: unitsData, error: unitsError } = await supabase
-      .from("inventory_units")
-      .select("id, card_design_id, order_item_id")
-      .in("id", unitIdChunk);
-
-    if (unitsError) throw new Error(`Nie udało się odczytać sztuk POD: ${unitsError.message}`);
-    units.push(...((unitsData ?? []) as PodUnitRow[]));
-  }
+  const units = (await Promise.all(inventoryUnitIds.map(async (unitId) => {
+    const snapshot = await getDoc(doc(db, "inventory_units", unitId));
+    return snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as PodUnitRow) : null;
+  }))).filter((unit): unit is PodUnitRow => unit !== null);
   if (!units.length) throw new Error("Nie znaleziono sztuk POD przypisanych do kodów QR.");
-  const orderItemIds = [...new Set(units.map((unit) => unit.order_item_id).filter((id): id is string => !!id))];
-  const { data: orderItemsData, error: orderItemsError } = orderItemIds.length > 0
-    ? await supabase
-        .from("order_items")
-        .select("id, secondary_front_thank_you_text")
-        .in("id", orderItemIds)
-    : { data: [], error: null };
-  if (orderItemsError) throw new Error(`Nie udało się odczytać wariantów językowych zamówienia: ${orderItemsError.message}`);
-  const orderItemLanguageById = new Map(
-    ((orderItemsData ?? []) as OrderItemLanguageRow[]).map((orderItem) => [orderItem.id, orderItem]),
-  );
   const designIds = [...new Set(units.map((unit) => unit.card_design_id))];
-  const { data: designsData, error: designsError } = await supabase
-    .from("card_designs")
-    .select("id, country_id, image_front_url, photo_author, thank_you_text, back_qr_label, crop_settings")
-    .in("id", designIds);
+  const designsData = (await Promise.all(designIds.map(async (designId) => {
+    const snapshot = await getDoc(doc(db, "card_designs", designId));
+    return snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as CardDesignData) : null;
+  }))).filter((design): design is CardDesignData => design !== null);
+  if (!designsData.length) throw new Error("Nie znaleziono wzorów kartek dla zadania POD.");
 
-  if (designsError) throw new Error(`Nie udało się odczytać wzorów kartek: ${designsError.message}`);
-  if (!designsData?.length) throw new Error("Nie znaleziono wzorów kartek dla zadania POD.");
-
-  const countryIds = [...new Set((designsData as CardDesignData[]).map((design) => design.country_id))];
-  const { data: countriesData, error: countriesError } = await supabase
-    .from("countries")
-    .select("*")
-    .in("id", countryIds);
-
-  if (countriesError) throw new Error(`Nie udało się odczytać flag krajów: ${countriesError.message}`);
+  const countryIds = [...new Set(designsData.map((design) => design.country_id))];
+  const countriesData = (await Promise.all(countryIds.map(async (countryId) => {
+    const snapshot = await getDoc(doc(db, "countries", countryId));
+    return snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
+  }))).filter((country): country is { id: string; iso2?: string; flag_url?: string } => country !== null);
   const countryById = new Map(
     (countriesData ?? []).map((country) => [
       country.id,
@@ -318,7 +295,7 @@ const generatePodPrintPdfForJobs = async (
   const renderedFronts = new Map<string, string>();
   const unitsById = new Map(units.map((unit) => [unit.id, unit]));
   const designsById = new Map(
-    (designsData as CardDesignData[]).map((design) => [
+    designsData.map((design) => [
       design.id,
       {
         ...design,
@@ -328,14 +305,14 @@ const generatePodPrintPdfForJobs = async (
     ]),
   );
 
-  const doc = new jsPDF({
+  const pdf = new jsPDF({
     orientation: "portrait",
     unit: "mm",
     format: [SHEET_WIDTH_MM, SHEET_HEIGHT_MM],
     compress: true,
     putOnlyUsedFonts: true,
   });
-  doc.setProperties({
+  pdf.setProperties({
     title: `${documentNumber} - SRA3`,
     subject: "Arkusze impozycyjne SRA3, druk dwustronny, flip on short edge",
     creator: "Podróżówka",
@@ -353,12 +330,6 @@ const generatePodPrintPdfForJobs = async (
       const unit = unitsById.get(item.inventory_unit_id);
       const design = unit ? designsById.get(unit.card_design_id) : undefined;
       if (!design) throw new Error(`Brak wzoru dla kodu ${item.public_claim_code}.`);
-      const secondaryFrontText = unit?.order_item_id
-        ? orderItemLanguageById.get(unit.order_item_id)?.secondary_front_thank_you_text
-        : null;
-      const designForOrder = secondaryFrontText
-        ? { ...design, thank_you_text: `${design.thank_you_text || ""} / ${secondaryFrontText}`.trim() }
-        : design;
       const registrationUrl = new URL(item.qr_url, PUBLIC_APP_URL).toString();
       const qrCodeDataUrl = await QRCode.toDataURL(registrationUrl, {
         width: 600,
@@ -368,25 +339,25 @@ const generatePodPrintPdfForJobs = async (
       const frontCacheKey = `${design.id}:${unit?.order_item_id || "primary"}`;
       let front = renderedFronts.get(frontCacheKey);
       if (!front) {
-        front = await renderCard("front", designForOrder, qrCodeDataUrl);
+        front = await renderCard("front", design, qrCodeDataUrl);
         renderedFronts.set(frontCacheKey, front);
       }
       sheetItems.push({
         id: item.id,
         front,
-        back: await renderCard("back", designForOrder, qrCodeDataUrl),
+        back: await renderCard("back", design, qrCodeDataUrl),
       });
     }
 
-    if (sheetIndex > 0) doc.addPage([SHEET_WIDTH_MM, SHEET_HEIGHT_MM], "portrait");
-    addSideToSheet(doc, sheetItems, "front");
-    doc.addPage([SHEET_WIDTH_MM, SHEET_HEIGHT_MM], "portrait");
-    addSideToSheet(doc, sheetItems, "back");
+    if (sheetIndex > 0) pdf.addPage([SHEET_WIDTH_MM, SHEET_HEIGHT_MM], "portrait");
+    addSideToSheet(pdf, sheetItems, "front");
+    pdf.addPage([SHEET_WIDTH_MM, SHEET_HEIGHT_MM], "portrait");
+    addSideToSheet(pdf, sheetItems, "back");
   }
 
   const documentFilePrefix = /^(POD|MAG)-/.test(documentNumber) ? documentNumber : `POD-${documentNumber}`;
   const fileName = `${documentFilePrefix}-SRA3.pdf`;
-  const pdfBlob = doc.output("blob");
+  const pdfBlob = pdf.output("blob");
   const downloadUrl = URL.createObjectURL(pdfBlob);
   const downloadLink = document.createElement("a");
   downloadLink.href = downloadUrl;

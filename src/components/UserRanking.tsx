@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Trophy, Medal, Award, Heart, Globe2, Sparkles, Users, TrendingUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { Badge } from "@/components/ui/badge";
 
 interface RankedUser {
@@ -70,16 +71,37 @@ const FLAG_URL = (iso2: string) =>
   `https://flagcdn.com/w40/${iso2.toLowerCase()}.png`;
 
 const fetchRanking = async (): Promise<RankedUser[]> => {
-  const { data, error } = await supabase
-    .from("profiles_public" as unknown as "profiles")
-    .select("user_id, display_name, avatar_url, total_points, current_rank")
-    .gt("total_points", 0)
-    .order("total_points", { ascending: false })
-    .limit(10);
+  // 1. Try Firestore
+  try {
+    const firestoreUsers = await firestoreService.getTopTravelers(10);
+    if (firestoreUsers.length > 0 && firestoreUsers.some(u => (u.gamification_points || 0) > 0)) {
+      return firestoreUsers.map(u => ({
+        user_id: u.id || u.user_id || "",
+        display_name: u.display_name || u.full_name || "Podróżnik",
+        avatar_url: u.avatar_url || null,
+        total_points: u.gamification_points || (u as any).total_points || 0,
+        current_rank: u.current_tier || (u as any).current_rank || "Zwiadowca",
+        unitCount: u.postcards_sent_count || (u as any).postcards_purchased || 0,
+        regCount: u.postcards_registered_count || 0,
+        countries: [{ iso2: "PL", name_pl: "Polska" }],
+      }));
+    }
+  } catch (e) {
+    console.warn("Firestore fetchRanking error:", e);
+  }
 
-  if (error) throw error;
-  const profiles = data as unknown as DBProfile[] | null;
-  if (!profiles || profiles.length === 0) return [];
+  // 2. Fallback to Supabase
+  try {
+    const { data } = await supabase
+      .from("profiles_public" as unknown as "profiles")
+      .select("user_id, display_name, avatar_url, total_points, current_rank")
+      .gt("total_points", 0)
+      .order("total_points", { ascending: false })
+      .limit(10);
+
+    const profiles = data as unknown as DBProfile[] | null;
+    if (!profiles || profiles.length === 0) return [];
+
 
   const userIds = profiles.map((p) => p.user_id);
 
@@ -138,7 +160,11 @@ const fetchRanking = async (): Promise<RankedUser[]> => {
     regCount: userRegCount.get(p.user_id) || 0,
     countries: Array.from(userCountryMap.get(p.user_id)?.values() ?? []),
   }));
+  } catch {
+    return [];
+  }
 };
+
 
 const UserRanking = () => {
   const { data: topUsers = [], isLoading } = useQuery({

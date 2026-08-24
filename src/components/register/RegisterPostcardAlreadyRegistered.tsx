@@ -8,7 +8,7 @@ const RegisterPostcardAlreadyRegistered = ({ postcard }: { postcard: PostcardInf
   const countryName = getLocalizedCountryName(postcard.design.country_iso2, postcard.design.country_name, copy.locale);
 
   return (
-  <div className="min-h-screen bg-background flex items-center justify-center p-4">
+  <div className="min-h-screen bg-background flex items-center justify-center p-4" lang={copy.locale}>
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-center max-w-md">
       <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-4">
         <CheckCircle className="w-8 h-8 text-accent" />

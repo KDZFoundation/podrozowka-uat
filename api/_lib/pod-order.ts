@@ -7,7 +7,6 @@ const deterministicId = (value: string) => {
   const hex = crypto.createHash("sha256").update(value, "utf8").digest("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 };
-
 const numericSuffix = (code: unknown) => {
   const match = String(code || "").match(/-(\d{8})$/);
   return match ? Number(match[1]) : 0;
@@ -134,5 +133,43 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
     schema_version: 1,
   });
   await updateDocument(orderPath, { qr_print_job_id: jobId, pod_status: "ready", updated_at: new Date().toISOString() });
+
+  // Award traveler gamification points for purchased postcards
+  if (order.user_id) {
+    try {
+      const userDoc = await readDocument("users", String(order.user_id));
+      const userData = userDoc.fields ? fromFirestoreFields(userDoc.fields) as Record<string, unknown> : {};
+      const currentPoints = Number(userData.gamification_points || userData.total_points || 0);
+      const currentPurchased = Number(userData.postcards_purchased || userData.postcards_sent_count || 0);
+      const addedPoints = totalUnits * 10;
+      const newPoints = currentPoints + addedPoints;
+      const newPurchased = currentPurchased + totalUnits;
+      const calculateRank = (pts: number) => {
+        if (pts >= 7500) return "Legenda Podróżówki";
+        if (pts >= 3000) return "Misjonarz Kultury";
+        if (pts >= 1500) return "Ambasador";
+        if (pts >= 500) return "Odkrywca";
+        return "Zwiadowca";
+      };
+      const rank = calculateRank(newPoints);
+      const userUpdate = {
+        gamification_points: newPoints,
+        total_points: newPoints,
+        postcards_purchased: newPurchased,
+        postcards_sent_count: newPurchased,
+        current_rank: rank,
+        current_tier: rank,
+        updated_at: now,
+      };
+      await updateDocument(`users/${order.user_id}`, userUpdate);
+      try {
+        await updateDocument(`profiles/${order.user_id}`, userUpdate);
+      } catch {}
+    } catch (e) {
+      console.warn("[pod-order] User points update warning:", e);
+    }
+  }
+
   return jobId;
 };
+
