@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { collection, getDocs, limit, query } from "firebase/firestore";
+import { db } from "@/integrations/firebase/config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,8 +11,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Search, Clock } from "lucide-react";
-
-import type { Database } from "@/integrations/supabase/types";
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   created_in_stock: "Utworzono w magazynie",
@@ -43,24 +42,6 @@ interface EventRow {
   view_no: number | null;
 }
 
-interface EventJoin {
-  id: string;
-  event_type: string;
-  actor_type: string;
-  payload_json: unknown;
-  created_at: string;
-  inventory_units: {
-    internal_inventory_code: string;
-    card_designs: {
-      title: string | null;
-      view_no: number;
-      countries: {
-        name_pl: string;
-      } | null;
-    } | null;
-  } | null;
-}
-
 const PAGE_SIZE = 50;
 
 const AdminEventLog = () => {
@@ -73,39 +54,46 @@ const AdminEventLog = () => {
   const fetchEvents = useCallback(async () => {
     setIsLoading(true);
 
-    let query = supabase
-      .from("inventory_unit_events")
-      .select(`
-        id, event_type, actor_type, payload_json, created_at,
-        inventory_units!inner(
-          internal_inventory_code,
-          card_designs!inner(title, view_no, countries!inner(name_pl))
-        )
-      `)
-      .order("created_at", { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-
-    if (eventTypeFilter !== "all") {
-       query = query.eq("event_type", eventTypeFilter as Database["public"]["Tables"]["inventory_unit_events"]["Row"]["event_type"]);
-    }
-
-    const { data, error } = await query;
-
-    if (!error && data) {
-      const typedData = data as unknown as EventJoin[];
-      setEvents(
-        typedData.map((e: EventJoin) => ({
-          id: e.id,
-          event_type: e.event_type,
-          actor_type: e.actor_type,
-          payload_json: e.payload_json,
-          created_at: e.created_at,
-          unit_code: e.inventory_units?.internal_inventory_code || "",
-          country_name: e.inventory_units?.card_designs?.countries?.name_pl || null,
-          design_title: e.inventory_units?.card_designs?.title || null,
-          view_no: e.inventory_units?.card_designs?.view_no || null,
-        }))
-      );
+    try {
+      const [eventSnapshot, unitSnapshot, designSnapshot, countrySnapshot] = await Promise.all([
+        getDocs(query(collection(db, "inventory_unit_events"), limit(500))),
+        getDocs(collection(db, "inventory_units")),
+        getDocs(collection(db, "card_designs")),
+        getDocs(collection(db, "countries")),
+      ]);
+      const units = new Map(unitSnapshot.docs.map((item) => [item.id, item.data()]));
+      const designs = new Map(designSnapshot.docs.map((item) => [item.id, item.data()]));
+      const countries = new Map(countrySnapshot.docs.map((item) => [item.id, item.data()]));
+      const toIso = (value: unknown) => {
+        if (typeof value === "string") return value;
+        if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") return value.toDate().toISOString();
+        return new Date(0).toISOString();
+      };
+      const rows = eventSnapshot.docs
+        .map((item) => ({ id: item.id, ...item.data() }))
+        .filter((event) => eventTypeFilter === "all" || event.event_type === eventTypeFilter)
+        .sort((left, right) => toIso(right.created_at).localeCompare(toIso(left.created_at)))
+        .slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+        .map((event) => {
+          const unit = units.get(String(event.inventory_unit_id || "")) || {};
+          const design = designs.get(String(unit.card_design_id || "")) || {};
+          const country = countries.get(String(design.country_id || "")) || {};
+          return {
+            id: event.id,
+            event_type: String(event.event_type || ""),
+            actor_type: String(event.actor_type || "system"),
+            payload_json: event.payload_json || {},
+            created_at: toIso(event.created_at),
+            unit_code: String(unit.internal_inventory_code || unit.public_claim_code || ""),
+            country_name: (country.name_pl || country.name || null) as string | null,
+            design_title: (design.title || null) as string | null,
+            view_no: typeof design.view_no === "number" ? design.view_no : null,
+          } satisfies EventRow;
+        });
+      setEvents(rows);
+    } catch (error) {
+      console.warn("Firestore event log unavailable:", error);
+      setEvents([]);
     }
     setIsLoading(false);
   }, [eventTypeFilter, page]);

@@ -6,6 +6,10 @@ import { createServer as createViteServer } from "vite";
 import hotpayWebhookHandler from "./api/payments/hotpay-webhook";
 import registerPostcardHandler from "./api/register-postcard";
 import contactHandler from "./api/contact";
+import publicStatsHandler from "./api/public/stats";
+import publicCommunityHandler from "./api/public/community";
+import publicDistributionHandler from "./api/public/distribution";
+import orlenWidgetConfigHandler from "./api/orlen/widget-config";
 
 async function startServer() {
   const app = express();
@@ -21,6 +25,28 @@ async function startServer() {
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
+
+  const forwardApiHandler = (handler: { fetch: (request: Request) => Promise<Response> }) => async (req: express.Request, res: express.Response) => {
+    try {
+      const response = await handler.fetch(new Request(`http://localhost:${PORT}${req.originalUrl}`, {
+        method: req.method,
+        headers: { "Content-Type": "application/json", ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}) },
+        body: ["POST", "PUT", "PATCH"].includes(req.method) ? JSON.stringify(req.body || {}) : undefined,
+      }));
+      const body = await response.text();
+      res.status(response.status);
+      response.headers.forEach((value, key) => res.setHeader(key, value));
+      res.send(body);
+    } catch (error) {
+      console.error("[local API bridge error]:", error);
+      res.status(503).json({ error: "backend_unavailable" });
+    }
+  };
+
+  app.all("/api/public/stats", forwardApiHandler(publicStatsHandler));
+  app.all("/api/public/community", forwardApiHandler(publicCommunityHandler));
+  app.all("/api/public/distribution", forwardApiHandler(publicDistributionHandler));
+  app.all("/api/orlen/widget-config", forwardApiHandler(orlenWidgetConfigHandler));
 
   // QR registration uses short-lived local Application Default Credentials in
   // development and Vercel Workload Identity in deployed environments.

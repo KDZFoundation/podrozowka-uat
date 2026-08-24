@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2, MapPin } from "lucide-react";
 import type { PickupPoint } from "@/contexts/CheckoutContext";
-import { supabase } from "@/integrations/supabase/client";
+import { backendApiUrl } from "@/lib/backendApi";
 
 type WidgetConfig = { token: string | null; map_url: string };
 type OrlenPoint = { id?: string; name?: string; addressLine?: string; city?: string; destinationCode?: string; postalCode?: string };
@@ -26,8 +26,9 @@ export default function OrlenPaczkaWidget({ onSelect }: { onSelect: (point: Pick
     });
     const observer = new MutationObserver(attachListeners);
     const start = async () => {
-      const { data, error } = await supabase.functions.invoke<WidgetConfig>("orlen-widget-config", { method: "GET" });
-      if (error || !data?.token || disposed) { if (!disposed) setState("error"); return; }
+      const response = await fetch(backendApiUrl("/api/orlen/widget-config"));
+      const data = response.ok ? await response.json() as WidgetConfig : null;
+      if (!data?.token || disposed) { if (!disposed) setState("error"); return; }
       tokenRef.current = data.token;
       const current = document.querySelector<HTMLScriptElement>("script[data-orlen-paczka-widget]");
       if (current) { setState("ready"); attachListeners(); observer.observe(document.body, { childList: true, subtree: true }); return; }

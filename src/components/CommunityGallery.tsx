@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { Calendar, Heart, User } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { backendApiUrl } from "@/lib/backendApi";
 
 interface RegisteredPostcard {
   id: string;
@@ -13,61 +13,10 @@ interface RegisteredPostcard {
   design_title: string | null;
 }
 
-interface GalleryUnitJoin {
-  id: string;
-  registered_at: string | null;
-  traveler_user_id: string | null;
-  card_designs: {
-    title: string | null;
-    countries: {
-      name_pl: string;
-    } | null;
-  } | null;
-}
-
 const fetchGallery = async (): Promise<RegisteredPostcard[]> => {
-  const { data: units, error } = await supabase
-    .from('inventory_units')
-    .select(`
-      id, registered_at, traveler_user_id,
-      card_designs!inner(title, countries!inner(name_pl))
-    `)
-    .eq('business_status', 'registered')
-    .order('registered_at', { ascending: false })
-    .limit(12);
-
-  if (error) throw error;
-  if (!units) return [];
-
-  const typedUnits = units as unknown as GalleryUnitJoin[];
-  const unitIds = typedUnits.map(u => u.id);
-  const { data: regs } = await supabase
-    .from('recipient_registrations')
-    .select('inventory_unit_id, recipient_name, recipient_message')
-    .in('inventory_unit_id', unitIds);
-
-  const travelerIds = [...new Set(typedUnits.map(u => u.traveler_user_id).filter(Boolean))] as string[];
-  const { data: profiles } = (travelerIds.length > 0
-    ? await supabase.from('profiles_public' as unknown as "profiles").select('user_id, display_name').in('user_id', travelerIds)
-    : { data: [] }) as { data: { user_id: string; display_name: string | null }[] };
-
-  const regMap = new Map<string, { recipient_name: string; recipient_message: string | null }>();
-  regs?.forEach(r => regMap.set(r.inventory_unit_id, r));
-  const profileMap = new Map<string, string | null>();
-  profiles?.forEach(p => profileMap.set(p.user_id, p.display_name));
-
-  return typedUnits.map((u: GalleryUnitJoin) => {
-    const reg = regMap.get(u.id);
-    return {
-      id: u.id,
-      traveler_name: u.traveler_user_id ? (profileMap.get(u.traveler_user_id) ?? "Podróżnik") as string : "Podróżnik",
-      recipient_name: reg?.recipient_name || null,
-      recipient_message: reg?.recipient_message || null,
-      registered_at: u.registered_at,
-      country_name: u.card_designs?.countries?.name_pl || null,
-      design_title: u.card_designs?.title || null,
-    };
-  });
+  const response = await fetch(backendApiUrl("/api/public/community"));
+  if (!response.ok) throw new Error("community_gallery_unavailable");
+  return await response.json() as RegisteredPostcard[];
 };
 
 const CommunityGallery = () => {

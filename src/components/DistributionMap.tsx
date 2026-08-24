@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { MapPin, Globe2 } from "lucide-react";
 import L from "leaflet";
-import { supabase } from "@/integrations/supabase/client";
+import { backendApiUrl } from "@/lib/backendApi";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
@@ -24,14 +24,6 @@ interface CountryCount {
   count: number;
   lat: number;
   lng: number;
-}
-
-interface DistributionJoin {
-  card_designs: {
-    countries: {
-      name_pl: string;
-    } | null;
-  } | null;
 }
 
 const countryCoordinates: Record<string, { lat: number; lng: number }> = {
@@ -116,27 +108,17 @@ const DistributionMap = () => {
 
   useEffect(() => {
     const fetchDistribution = async () => {
-      const { data, error } = await supabase
-        .from('inventory_units')
-        .select('card_designs!inner(countries!inner(name_pl))')
-        .eq('business_status', 'registered');
-
-      if (!error && data) {
-        const countMap: Record<string, number> = {};
-        const typedData = data as unknown as DistributionJoin[];
-        typedData.forEach((item: DistributionJoin) => {
-          const country = item.card_designs?.countries?.name_pl;
-          if (country) countMap[country] = (countMap[country] || 0) + 1;
-        });
-
-        setCountryData(
-          Object.entries(countMap)
-            .map(([country, count]) => {
-              const coords = countryCoordinates[country];
-              return coords ? { country, count, lat: coords.lat, lng: coords.lng } : null;
-            })
-            .filter((item): item is CountryCount => item !== null)
-        );
+      try {
+        const response = await fetch(backendApiUrl("/api/public/distribution"));
+        if (!response.ok) throw new Error("distribution_unavailable");
+        const data = await response.json() as { country: string; count: number }[];
+        setCountryData(data.map(({ country, count }) => {
+          const coords = countryCoordinates[country];
+          return coords ? { country, count, lat: coords.lat, lng: coords.lng } : null;
+        }).filter((item): item is CountryCount => item !== null));
+      } catch (error) {
+        console.warn("Distribution map data unavailable:", error);
+        setCountryData([]);
       }
       setIsLoading(false);
     };

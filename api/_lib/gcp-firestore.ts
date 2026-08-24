@@ -56,6 +56,7 @@ export const toFirestoreValue = (value: unknown): FirestoreValue => {
 export const fromFirestoreValue = (value: Record<string, unknown>): unknown => {
   if ("nullValue" in value) return null;
   if ("stringValue" in value) return String(value.stringValue);
+  if ("timestampValue" in value) return String(value.timestampValue);
   if ("booleanValue" in value) return Boolean(value.booleanValue);
   if ("integerValue" in value) return Number(value.integerValue);
   if ("doubleValue" in value) return Number(value.doubleValue);
@@ -165,6 +166,29 @@ export const queryDocuments = async (collectionId: string, fieldPath: string, va
       structuredQuery: {
         from: [{ collectionId }],
         where: { fieldFilter: { field: { fieldPath }, op: "EQUAL", value } },
+        limit: queryLimit,
+      },
+    }),
+  }) as Array<{ document?: { name: string; fields?: Record<string, Record<string, unknown>>; updateTime?: string } }>;
+  return results.flatMap((result) => result.document ? [{
+    path: result.document.name.split("/documents/")[1],
+    id: result.document.name.split("/").pop() || "",
+    data: fromFirestoreFields(result.document.fields),
+    name: result.document.name,
+    updateTime: result.document.updateTime,
+  }] : []);
+};
+
+/** Read a bounded public/admin collection through the server-side Firestore API.
+ * Client rules intentionally keep inventory and registration collections private,
+ * so public pages must use a sanitized server endpoint instead of a direct SDK read.
+ */
+export const listDocuments = async (collectionId: string, queryLimit = 500) => {
+  const results = await firestoreApi(":runQuery", {
+    method: "POST",
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId }],
         limit: queryLimit,
       },
     }),

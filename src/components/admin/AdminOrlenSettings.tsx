@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import { CheckCircle2, Loader2, Save, XCircle } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { db } from "@/integrations/firebase/config";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
@@ -14,6 +15,22 @@ type Settings = {
   sender: Record<"name" | "street" | "postal_code" | "city" | "phone" | "email", MaskedValue>;
 };
 
+const masked = (value: unknown): MaskedValue => {
+  const text = typeof value === "string" ? value : "";
+  return { set: Boolean(text), preview: text ? `••••${text.slice(-4)}` : "" };
+};
+
+const toSettings = (raw: Record<string, unknown>): Settings => ({
+  environment: raw.environment === "production" ? "production" : "sandbox",
+  partner_id: masked(raw.partner_id),
+  partner_key: masked(raw.partner_key),
+  widget_token: masked(raw.widget_token),
+  sender: {
+    name: masked(raw.sender_name), street: masked(raw.sender_street), postal_code: masked(raw.sender_postal_code),
+    city: masked(raw.sender_city), phone: masked(raw.sender_phone), email: masked(raw.sender_email),
+  },
+});
+
 const emptyForm = { partnerId: "", partnerKey: "", widgetToken: "", senderName: "", senderStreet: "", senderPostalCode: "", senderCity: "", senderPhone: "", senderEmail: "" };
 const status = (label: string, value: MaskedValue) => <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background p-3 text-sm"><span>{label}</span><span className={`flex items-center gap-1 text-xs font-semibold ${value.set ? "text-accent" : "text-destructive"}`}>{value.set ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}{value.set ? value.preview : "nie ustawiono"}</span></div>;
 
@@ -25,8 +42,13 @@ export default function AdminOrlenSettings() {
   const set = (field: keyof typeof emptyForm, value: string) => setForm((current) => ({ ...current, [field]: value }));
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: result, error } = await supabase.functions.invoke<Settings>("admin-orlen-settings", { method: "GET" });
-    if (error || !result) toast.error("Nie udało się pobrać konfiguracji ORLEN Paczka"); else setData(result);
+    try {
+      const snapshot = await getDoc(doc(db, "config", "orlen_paczka"));
+      setData(toSettings(snapshot.exists() ? snapshot.data() : {}));
+    } catch (error) {
+      console.warn("Firestore ORLEN config unavailable:", error);
+      toast.error("Nie udało się pobrać konfiguracji ORLEN Paczka");
+    }
     setLoading(false);
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -36,13 +58,22 @@ export default function AdminOrlenSettings() {
       toast.error("Przy pierwszej konfiguracji wpisz PartnerID, PartnerKey i token Widgetu"); return;
     }
     setSaving(true);
-    const { data: result, error } = await supabase.functions.invoke<Settings>("admin-orlen-settings", { method: "POST", body: {
-      environment: "sandbox", partner_id: form.partnerId.trim(), partner_key: form.partnerKey.trim(), widget_token: form.widgetToken.trim(),
-      sender_name: form.senderName.trim(), sender_street: form.senderStreet.trim(), sender_postal_code: form.senderPostalCode.trim(), sender_city: form.senderCity.trim(), sender_phone: form.senderPhone.trim(), sender_email: form.senderEmail.trim(),
-    } });
+    try {
+      const values: Record<string, string> = {
+        environment: "sandbox", partner_id: form.partnerId.trim(), partner_key: form.partnerKey.trim(), widget_token: form.widgetToken.trim(),
+        sender_name: form.senderName.trim(), sender_street: form.senderStreet.trim(), sender_postal_code: form.senderPostalCode.trim(), sender_city: form.senderCity.trim(), sender_phone: form.senderPhone.trim(), sender_email: form.senderEmail.trim(),
+      };
+      const existing = data ? {
+        partner_id: data.partner_id.set, partner_key: data.partner_key.set, widget_token: data.widget_token.set,
+      } : { partner_id: false, partner_key: false, widget_token: false };
+      const payload = Object.fromEntries(Object.entries(values).filter(([key, value]) => value || !["partner_id", "partner_key", "widget_token"].includes(key) || !existing[key as keyof typeof existing]));
+      await setDoc(doc(db, "config", "orlen_paczka"), { ...payload, updated_at: new Date().toISOString() }, { merge: true });
+      setData(toSettings({ ...values, ...payload })); setForm(emptyForm); toast.success("Dane ORLEN Paczka zapisane w Firestore");
+    } catch (error) {
+      console.warn("Firestore ORLEN config save failed:", error);
+      toast.error("Nie udało się zapisać konfiguracji ORLEN Paczka");
+    }
     setSaving(false);
-    if (error || !result) { toast.error("Nie udało się zapisać konfiguracji ORLEN Paczka"); return; }
-    setData(result); setForm(emptyForm); toast.success("Dane ORLEN Paczka zapisane w Supabase");
   };
   if (loading) return <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
   return <section className="rounded-xl border border-border bg-muted/20 p-5 space-y-5">

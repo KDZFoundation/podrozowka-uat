@@ -16,7 +16,6 @@ import {
   Truck,
   UserCheck,
   Clock,
-  Wrench,
   Map as MapIcon,
   FlaskConical,
   Trophy,
@@ -37,7 +36,6 @@ import AdminQrJobs from "@/components/admin/AdminQrJobs";
 import AdminShipments from "@/components/admin/AdminShipments";
 import AdminRegistrations from "@/components/admin/AdminRegistrations";
 import AdminEventLog from "@/components/admin/AdminEventLog";
-import AdminDevTools from "@/components/admin/AdminDevTools";
 import AdminGlobalMap from "@/components/admin/AdminGlobalMap";
 import AdminLab from "@/components/admin/AdminLab";
 import AdminGamification from "@/components/admin/AdminGamification";
@@ -46,12 +44,10 @@ import AdminFiscalFailures from "@/components/admin/AdminFiscalFailures";
 import AdminCategories from "@/components/admin/AdminCategories";
 import AdminIntegrations from "@/components/admin/AdminIntegrations";
 import AdminAuthors from "@/components/admin/AdminAuthors";
-import { isDevelopmentRuntime } from "@/lib/runtimeEnvironment";
 import { Blocks } from "lucide-react";
 
 type TabId =
   | "overview"
-  | "dev-tools"
   | "map"
   | "countries"
   | "card-designs"
@@ -83,7 +79,6 @@ interface AdminStats {
 const AdminPanel = () => {
   const { user, isLoading: authLoading, isAdmin } = useAuth();
   const navigate = useNavigate();
-  const devToolsEnabled = isDevelopmentRuntime();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [stats, setStats] = useState<AdminStats>({
     totalUnits: 0,
@@ -129,12 +124,6 @@ const AdminPanel = () => {
     fetchStats();
   }, [isAdmin, fetchStats]);
 
-  useEffect(() => {
-    if (!devToolsEnabled && activeTab === "dev-tools") {
-      setActiveTab("overview");
-    }
-  }, [activeTab, devToolsEnabled]);
-
   if (authLoading || isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -147,7 +136,6 @@ const AdminPanel = () => {
 
   const navigationTabs: { id: TabId; label: string; icon: typeof Package }[] = [
     { id: "overview", label: "Przegląd", icon: BarChart3 },
-    { id: "dev-tools", label: "Narzędzia Dev", icon: Wrench },
     { id: "countries", label: "Kraje", icon: Globe2 },
     { id: "card-designs", label: "Kreator wzorów", icon: Image },
     { id: "products", label: "Produkty", icon: ShoppingBag },
@@ -264,7 +252,6 @@ const AdminPanel = () => {
           </div>
         )}
 
-        {activeTab === "dev-tools" && <AdminDevTools />}
         {activeTab === "map" && <AdminGlobalMap />}
         {activeTab === "countries" && <AdminCountries />}
         {activeTab === "card-designs" && <AdminCardDesigns />}

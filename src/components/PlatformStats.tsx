@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Compass as Users, Globe2, MapPinned as CheckCircle, Send as ShoppingBag } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { backendApiUrl } from "@/lib/backendApi";
 
 interface Stats {
   total_members: number;
@@ -34,19 +34,9 @@ const AnimatedCounter = ({ value, duration = 2000 }: { value: number; duration?:
 };
 
 const fetchPlatformStats = async (): Promise<Stats> => {
-  const { data, error } = await supabase
-    .from('platform_stats')
-    .select('*')
-    .maybeSingle();
-
-  if (error) throw error;
-
-  return {
-    total_members: data?.total_members ?? 0,
-    total_countries: data?.total_countries ?? 0,
-    total_registered: data?.total_registered ?? 0,
-    total_purchased: data?.total_purchased ?? 0,
-  };
+  const response = await fetch(backendApiUrl("/api/public/stats"));
+  if (!response.ok) throw new Error("public_stats_unavailable");
+  return await response.json() as Stats;
 };
 
 const PlatformStats = () => {
