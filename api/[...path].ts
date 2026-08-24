@@ -1,28 +1,42 @@
+import contact from "../server/routes/contact";
+import health from "../server/routes/health";
+import registerPostcard from "../server/routes/register-postcard";
+import buyInpostShipment from "../server/routes/inpost/buy-shipment";
+import createInpostShipment from "../server/routes/inpost/create-shipment";
+import inpostGeowidgetConfig from "../server/routes/inpost/geowidget-config";
+import inpostSettings from "../server/routes/inpost/settings";
+import inpostWebhook from "../server/routes/inpost/webhook";
+import inpostShipmentLabel from "../server/routes/inpost/label/shipment-label";
+import orlenWidgetConfig from "../server/routes/orlen/widget-config";
+import createHotpayPayment from "../server/routes/payments/create-hotpay";
+import hotpayWebhook from "../server/routes/payments/hotpay-webhook";
+import paymentStatus from "../server/routes/payments/status";
+import publicCommunity from "../server/routes/public/community";
+import publicDistribution from "../server/routes/public/distribution";
+import publicStats from "../server/routes/public/stats";
+
 type ApiHandler = { fetch: (request: Request) => Response | Promise<Response> };
-type RouteLoader = () => Promise<{ default: ApiHandler }>;
 
-// Do not load every integration when the function starts.  In particular,
-// /api/health must remain available even if Firestore or a carrier SDK has a
-// configuration problem.  Vercel still sees only this one function.
-const routes: Record<string, RouteLoader> = {
-  contact: () => import("../server/routes/contact"),
-  health: () => import("../server/routes/health"),
-  "register-postcard": () => import("../server/routes/register-postcard"),
-  "inpost/buy-shipment": () => import("../server/routes/inpost/buy-shipment"),
-  "inpost/create-shipment": () => import("../server/routes/inpost/create-shipment"),
-  "inpost/geowidget-config": () => import("../server/routes/inpost/geowidget-config"),
-  "inpost/settings": () => import("../server/routes/inpost/settings"),
-  "inpost/webhook": () => import("../server/routes/inpost/webhook"),
-  "orlen/widget-config": () => import("../server/routes/orlen/widget-config"),
-  "payments/create-hotpay": () => import("../server/routes/payments/create-hotpay"),
-  "payments/hotpay-webhook": () => import("../server/routes/payments/hotpay-webhook"),
-  "payments/status": () => import("../server/routes/payments/status"),
-  "public/community": () => import("../server/routes/public/community"),
-  "public/distribution": () => import("../server/routes/public/distribution"),
-  "public/stats": () => import("../server/routes/public/stats"),
+// Vercel must see every dependency statically so it packages the complete
+// router inside this single Serverless Function.  The route table still makes
+// exactly one handler reachable for each request.
+const routes: Record<string, ApiHandler> = {
+  contact,
+  health,
+  "register-postcard": registerPostcard,
+  "inpost/buy-shipment": buyInpostShipment,
+  "inpost/create-shipment": createInpostShipment,
+  "inpost/geowidget-config": inpostGeowidgetConfig,
+  "inpost/settings": inpostSettings,
+  "inpost/webhook": inpostWebhook,
+  "orlen/widget-config": orlenWidgetConfig,
+  "payments/create-hotpay": createHotpayPayment,
+  "payments/hotpay-webhook": hotpayWebhook,
+  "payments/status": paymentStatus,
+  "public/community": publicCommunity,
+  "public/distribution": publicDistribution,
+  "public/stats": publicStats,
 };
-
-const inpostLabelRoute: RouteLoader = () => import("../server/routes/inpost/label/shipment-label");
 
 const routePath = (request: Request) => new URL(request.url).pathname.replace(/^\/api\/?/, "").replace(/\/+$/, "");
 
@@ -68,8 +82,8 @@ export default async function handler(nodeRequest: {
   });
 
   const path = routePath(request);
-  const loadHandler = path.startsWith("inpost/label/") ? inpostLabelRoute : routes[path];
-  if (!loadHandler) {
+  const apiHandler = path.startsWith("inpost/label/") ? inpostShipmentLabel : routes[path];
+  if (!apiHandler) {
     const target = nodeResponse.status(404);
     target.setHeader("Content-Type", "application/json");
     target.end(Buffer.from(JSON.stringify({ error: "not_found" })));
@@ -77,7 +91,6 @@ export default async function handler(nodeRequest: {
   }
 
   try {
-    const { default: apiHandler } = await loadHandler();
     const response = await apiHandler.fetch(request);
     const target = nodeResponse.status(response.status);
     response.headers.forEach((value, key) => target.setHeader(key, value));
