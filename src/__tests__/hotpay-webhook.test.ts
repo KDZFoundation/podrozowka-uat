@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { hotpayNotificationHash } from "../../api/payments/hotpay-webhook";
+import { hotpayNotificationHash } from "../../server/routes/payments/hotpay-webhook";
 
 describe("HotPay webhook signature", () => {
   it("includes SECURE and service secret as separate values", () => {

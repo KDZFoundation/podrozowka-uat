@@ -1,4 +1,4 @@
-import { json, preflight } from "../_lib/http.js";
+import { json, preflight } from "../../../api/_lib/http.js";
 
 const inpostConfig = () => {
   const environment = (process.env.INPOST_SHIPX_ENV || "sandbox").toLowerCase() === "production" ? "production" : "sandbox";

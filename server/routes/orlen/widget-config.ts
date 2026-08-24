@@ -1,5 +1,5 @@
-import { json, preflight } from "../_lib/http.js";
-import { fromFirestoreFields, readDocument } from "../_lib/gcp-firestore.js";
+import { json, preflight } from "../../../api/_lib/http.js";
+import { fromFirestoreFields, readDocument } from "../../../api/_lib/gcp-firestore.js";
 
 /** ORLEN's browser widget token is public-by-design but scoped to a domain.
  * Keep its source in the deployment environment rather than in Supabase secrets.

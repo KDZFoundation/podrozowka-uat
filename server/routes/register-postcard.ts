@@ -5,7 +5,7 @@ import {
   queryDocuments,
   readDocument,
   toFirestoreValue,
-} from "./_lib/gcp-firestore.js";
+} from "../../api/_lib/gcp-firestore.js";
 
 const sha256 = (value: string) => crypto.createHash("sha256").update(value, "utf8").digest("hex");
 

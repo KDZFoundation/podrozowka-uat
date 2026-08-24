@@ -3,13 +3,13 @@ import cors from "cors";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 
-import hotpayWebhookHandler from "./api/payments/hotpay-webhook";
-import registerPostcardHandler from "./api/register-postcard";
-import contactHandler from "./api/contact";
-import publicStatsHandler from "./api/public/stats";
-import publicCommunityHandler from "./api/public/community";
-import publicDistributionHandler from "./api/public/distribution";
-import orlenWidgetConfigHandler from "./api/orlen/widget-config";
+import hotpayWebhookHandler from "./server/routes/payments/hotpay-webhook";
+import registerPostcardHandler from "./server/routes/register-postcard";
+import contactHandler from "./server/routes/contact";
+import publicStatsHandler from "./server/routes/public/stats";
+import publicCommunityHandler from "./server/routes/public/community";
+import publicDistributionHandler from "./server/routes/public/distribution";
+import orlenWidgetConfigHandler from "./server/routes/orlen/widget-config";
 
 async function startServer() {
   const app = express();

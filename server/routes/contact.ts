@@ -1,4 +1,4 @@
-import { json, preflight } from "./_lib/http.js";
+import { json, preflight } from "../../api/_lib/http.js";
 
 const clean = (value: unknown, maxLength: number) => String(value || "").trim().slice(0, maxLength);
 

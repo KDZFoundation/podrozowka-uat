@@ -1,5 +1,5 @@
-import { listDocuments } from "../_lib/gcp-firestore.js";
-import { json, preflight } from "../_lib/http.js";
+import { listDocuments } from "../../../api/_lib/gcp-firestore.js";
+import { json, preflight } from "../../../api/_lib/http.js";
 
 const text = (value: unknown) => typeof value === "string" ? value : "";
 

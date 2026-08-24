@@ -1,4 +1,4 @@
-import { json } from "../../_lib/http.js";
+import { json } from "../../../../api/_lib/http.js";
 
 export default {
   async fetch(request: Request) {
