@@ -1,25 +1,25 @@
-import contact from "../server/routes/contact";
-import health from "../server/routes/health";
-import registerPostcard from "../server/routes/register-postcard";
-import buyInpostShipment from "../server/routes/inpost/buy-shipment";
-import createInpostShipment from "../server/routes/inpost/create-shipment";
-import inpostGeowidgetConfig from "../server/routes/inpost/geowidget-config";
-import inpostSettings from "../server/routes/inpost/settings";
-import inpostWebhook from "../server/routes/inpost/webhook";
-import inpostShipmentLabel from "../server/routes/inpost/label/shipment-label";
-import orlenWidgetConfig from "../server/routes/orlen/widget-config";
-import createHotpayPayment from "../server/routes/payments/create-hotpay";
-import hotpayWebhook from "../server/routes/payments/hotpay-webhook";
-import paymentStatus from "../server/routes/payments/status";
-import publicCommunity from "../server/routes/public/community";
-import publicDistribution from "../server/routes/public/distribution";
-import publicStats from "../server/routes/public/stats";
+import contact from "./routes/contact";
+import health from "./routes/health";
+import registerPostcard from "./routes/register-postcard";
+import buyInpostShipment from "./routes/inpost/buy-shipment";
+import createInpostShipment from "./routes/inpost/create-shipment";
+import inpostGeowidgetConfig from "./routes/inpost/geowidget-config";
+import inpostSettings from "./routes/inpost/settings";
+import inpostWebhook from "./routes/inpost/webhook";
+import inpostShipmentLabel from "./routes/inpost/label/shipment-label";
+import orlenWidgetConfig from "./routes/orlen/widget-config";
+import createHotpayPayment from "./routes/payments/create-hotpay";
+import hotpayWebhook from "./routes/payments/hotpay-webhook";
+import paymentStatus from "./routes/payments/status";
+import publicCommunity from "./routes/public/community";
+import publicDistribution from "./routes/public/distribution";
+import publicStats from "./routes/public/stats";
 
 type ApiHandler = { fetch: (request: Request) => Response | Promise<Response> };
 
-// Vercel must see every dependency statically so it packages the complete
-// router inside this single Serverless Function.  The route table still makes
-// exactly one handler reachable for each request.
+// Kept outside api/ because Vercel treats every non-underscore API file as a
+// separate function. scripts/build-vercel-router.mjs bundles this complete
+// router into api/_router.cjs, leaving one catch-all function on Hobby.
 const routes: Record<string, ApiHandler> = {
   contact,
   health,
@@ -52,11 +52,6 @@ const requestBody = (body: unknown, contentType: string | null) => {
   return JSON.stringify(body);
 };
 
-/**
- * Vercel Hobby counts each file in api/ as a Serverless Function. Keeping a
- * single catch-all entrypoint preserves all existing API URLs while leaving
- * the individual business handlers outside that directory.
- */
 export default async function handler(nodeRequest: {
   method?: string;
   url?: string;
