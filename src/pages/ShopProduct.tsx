@@ -5,9 +5,7 @@ import { toast } from "sonner";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { useCart } from "@/contexts/CartContext";
 import { getProductTitle } from "@/lib/productTitle";
@@ -74,37 +72,7 @@ const ShopProduct = () => {
       let foundProduct: Product | null = null;
       let extraImages: ExtraImage[] = [];
 
-      if (!isFirestoreCatalogEnabled) {
-        try {
-        const [{ data: p }, { data: imgs }] = await Promise.all([
-          supabase
-            .from("card_designs")
-            .select(
-              "id, title, description, image_front_url, price_grosze, country_id, language_code, view_no, active, countries(id, iso2, name_pl), categories(id, name, slug, icon_url)"
-            )
-            .eq("id", id)
-            .maybeSingle(),
-          supabase
-            .from("card_design_images")
-            .select("id, url, sort_order")
-            .eq("card_design_id", id)
-            .order("sort_order", { ascending: true }),
-        ]);
-
-        if (p) {
-          foundProduct = p as unknown as Product;
-        }
-        if (imgs) {
-          extraImages = (imgs as ExtraImage[]) || [];
-        }
-        } catch (e) {
-          console.warn("Supabase load product error:", e);
-        }
-      }
-
-      // Firestore fallback if not in Supabase
-      if (!foundProduct) {
-        try {
+      try {
           const [cardDoc, countriesList, catsList] = await Promise.all([
             firestoreService.getCardDesignById(id),
             firestoreService.getCountries(),
@@ -141,10 +109,14 @@ const ShopProduct = () => {
                   }
                 : null,
             };
+            extraImages = (cardDoc.images || []).map((image) => ({
+              id: image.id,
+              url: image.url,
+              sort_order: image.sort_order,
+            }));
           }
-        } catch (err) {
-          console.error("Firestore getCardDesignById error:", err);
-        }
+      } catch (err) {
+        console.error("Firestore getCardDesignById error:", err);
       }
 
       if (!foundProduct) {
@@ -155,30 +127,16 @@ const ShopProduct = () => {
 
       setProduct(foundProduct);
 
-      if (isFirestoreCatalogEnabled) {
-        const templates = await firestoreService.getLanguageTemplatesForCountry(foundProduct.country_id);
-        setLanguageTemplates(
-          templates
-            .filter((template) => template.language_code !== foundProduct.language_code)
-            .map((template) => ({
-              language_code: template.language_code,
-              language_name: template.language_name,
-              front_thank_you_text: template.front_thank_you_text,
-            }))
-        );
-      } else {
-        try {
-          const { data: templates } = await supabase
-            .from("card_language_templates")
-            .select("language_code, language_name, front_thank_you_text")
-            .eq("country_id", foundProduct.country_id)
-            .neq("language_code", foundProduct.language_code)
-            .order("language_name");
-          setLanguageTemplates((templates as LanguageTemplate[] | null) || []);
-        } catch {
-          setLanguageTemplates([]);
-        }
-      }
+      const templates = await firestoreService.getLanguageTemplatesForCountry(foundProduct.country_id);
+      setLanguageTemplates(
+        templates
+          .filter((template) => template.language_code !== foundProduct.language_code)
+          .map((template) => ({
+            language_code: template.language_code,
+            language_name: template.language_name,
+            front_thank_you_text: template.front_thank_you_text,
+          })),
+      );
 
       setImages(extraImages);
       setActiveImage(foundProduct.image_front_url || (extraImages[0]?.url) || null);

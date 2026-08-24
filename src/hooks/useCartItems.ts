@@ -1,7 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { cartLineId, type CartSecondaryLanguage, useCart } from "@/contexts/CartContext";
 import { getProductTitle } from "@/lib/productTitle";
 
@@ -44,28 +42,20 @@ export const useCartItems = () => {
     enabled: items.length > 0,
     staleTime: 30_000,
     queryFn: async () => {
-      if (isFirestoreCatalogEnabled) {
-        const designs = await Promise.all(ids.map((id) => firestoreService.getCardDesignById(id)));
-        return designs.filter(Boolean).map((design) => ({
-          id: design!.id,
-          title: design!.title,
-          image_front_url: design!.image_front_url || design!.image_thumb_url || null,
-          price_grosze: design!.price_grosze,
-          currency: design!.currency,
-          active: design!.active,
-          country_id: design!.country_id || "",
-          language_code: design!.language_code,
-          view_no: design!.view_no,
-          countries: null,
-          categories: null,
-        } satisfies CardDesignRow));
-      }
-      const { data: designs, error } = await supabase
-        .from("card_designs")
-        .select("id, title, image_front_url, price_grosze, currency, active, country_id, language_code, view_no, countries(name_pl), categories(name)")
-        .in("id", ids);
-      if (error) throw error;
-      return (designs as unknown as CardDesignRow[]) || [];
+      const designs = await Promise.all(ids.map((id) => firestoreService.getCardDesignById(id)));
+      return designs.filter(Boolean).map((design) => ({
+        id: design!.id,
+        title: design!.title,
+        image_front_url: design!.image_front_url || design!.image_thumb_url || null,
+        price_grosze: design!.price_grosze,
+        currency: design!.currency,
+        active: design!.active,
+        country_id: design!.country_id || "",
+        language_code: design!.language_code,
+        view_no: design!.view_no,
+        countries: null,
+        categories: null,
+      } satisfies CardDesignRow));
     },
   });
 

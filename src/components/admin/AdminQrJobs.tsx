@@ -1,6 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,8 +20,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Loader2, QrCode, Printer, ArrowLeft, Eye, Plus, Download, CheckCheck, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, query, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
+import { generatePodPrintPdf } from "@/lib/generatePodPrintPdf";
 
 interface PrintJob {
   id: string;
@@ -46,15 +45,6 @@ interface PrintJobItem {
   design_title: string | null;
   country_name: string | null;
   view_no: number | null;
-}
-
-interface ReservedUnitJoin {
-  id: string;
-  internal_inventory_code: string;
-  card_designs: {
-    title: string | null;
-    view_no: number;
-  } | null;
 }
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -145,44 +135,41 @@ const AdminQrJobs = () => {
   };
 
   const loadUnitsForOrder = async (orderId: string) => {
-    let query = supabase
-      .from("inventory_units")
-      .select("id, internal_inventory_code, order_id, card_designs!inner(title, view_no, countries!inner(name_pl))")
-      .order("created_at", { ascending: true })
-      .limit(500);
-
-    if (orderId && orderId !== "all") {
-      query = query.eq("order_id", orderId);
-    } else {
-      query = query.in("fulfillment_status", ["reserved", "in_stock", "shipped", "purchased"]);
-    }
-
-    const { data } = await query;
-
-    if (data) {
-      const typedData = data as unknown as (ReservedUnitJoin & { order_id: string | null; card_designs: { title: string | null; view_no: number; countries: { name_pl: string } | null } | null })[];
-      setReservedUnits(
-        typedData.map((u) => ({
-          id: u.id,
-          code: u.internal_inventory_code,
-          design: `${u.card_designs?.countries?.name_pl || ""} — V${u.card_designs?.view_no} ${u.card_designs?.title || ""}`,
-          order_id: u.order_id,
-        }))
-      );
-    } else {
-      setReservedUnits([]);
-    }
+    const [unitsSnapshot, designsSnapshot, countriesSnapshot] = await Promise.all([
+      getDocs(collection(db, "inventory_units")),
+      getDocs(collection(db, "card_designs")),
+      getDocs(collection(db, "countries")),
+    ]);
+    const designs = new Map(designsSnapshot.docs.map((item) => [item.id, item.data()]));
+    const countries = new Map(countriesSnapshot.docs.map((item) => [item.id, item.data()]));
+    const units = unitsSnapshot.docs
+      .map((item) => ({ id: item.id, ...item.data() }))
+      .filter((unit) => orderId !== "all"
+        ? unit.order_id === orderId
+        : ["reserved", "in_stock", "shipped", "purchased"].includes(String(unit.fulfillment_status || "")));
+    setReservedUnits(units.map((unit) => {
+      const design = designs.get(String(unit.card_design_id || ""));
+      const country = design ? countries.get(String(design.country_id || "")) : undefined;
+      return {
+        id: unit.id,
+        code: String(unit.internal_inventory_code || unit.id),
+        design: `${String(country?.name_pl || country?.name || "")} — V${String(design?.view_no || "")} ${String(design?.title || "")}`.trim(),
+        order_id: typeof unit.order_id === "string" ? unit.order_id : null,
+      };
+    }));
   };
 
   const fetchOrdersForSelection = async () => {
-    const { data } = await supabase
-      .from("orders")
-      .select("id, order_number, shipping_name, created_at")
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (data) {
-      setOrdersList(data);
-    }
+    const snapshot = await getDocs(collection(db, "orders"));
+    setOrdersList(snapshot.docs
+      .map((item) => ({
+        id: item.id,
+        order_number: String(item.data().order_number || item.id),
+        shipping_name: typeof item.data().shipping_name === "string" ? item.data().shipping_name : null,
+        created_at: String(item.data().created_at || ""),
+      }))
+      .sort((left, right) => right.created_at.localeCompare(left.created_at))
+      .slice(0, 50));
   };
 
   const openNewJob = async () => {
@@ -235,73 +222,49 @@ const AdminQrJobs = () => {
     setIsGenerating(true);
 
     try {
-      // First try Edge Function
-      const { data, error } = await supabase.functions.invoke("generate-qr", {
-        body: {
-          inventory_unit_ids: reservedUnits.map((u) => u.id),
-          print_job_name: jobName,
-          order_id: selectedOrderId !== "all" ? selectedOrderId : undefined,
-        },
-      });
-
-      if (!error && data?.success && data?.generated > 0) {
-        toast({ title: `Wygenerowano QR dla ${data.generated} sztuk!` });
-        setShowNewJob(false);
-        fetchJobs();
-        setIsGenerating(false);
-        return;
-      }
-
-      console.warn("Edge function invoke failed or returned error, executing direct client-side QR generation fallback...", error || data?.error);
-
-      // Fallback: Direct database QR Job creation
-      const { data: { user } } = await supabase.auth.getUser();
-
-      const { data: newJob, error: jobErr } = await supabase
-        .from("qr_print_jobs")
-        .insert({
+      const jobId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      await writeBatch(db)
+        .set(doc(db, "qr_print_jobs", jobId), {
+          id: jobId,
           name: jobName,
           order_id: selectedOrderId !== "all" ? selectedOrderId : null,
           total_items: reservedUnits.length,
           generated_items: reservedUnits.length,
-          status: "ready" as Database["public"]["Enums"]["qr_print_job_status"],
-          created_by: user?.id || null,
+          status: "ready",
+          created_at: now,
+          updated_at: now,
+          schema_version: 1,
         })
-        .select("id")
-        .single();
-
-      if (jobErr) throw jobErr;
-
+        .commit();
       const baseUrl = window.location.origin;
-      const jobItemsToInsert = [];
-
-      for (const unit of reservedUnits) {
-        const publicToken = generateRandomToken(32);
-        const tokenHash = await hashToken(publicToken);
-        const randomHex = Math.random().toString(16).substring(2, 6).toUpperCase();
-        const claimCode = `PDZ-${randomHex}-${Math.random().toString(16).substring(2, 6).toUpperCase()}`;
-        const qrUrl = `${baseUrl}/r/${publicToken}`;
-
-        // Update inventory unit
-        await supabase
-          .from("inventory_units")
-          .update({
+      for (let offset = 0; offset < reservedUnits.length; offset += 150) {
+        const batch = writeBatch(db);
+        for (const unit of reservedUnits.slice(offset, offset + 150)) {
+          const publicToken = generateRandomToken(32);
+          const tokenHash = await hashToken(publicToken);
+          const randomHex = Math.random().toString(16).substring(2, 6).toUpperCase();
+          const claimCode = `PDZ-${randomHex}-${Math.random().toString(16).substring(2, 6).toUpperCase()}`;
+          const itemId = crypto.randomUUID();
+          batch.update(doc(db, "inventory_units", unit.id), {
             public_claim_code: claimCode,
             public_claim_token_hash: tokenHash,
-            fulfillment_status: "qr_generated" as Database["public"]["Enums"]["fulfillment_status"],
-            qr_generated_at: new Date().toISOString(),
-          })
-          .eq("id", unit.id);
-
-        jobItemsToInsert.push({
-          print_job_id: newJob.id,
-          inventory_unit_id: unit.id,
-          public_claim_code: claimCode,
-          qr_url: qrUrl,
-        });
+            fulfillment_status: "qr_generated",
+            qr_generated_at: now,
+            updated_at: now,
+          });
+          batch.set(doc(db, "qr_print_job_items", itemId), {
+            id: itemId,
+            print_job_id: jobId,
+            inventory_unit_id: unit.id,
+            public_claim_code: claimCode,
+            qr_url: `${baseUrl}/r/${publicToken}`,
+            generated_at: now,
+            schema_version: 1,
+          });
+        }
+        await batch.commit();
       }
-
-      await supabase.from("qr_print_job_items").insert(jobItemsToInsert);
 
       toast({ title: `Wygenerowano QR dla ${reservedUnits.length} sztuk!` });
       setShowNewJob(false);
@@ -315,68 +278,48 @@ const AdminQrJobs = () => {
   };
 
   const markAsPrinted = async (jobId: string) => {
-    const { error } = await supabase
-      .from("qr_print_jobs")
-      .update({ status: "printed" as Database["public"]["Enums"]["qr_print_job_status"] })
-      .eq("id", jobId);
-    if (!error) {
+    try {
+      await updateDoc(doc(db, "qr_print_jobs", jobId), { status: "printed", updated_at: new Date().toISOString() });
       toast({ title: "Oznaczono jako wydrukowane" });
       fetchJobs();
       if (selectedJob?.id === jobId) setSelectedJob({ ...selectedJob, status: "printed" });
+    } catch (error) {
+      toast({ title: "Nie udało się zmienić statusu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
   };
 
   const markAsApplied = async (jobId: string) => {
-    // Update print job status
-    await supabase.from("qr_print_jobs").update({ status: "printed" as Database["public"]["Enums"]["qr_print_job_status"] }).eq("id", jobId);
-
-    // Update all inventory units in this job to qr_applied
-    const { data: jobItemsList } = await supabase
-      .from("qr_print_job_items")
-      .select("inventory_unit_id")
-      .eq("print_job_id", jobId);
-
-    if (jobItemsList) {
-      const unitIds = jobItemsList.map((i) => i.inventory_unit_id);
-      await supabase
-        .from("inventory_units")
-        .update({
-          fulfillment_status: "qr_applied" as Database["public"]["Enums"]["fulfillment_status"],
-          qr_applied_at: new Date().toISOString(),
-        })
-        .in("id", unitIds);
+    try {
+      const items = await getDocs(query(collection(db, "qr_print_job_items"), where("print_job_id", "==", jobId)));
+      const now = new Date().toISOString();
+      for (let offset = 0; offset < items.docs.length; offset += 399) {
+        const batch = writeBatch(db);
+        if (offset === 0) batch.update(doc(db, "qr_print_jobs", jobId), { status: "printed", updated_at: now });
+        for (const item of items.docs.slice(offset, offset + 399)) {
+          batch.update(doc(db, "inventory_units", String(item.data().inventory_unit_id)), { fulfillment_status: "qr_applied", qr_applied_at: now, updated_at: now });
+        }
+        await batch.commit();
+      }
+      toast({ title: "Oznaczono jako naklejone (qr_applied)" });
+      fetchJobs();
+      if (selectedJob?.id === jobId) setSelectedJob({ ...selectedJob, status: "printed" });
+    } catch (error) {
+      toast({ title: "Nie udało się oznaczyć kodów", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
-
-    toast({ title: "Oznaczono jako naklejone (qr_applied)" });
-    fetchJobs();
-    if (selectedJob?.id === jobId) setSelectedJob({ ...selectedJob, status: "printed" });
   };
 
   const [pdfLoading, setPdfLoading] = useState(false);
 
   const downloadPdf = async (jobId: string, jobName: string) => {
     setPdfLoading(true);
-    const { data, error } = await supabase.functions.invoke("generate-qr-pdf", {
-      body: { print_job_id: jobId },
-    });
-
-    if (error || data?.error) {
-      toast({ title: "Błąd generowania PDF", description: error?.message || data?.error, variant: "destructive" });
-      setPdfLoading(false);
-      return;
-    }
-
-    if (data?.pdf) {
-      // data.pdf is a data URI string
-      const link = document.createElement("a");
-      link.href = data.pdf;
-      link.download = `QR-${jobName.replace(/\s+/g, "-")}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    try {
+      await generatePodPrintPdf(jobId, jobName);
       toast({ title: "PDF pobrany" });
+    } catch (error) {
+      toast({ title: "Błąd generowania PDF", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setPdfLoading(false);
     }
-    setPdfLoading(false);
   };
 
   const confirmDeleteJob = async () => {
@@ -389,84 +332,38 @@ const AdminQrJobs = () => {
       if (jobToDelete.order_id) {
         affectedOrderIds.add(jobToDelete.order_id);
       }
-
-      // 1. Fetch job items to reset inventory units
-      const { data: items } = await supabase
-        .from("qr_print_job_items")
-        .select("inventory_unit_id")
-        .eq("print_job_id", jobId);
-
-      if (items && items.length > 0) {
-        const unitIds = items.map((i) => i.inventory_unit_id).filter(Boolean);
-        if (unitIds.length > 0) {
-          // Fetch order_ids from inventory_units
-          const { data: unitOrders } = await supabase
-            .from("inventory_units")
-            .select("order_id")
-            .in("id", unitIds);
-
-          if (unitOrders) {
-            unitOrders.forEach((u) => {
-              if (u.order_id) affectedOrderIds.add(u.order_id);
-            });
-          }
-
-          // Reset inventory units to reserved
-          const { error: resetErr } = await supabase
-            .from("inventory_units")
-            .update({
-              public_claim_code: null,
-              public_claim_token_hash: null,
-              fulfillment_status: "reserved" as Database["public"]["Enums"]["fulfillment_status"],
-              qr_generated_at: null,
-              qr_applied_at: null,
-            })
-            .in("id", unitIds);
-
-          if (resetErr) {
-            console.warn("Notice: Error resetting inventory units:", resetErr);
-          }
+      const items = await getDocs(query(collection(db, "qr_print_job_items"), where("print_job_id", "==", jobId)));
+      const now = new Date().toISOString();
+      for (let offset = 0; offset < items.docs.length; offset += 200) {
+        const batch = writeBatch(db);
+        for (const item of items.docs.slice(offset, offset + 200)) {
+          const unitId = String(item.data().inventory_unit_id || "");
+          if (!unitId) continue;
+          const unit = await getDoc(doc(db, "inventory_units", unitId));
+          if (unit.exists() && typeof unit.data().order_id === "string") affectedOrderIds.add(unit.data().order_id);
+          batch.update(doc(db, "inventory_units", unitId), {
+            public_claim_code: null,
+            public_claim_token_hash: null,
+            fulfillment_status: "reserved",
+            qr_generated_at: null,
+            qr_applied_at: null,
+            updated_at: now,
+          });
+          batch.delete(item.ref);
         }
+        await batch.commit();
       }
+      await deleteDoc(doc(db, "qr_print_jobs", jobId));
 
-      // 2. Delete job items
-      const { error: itemsErr } = await supabase
-        .from("qr_print_job_items")
-        .delete()
-        .eq("print_job_id", jobId);
-
-      if (itemsErr) {
-        console.error("Error deleting qr_print_job_items:", itemsErr);
-      }
-
-      // 3. Delete job
-      const { error: jobErr } = await supabase
-        .from("qr_print_jobs")
-        .delete()
-        .eq("id", jobId);
-
-      if (jobErr) {
-        throw jobErr;
-      }
-
-      // 4. Update order status for affected orders back to 'paid' (W przygotowaniu)
       for (const orderId of affectedOrderIds) {
-        const { data: ord } = await supabase
-          .from("orders")
-          .select("payment_status, status")
-          .eq("id", orderId)
-          .single();
-
-        if (ord) {
-          const targetStatus = ord.payment_status === "paid" ? "paid" : "pending";
-          await supabase
-            .from("orders")
-            .update({
-              status: targetStatus as Database["public"]["Enums"]["order_status"],
-              fulfilled_at: null,
-            })
-            .eq("id", orderId);
-        }
+        const order = await getDoc(doc(db, "orders", orderId));
+        if (!order.exists()) continue;
+        const paymentStatus = String(order.data().payment_status || "pending");
+        await updateDoc(order.ref, {
+          status: paymentStatus === "paid" ? "paid" : "pending",
+          fulfilled_at: null,
+          updated_at: now,
+        });
       }
 
       toast({ title: "Usunięto zadanie druku QR" });

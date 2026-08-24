@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Archive, Check, X, ShoppingBag, Upload, ArrowUp, ArrowDown, Search, ArrowUpDown, Copy, RefreshCw, Trash2 } from "lucide-react";
+import { Plus, Pencil, Archive, Check, X, ShoppingBag, ArrowUp, ArrowDown, Search, ArrowUpDown, Copy, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,10 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
-import { diagnoseUploadError, logUploadAttempt } from "@/lib/uploadDiagnostics";
 
 interface Country {
   id: string;
@@ -67,10 +64,6 @@ interface CardDesignRowWithCountry {
   categories: {
     name: string;
   } | null;
-}
-
-interface CardDesignUnit {
-  card_design_id: string;
 }
 
 interface ProductRow {
@@ -143,22 +136,21 @@ const AdminProducts = () => {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [extraImageUrl, setExtraImageUrl] = useState("");
 
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
   const [deleteTarget, setDeleteTarget] = useState<ProductRow | null>(null);
-  const [firminoSyncingId, setFirminoSyncingId] = useState<string | null>(null);
-
   const fetchAll = useCallback(async () => {
     setIsLoading(true);
-    if (isFirestoreCatalogEnabled) {
-      const [firestoreDesigns, firestoreCountries, firestoreCategories] = await Promise.all([
+    try {
+      const [firestoreDesigns, firestoreCountries, firestoreCategories, inStockCounts] = await Promise.all([
         firestoreService.getCardDesigns({ includeInactive: true }),
         firestoreService.getCountries(),
         firestoreService.getCategories(),
+        firestoreService.getInStockUnitCounts(),
       ]);
       const countriesById = new Map(firestoreCountries.map((country) => [country.id, country]));
       const categoriesById = new Map(firestoreCategories.map((category) => [category.id, category]));
@@ -192,46 +184,13 @@ const AdminProducts = () => {
       setProducts(localRows.map((design) => ({ ...design, country_name: design.countries?.name_pl || undefined })));
       setCountries(firestoreCountries.map((country) => ({ id: country.id, iso2: country.iso2 || "", name_pl: country.name_pl || country.name })));
       setCategories(firestoreCategories.map((category) => ({ id: category.id, name: category.name_pl || category.name || category.slug, icon_url: category.icon_url || category.icon || null, sort_order: category.sort_order || 0 })));
-      setStockMap({});
+      setStockMap(inStockCounts);
+    } catch (error) {
+      toast({ title: "Błąd wczytywania produktów", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
       setIsLoading(false);
-      return;
     }
-    const [{ data: designs }, { data: countriesData }, { data: categoriesData }, { data: units }] = await Promise.all([
-      supabase
-        .from("card_designs")
-        .select("*, countries(name_pl), categories(name)")
-        .order("created_at", { ascending: false }),
-      supabase.from("countries").select("id, iso2, name_pl").order("name_pl"),
-      supabase.from("categories").select("id, name, icon_url, sort_order").order("sort_order").order("name"),
-      supabase
-        .from("inventory_units")
-        .select("card_design_id")
-        .eq("fulfillment_status", "in_stock")
-        .is("order_id", null),
-    ]);
-
-    if (designs) {
-      const typedDesigns = designs as unknown as CardDesignRowWithCountry[];
-      setDesigns(typedDesigns);
-      setProducts(
-        typedDesigns.filter((d) => d.active || d.price_grosze > 0).map((d: CardDesignRowWithCountry) => ({
-          ...d,
-          country_name: d.countries?.name_pl || undefined,
-        })),
-      );
-    }
-    if (countriesData) setCountries(countriesData as Country[]);
-    if (categoriesData) setCategories(categoriesData as Category[]);
-
-    const map: Record<string, number> = {};
-    const typedUnits = (units || []) as unknown as CardDesignUnit[];
-    typedUnits.forEach((u: CardDesignUnit) => {
-      map[u.card_design_id] = (map[u.card_design_id] || 0) + 1;
-    });
-    setStockMap(map);
-
-    setIsLoading(false);
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     fetchAll();
@@ -243,6 +202,7 @@ const AdminProducts = () => {
     setForm({ ...emptyForm, price_pln: "4.99" });
     setErrors({});
     setExtraImages([]);
+    setExtraImageUrl("");
     setShowDialog(true);
   };
 
@@ -263,22 +223,14 @@ const AdminProducts = () => {
     setErrors({});
     setShowDialog(true);
 
-    if (isFirestoreCatalogEnabled) {
-      const design = await firestoreService.getCardDesignById(p.id);
-      setExtraImages((design?.images || []).map((image) => ({
-        id: image.id,
-        card_design_id: p.id,
-        url: image.url,
-        sort_order: image.sort_order,
-      })));
-      return;
-    }
-    const { data } = await supabase
-      .from("card_design_images")
-      .select("*")
-      .eq("card_design_id", p.id)
-      .order("sort_order", { ascending: true });
-    setExtraImages((data as ExtraImage[]) || []);
+    const design = await firestoreService.getCardDesignById(p.id);
+    setExtraImages((design?.images || []).map((image) => ({
+      id: image.id,
+      card_design_id: p.id,
+      url: image.url,
+      sort_order: image.sort_order,
+    })));
+    setExtraImageUrl("");
   };
 
   const handleDuplicate = (p: ProductRow) => {
@@ -297,6 +249,7 @@ const AdminProducts = () => {
     });
     setErrors({});
     setExtraImages([]);
+    setExtraImageUrl("");
     setShowDialog(true);
     toast({ title: "Duplikuję produkt", description: "Wybierz kraj i zapisz jako nowy rekord." });
   };
@@ -308,6 +261,7 @@ const AdminProducts = () => {
     setForm(emptyForm);
     setErrors({});
     setExtraImages([]);
+    setExtraImageUrl("");
   };
 
   const validate = (): FormErrors => {
@@ -365,46 +319,32 @@ const AdminProducts = () => {
     };
 
     if (editingId) {
-      if (isFirestoreCatalogEnabled) {
+      try {
         await firestoreService.upsertCardDesign(editingId, {
           ...payload,
           currency: "PLN",
           price_grosze: priceGrosze,
           active: form.active,
         });
-        setSaving(false);
-        toast({ title: "Produkt zaktualizowany lokalnie" });
+        toast({ title: "Produkt zaktualizowany" });
         closeDialog();
         fetchAll();
-        return;
-      }
-      const { error } = await supabase.from("card_designs").update(payload).eq("id", editingId);
-      // Sync to Firestore
-      await firestoreService.upsertCardDesign(editingId, {
-        title: payload.title,
-        description: payload.description || undefined,
-        price_pln: priceGrosze / 100,
-        country_id: payload.country_id,
-        category_id: payload.category_id || undefined,
-        image_front_url: payload.image_front_url || undefined,
-        is_active: payload.active,
-      });
-
-      setSaving(false);
-      if (error) {
-        toast({ title: "Błąd zapisu", description: error.message, variant: "destructive" });
-        return;
-      }
-      toast({ title: "Produkt zaktualizowany" });
-    } else {
-      const sourceDesign = designs.find((design) => design.id === sourceDesignId);
-      if (!sourceDesign) {
+      } catch (error) {
+        toast({ title: "Błąd zapisu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      } finally {
         setSaving(false);
-        toast({ title: "Wzór nie został odnaleziony", variant: "destructive" });
-        return;
       }
-      const title = buildProductTitle(sourceDesign);
-      if (isFirestoreCatalogEnabled) {
+      return;
+    }
+
+    const sourceDesign = designs.find((design) => design.id === sourceDesignId);
+    if (!sourceDesign) {
+      setSaving(false);
+      toast({ title: "Wzór nie został odnaleziony", variant: "destructive" });
+      return;
+    }
+    const title = buildProductTitle(sourceDesign);
+    try {
         await firestoreService.upsertCardDesign(sourceDesignId, {
           title,
           price_grosze: priceGrosze,
@@ -412,122 +352,48 @@ const AdminProducts = () => {
           active: true,
           is_active: true,
         });
-        setSaving(false);
-        toast({ title: "Produkt opublikowany lokalnie w sklepie" });
-        closeDialog();
-        fetchAll();
-        return;
-      }
-      const { error } = await supabase
-        .from("card_designs")
-        .update({
-          title,
-          price_grosze: priceGrosze,
-          currency: "PLN",
-          active: true,
-        })
-        .eq("id", sourceDesignId);
-
-      // Sync to Firestore
-      await firestoreService.upsertCardDesign(sourceDesignId, {
-        title,
-        price_pln: priceGrosze / 100,
-        country_id: sourceDesign.country_id,
-        category_id: sourceDesign.category_id || undefined,
-        image_front_url: sourceDesign.image_front_url || undefined,
-        is_active: true,
-      });
-
-      setSaving(false);
-      if (error) {
-        toast({ title: "Błąd dodawania", description: error.message, variant: "destructive" });
-        return;
-      }
       toast({ title: "Produkt opublikowany w sklepie" });
+      closeDialog();
+      fetchAll();
+    } catch (error) {
+      toast({ title: "Błąd dodawania", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
-
-    closeDialog();
-    fetchAll();
   };
 
-  const uploadMainImage = async (file: File) => {
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Wybierz plik graficzny", description: `Otrzymany typ: ${file.type || "nieznany"}`, variant: "destructive" });
+  const addExtraImage = async () => {
+    if (!editingId) return;
+    const url = extraImageUrl.trim();
+    if (!/^https:\/\//i.test(url)) {
+      toast({ title: "Podaj publiczny adres HTTPS zdjęcia", variant: "destructive" });
       return;
     }
-    if (file.size > 8 * 1024 * 1024) {
-      toast({ title: "Maks. 8 MB", description: `Plik ma ${Math.round(file.size / 1024)} KB`, variant: "destructive" });
-      return;
+    const image: ExtraImage = {
+      id: crypto.randomUUID(),
+      card_design_id: editingId,
+      url,
+      sort_order: extraImages.length,
+    };
+    const next = [...extraImages, image];
+    try {
+      await firestoreService.setCardDesignImages(editingId, next);
+      setExtraImages(next);
+      setExtraImageUrl("");
+    } catch (error) {
+      toast({ title: "Nie udało się zapisać zdjęcia", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
-    setUploading(true);
-    const ext = file.name.split(".").pop() || "jpg";
-    const path = `products/${editingId || "new"}/main-${Date.now()}.${ext}`;
-    await logUploadAttempt({ bucket: "postcard-photos", path, file, extra: { productId: editingId, categoryId: form.category_id } });
-    const { error } = await supabase.storage.from("postcard-photos").upload(path, file, {
-      cacheControl: "3600",
-    });
-    if (error) {
-      setUploading(false);
-      const info = diagnoseUploadError(error, { bucket: "postcard-photos", path, file });
-      toast({ title: `[${info.category.toUpperCase()}] ${info.title}`, description: info.description, variant: "destructive" });
-      return;
-    }
-    const { data } = supabase.storage.from("postcard-photos").getPublicUrl(path);
-    setForm((f) => ({ ...f, image_front_url: data.publicUrl }));
-    console.info("[upload] main image ok", { path, url: data.publicUrl });
-    setUploading(false);
-  };
-
-  const uploadExtraImage = async (file: File) => {
-    if (!editingId) {
-      toast({ title: "Zapisz produkt zanim dodasz galerię", variant: "destructive" });
-      return;
-    }
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Wybierz plik graficzny", description: `Otrzymany typ: ${file.type || "nieznany"}`, variant: "destructive" });
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      toast({ title: "Maks. 8 MB", description: `Plik ma ${Math.round(file.size / 1024)} KB`, variant: "destructive" });
-      return;
-    }
-    setUploading(true);
-    const ext = file.name.split(".").pop() || "jpg";
-    const path = `products/${editingId}/extra-${Date.now()}.${ext}`;
-    await logUploadAttempt({ bucket: "postcard-photos", path, file, extra: { productId: editingId, categoryId: form.category_id } });
-    const { error: upErr } = await supabase.storage.from("postcard-photos").upload(path, file, {
-      cacheControl: "3600",
-    });
-    if (upErr) {
-      setUploading(false);
-      const info = diagnoseUploadError(upErr, { bucket: "postcard-photos", path, file });
-      toast({ title: `[${info.category.toUpperCase()}] ${info.title}`, description: info.description, variant: "destructive" });
-      return;
-    }
-    const { data } = supabase.storage.from("postcard-photos").getPublicUrl(path);
-    const nextOrder = extraImages.length > 0 ? Math.max(...extraImages.map((i) => i.sort_order)) + 1 : 0;
-    const { data: inserted, error: insErr } = await supabase
-      .from("card_design_images")
-      .insert({ card_design_id: editingId, url: data.publicUrl, sort_order: nextOrder })
-      .select()
-      .single();
-    setUploading(false);
-    if (insErr) {
-      console.error("[upload] extra image db insert failed", { path, insErr });
-      toast({ title: "[DB] Błąd zapisu zdjęcia w bazie", description: `${insErr.message} — plik został wgrany, ale nie zapisano rekordu w card_design_images.`, variant: "destructive" });
-      return;
-    }
-    console.info("[upload] extra image ok", { path, url: data.publicUrl });
-    setExtraImages((prev) => [...prev, inserted as ExtraImage]);
   };
 
   const removeExtraImage = async (id: string) => {
-    const { error } = await supabase.from("card_design_images").delete().eq("id", id);
-    if (error) {
-      toast({ title: "Nie udało się usunąć", description: error.message, variant: "destructive" });
-      return;
+    if (!editingId) return;
+    const next = extraImages.filter((image) => image.id !== id).map((image, index) => ({ ...image, sort_order: index }));
+    try {
+      await firestoreService.setCardDesignImages(editingId, next);
+      setExtraImages(next);
+    } catch (error) {
+      toast({ title: "Nie udało się usunąć", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
-    setExtraImages((prev) => prev.filter((i) => i.id !== id));
   };
 
   const moveExtraImage = async (id: string, dir: -1 | 1) => {
@@ -539,72 +405,34 @@ const AdminProducts = () => {
     const next = [...extraImages];
     next[idx] = { ...b, sort_order: a.sort_order };
     next[swapIdx] = { ...a, sort_order: b.sort_order };
-    setExtraImages(next);
-    await Promise.all([
-      supabase.from("card_design_images").update({ sort_order: b.sort_order }).eq("id", a.id),
-      supabase.from("card_design_images").update({ sort_order: a.sort_order }).eq("id", b.id),
-    ]);
+    if (!editingId) return;
+    try {
+      await firestoreService.setCardDesignImages(editingId, next);
+      setExtraImages(next);
+    } catch (error) {
+      toast({ title: "Nie udało się zmienić kolejności zdjęć", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    }
   };
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    if (isFirestoreCatalogEnabled) {
+    try {
       await firestoreService.setCardDesignActive(deleteTarget.id, false);
-      toast({ title: "Produkt wycofany lokalnie ze sklepu. Wzór pozostał w kreatorze." });
-      fetchAll();
-      setDeleteTarget(null);
-      return;
-    }
-    const { error } = await supabase
-      .from("card_designs")
-      .update({ active: false })
-      .eq("id", deleteTarget.id);
-    if (error) {
-      toast({ title: "Nie udało się wycofać produktu", description: error.message, variant: "destructive" });
-    } else {
       toast({ title: "Produkt wycofany ze sklepu. Wzór pozostał w kreatorze." });
       fetchAll();
+    } catch (error) {
+      toast({ title: "Nie udało się wycofać produktu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
     setDeleteTarget(null);
   };
 
   const toggleActive = async (p: ProductRow) => {
-    if (isFirestoreCatalogEnabled) {
+    try {
       await firestoreService.setCardDesignActive(p.id, !p.active);
       fetchAll();
-      return;
+    } catch (error) {
+      toast({ title: "Błąd", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
-    const { error } = await supabase.from("card_designs").update({ active: !p.active }).eq("id", p.id);
-    if (error) {
-      toast({ title: "Błąd", description: error.message, variant: "destructive" });
-      return;
-    }
-    fetchAll();
-  };
-
-  const syncFirminoArticle = async (product: ProductRow) => {
-    setFirminoSyncingId(product.id);
-    const { data, error } = await supabase.functions.invoke("sync-firmino-article", {
-      body: { card_design_id: product.id },
-    });
-    setFirminoSyncingId(null);
-    if (error || data?.error) {
-      toast({
-        title: "Nie udało się zsynchronizować z Firmino",
-        description: data?.error || error?.message || "Nieznany błąd",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (data?.skipped === "firmino_disabled") {
-      toast({
-        title: "Firmino nie jest jeszcze aktywne",
-        description: "Ustaw sekrety FIRMINO_LOGIN, FIRMINO_PASSWORD, FIRMINO_VAT_RATE oraz FIRMINO_CATALOG_ENABLED=true.",
-      });
-      return;
-    }
-    toast({ title: data?.action === "updated" ? "Produkt Firmino zaktualizowany" : "Produkt dodany do Firmino" });
-    fetchAll();
   };
 
   const toggleSort = (key: SortKey) => {
@@ -705,20 +533,9 @@ const AdminProducts = () => {
                   <td className="p-3 text-right font-mono">{formatPln(p.price_grosze)}</td>
                   <td className="p-3 text-right font-mono">{stockMap[p.id] || 0}</td>
                   <td className="p-3">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs ${p.firmino_article_id ? "text-accent" : "text-muted-foreground"}`}>
-                        {p.firmino_article_id ? `ID ${p.firmino_article_id}` : "Nie zsynchronizowano"}
-                      </span>
-                      <button
-                        onClick={() => syncFirminoArticle(p)}
-                        disabled={firminoSyncingId === p.id}
-                        className="p-1.5 rounded hover:bg-muted disabled:opacity-50"
-                        aria-label="Synchronizuj produkt z Firmino"
-                        title="Synchronizuj z Firmino"
-                      >
-                        <RefreshCw className={`w-4 h-4 text-muted-foreground ${firminoSyncingId === p.id ? "animate-spin" : ""}`} />
-                      </button>
-                    </div>
+                    <span className={`text-xs ${p.firmino_article_id ? "text-accent" : "text-muted-foreground"}`}>
+                      {p.firmino_article_id ? `ID ${p.firmino_article_id}` : "Nie zsynchronizowano"}
+                    </span>
                   </td>
                   <td className="p-3">
                     <button
@@ -920,21 +737,6 @@ const AdminProducts = () => {
                       brak
                     </div>
                   )}
-                  <label className="cursor-pointer">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) uploadMainImage(f);
-                        e.target.value = "";
-                      }}
-                    />
-                    <span className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md border border-input bg-background hover:bg-muted">
-                      <Upload className="w-4 h-4" /> {uploading ? "Wysyłanie..." : "Wgraj zdjęcie"}
-                    </span>
-                  </label>
                   {form.image_front_url && (
                     <Button variant="ghost" size="sm" onClick={() => setForm({ ...form, image_front_url: "" })}>
                       Usuń
@@ -944,7 +746,7 @@ const AdminProducts = () => {
                 <Input
                   value={form.image_front_url}
                   onChange={(e) => setForm({ ...form, image_front_url: e.target.value })}
-                  placeholder="lub wklej URL"
+                  placeholder="Wklej publiczny adres HTTPS zdjęcia"
                 />
               </div>
 
@@ -982,19 +784,14 @@ const AdminProducts = () => {
                         </div>
                       </div>
                     ))}
-                    <label className="cursor-pointer w-20 h-20 rounded border-2 border-dashed border-border flex items-center justify-center hover:bg-muted">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) uploadExtraImage(f);
-                          e.target.value = "";
-                        }}
-                      />
-                      <Plus className="w-5 h-5 text-muted-foreground" />
-                    </label>
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={extraImageUrl}
+                      onChange={(event) => setExtraImageUrl(event.target.value)}
+                      placeholder="Wklej publiczny adres HTTPS dodatkowego zdjęcia"
+                    />
+                    <Button type="button" variant="outline" onClick={addExtraImage}>Dodaj adres</Button>
                   </div>
                 </div>
               )}
@@ -1016,7 +813,7 @@ const AdminProducts = () => {
               <Button variant="outline" onClick={closeDialog}>
                 <X className="w-4 h-4 mr-1" /> Anuluj
               </Button>
-              <Button onClick={handleSave} disabled={saving || uploading}>
+              <Button onClick={handleSave} disabled={saving}>
                 <Check className="w-4 h-4 mr-1" /> {editingId ? "Zapisz" : "Dodaj produkt"}
               </Button>
             </div>

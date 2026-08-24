@@ -222,6 +222,7 @@ export default {
             }
 
             const newPoints = currentPoints + 50; // +50 pkt za relację
+            const previousRank = String(userData.current_rank || userData.current_tier || "Zwiadowca");
             const newRank = calculateRank(newPoints);
             const newKm = currentKm + addedKm;
             const newRegs = currentRegs + 1;
@@ -241,6 +242,44 @@ export default {
                 update: { name: userDoc.name, fields: toFields(userUpdate) },
                 updateMask: { fieldPaths: Object.keys(userUpdate) },
                 currentDocument: { updateTime: userDoc.updateTime },
+              });
+            }
+
+            // Keep the traveler dashboard notification stream in Firestore.
+            // This is created server-side so a recipient cannot forge it.
+            writes.push({
+              update: {
+                name: `${documentPrefix}/notifications/${crypto.randomUUID()}`,
+                fields: toFields({
+                  user_id: travelerId,
+                  type: "postcard_registered",
+                  title: "Nowa Podróżówka zarejestrowana",
+                  message: `${String(recipient_name).trim()} zarejestrował(a) Twoją Podróżówkę. Otrzymujesz +50 pkt wpływu kulturowego.`,
+                  is_read: false,
+                  created_at: now,
+                  registration_id: regId,
+                  schema_version: 1,
+                }),
+              },
+              currentDocument: { exists: false },
+            });
+
+            if (previousRank !== newRank) {
+              writes.push({
+                update: {
+                  name: `${documentPrefix}/notifications/${crypto.randomUUID()}`,
+                  fields: toFields({
+                    user_id: travelerId,
+                    type: "rank_up",
+                    title: "Nowa ranga Podróżnika",
+                    message: `Awansujesz z rangi ${previousRank} do rangi ${newRank}.`,
+                    is_read: false,
+                    created_at: now,
+                    registration_id: regId,
+                    schema_version: 1,
+                  }),
+                },
+                currentDocument: { exists: false },
               });
             }
 

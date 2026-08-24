@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
-import { Loader2, CheckCircle2, AlertCircle, Clock, FileText, Download } from "lucide-react";
-import { toast } from "sonner";
+import { Loader2, CheckCircle2, AlertCircle, Clock, FileText } from "lucide-react";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -10,7 +9,6 @@ import OrderSteps from "@/components/checkout/OrderSteps";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/contexts/CartContext";
 import { useCheckout } from "@/contexts/CheckoutContext";
-import { supabase, supabaseUrl } from "@/integrations/supabase/client";
 
 const formatPln = (v: number) =>
   v.toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
@@ -218,55 +216,10 @@ const CheckoutConfirmation = () => {
                   <div className="flex items-start gap-3">
                     <FileText className="w-5 h-5 text-primary shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
-                      {order.fiscal_document_status === "issued" ? (
-                        <>
-                          <p className="text-sm font-medium text-foreground">Dokument sprzedaży wystawiony</p>
-                          {order.fiscal_document_number && (
-                            <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                              {order.fiscal_document_number}
-                            </p>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="mt-3"
-                            onClick={async () => {
-                              try {
-                                const { data: { session } } = await supabase.auth.getSession();
-                                if (!session) {
-                                  toast.error("Zaloguj się ponownie, aby pobrać dokument.");
-                                  return;
-                                }
-                                const url = `${supabaseUrl}/functions/v1/fiscal-document-pdf?order=${encodeURIComponent(order.order_number)}`;
-                                const res = await fetch(url, {
-                                  headers: { Authorization: `Bearer ${session.access_token}` },
-                                });
-                                if (!res.ok) {
-                                  toast.error("Nie udało się pobrać dokumentu.");
-                                  return;
-                                }
-                                const blob = await res.blob();
-                                const objectUrl = URL.createObjectURL(blob);
-                                window.open(objectUrl, "_blank", "noopener");
-                                setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-                              } catch (e) {
-                                const errMsg = e instanceof Error ? e.message : String(e);
-                                toast.error("Nie udało się pobrać dokumentu.", { description: errMsg });
-                              }
-                            }}
-                          >
-                            <Download className="w-4 h-4 mr-2" />
-                            Pobierz fakturę / paragon
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-sm font-medium text-foreground">Dokument sprzedaży w drodze</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            Wyślemy go na Twój e-mail w ciągu 24 godzin.
-                          </p>
-                        </>
-                      )}
+                      <p className="text-sm font-medium text-foreground">Dokument sprzedaży w drodze</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Wyślemy go na Twój e-mail w ciągu 24 godzin.
+                      </p>
                     </div>
                   </div>
                 </div>

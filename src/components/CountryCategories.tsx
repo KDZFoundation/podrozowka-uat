@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 
 interface CountryCategory {
   id: string;
@@ -23,98 +21,46 @@ const CountryCategories = () => {
   useEffect(() => {
     const loadCommunityShop = async () => {
       setIsLoading(true);
-      if (isFirestoreCatalogEnabled) {
-        try {
-          const [fireCountries, fireDesigns, fireTemplates] = await Promise.all([
-            firestoreService.getCountries(),
-            firestoreService.getCardDesigns(),
-            firestoreService.getLanguageTemplates(),
-          ]);
-          const designCounts = new Map<string, number>();
-          const thankYouByCountry = new Map<string, string>();
-          fireDesigns.forEach((design) => {
-            if (!design.country_id) return;
-            designCounts.set(design.country_id, (designCounts.get(design.country_id) || 0) + 1);
-            if (design.thank_you_text && !thankYouByCountry.has(design.country_id)) {
-              thankYouByCountry.set(design.country_id, design.thank_you_text);
-            }
-          });
-          fireTemplates.forEach((template) => {
-            if (template.country_id && !thankYouByCountry.has(template.country_id)) {
-              thankYouByCountry.set(template.country_id, template.front_thank_you_text);
-            }
-          });
-          const featured = new Set(DEFAULT_FEATURED_COUNTRIES);
-          setCategories(
-            fireCountries
-              .filter((country) => featured.has(country.iso2 || "") || (designCounts.get(country.id) || 0) > 0)
-              .map((country) => ({
-                id: country.id,
-                iso2: country.iso2 || country.id,
-                name: country.name_pl || country.name,
-                thankYou: thankYouByCountry.get(country.id) || "Dziękuję",
-                available: designCounts.get(country.id) || 0,
-                // Orders are private in Firestore; public sold counters will be
-                // added through an aggregate stats document in a later step.
-                sold: 0,
-              }))
-              .sort((a, b) => b.available - a.available || a.name.localeCompare(b.name, "pl")),
-          );
-        } catch (error) {
-          console.warn("Firestore community shop error:", error);
-        } finally {
-          setIsLoading(false);
-        }
-        return;
-      }
-      const [{ data: dbCountries }, { data: dbDesigns }, { data: dbTemplates }, { data: dbOrderItems }] = await Promise.all([
-        supabase.from("countries").select("id, iso2, name_pl").eq("active", true),
-        supabase.from("card_designs").select("country_id, thank_you_text").eq("active", true),
-        supabase.from("card_language_templates").select("country_id, front_thank_you_text"),
-        supabase
-          .from("order_items")
-          .select("quantity, card_designs!inner(country_id), orders!inner(payment_status)")
-          .eq("orders.payment_status", "paid"),
-      ]);
-
-      if (dbCountries) {
+      try {
+        const [fireCountries, fireDesigns, fireTemplates] = await Promise.all([
+          firestoreService.getCountries(),
+          firestoreService.getCardDesigns(),
+          firestoreService.getLanguageTemplates(),
+        ]);
         const designCounts = new Map<string, number>();
-        const soldCounts = new Map<string, number>();
         const thankYouByCountry = new Map<string, string>();
 
-        dbDesigns?.forEach((design) => {
+        fireDesigns.forEach((design) => {
           if (!design.country_id) return;
           designCounts.set(design.country_id, (designCounts.get(design.country_id) || 0) + 1);
           if (design.thank_you_text && !thankYouByCountry.has(design.country_id)) {
             thankYouByCountry.set(design.country_id, design.thank_you_text);
           }
         });
-        dbTemplates?.forEach((template) => {
+        fireTemplates.forEach((template) => {
           if (template.country_id && !thankYouByCountry.has(template.country_id)) {
             thankYouByCountry.set(template.country_id, template.front_thank_you_text);
           }
         });
-        (dbOrderItems as unknown as Array<{ quantity: number; card_designs: { country_id: string | null } | null }> | null)?.forEach((item) => {
-          const countryId = item.card_designs?.country_id;
-          if (countryId) soldCounts.set(countryId, (soldCounts.get(countryId) || 0) + item.quantity);
-        });
-
         const featured = new Set(DEFAULT_FEATURED_COUNTRIES);
         setCategories(
-          dbCountries
-            .filter((country) => featured.has(country.iso2) || (designCounts.get(country.id) || 0) > 0)
+          fireCountries
+            .filter((country) => featured.has(country.iso2 || "") || (designCounts.get(country.id) || 0) > 0)
             .map((country) => ({
               id: country.id,
-              iso2: country.iso2,
-              name: country.name_pl,
+              iso2: country.iso2 || country.id,
+              name: country.name_pl || country.name,
               thankYou: thankYouByCountry.get(country.id) || "Dziękuję",
               available: designCounts.get(country.id) || 0,
-              sold: soldCounts.get(country.id) || 0,
+              sold: 0,
             }))
             .sort((a, b) => b.available - a.available || a.name.localeCompare(b.name, "pl")),
         );
+      } catch (error) {
+        console.warn("Firestore community shop error:", error);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     loadCommunityShop();

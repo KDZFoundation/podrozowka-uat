@@ -104,11 +104,12 @@ interface Props {
 }
 
 const InpostGeowidget = ({ onSelect }: Props) => {
-  const configuredToken = import.meta.env.VITE_INPOST_GEOWIDGET_TOKEN as string | undefined;
-  const [token, setToken] = useState<string | undefined>(configuredToken);
+  // The token is deliberately fetched from the server. A build-time VITE token
+  // can be stale or generated for another hostname (localhost/Vercel/Firebase).
+  const [token, setToken] = useState<string | undefined>();
   const [environment, setEnvironment] = useState<GeowidgetEnvironment>("sandbox");
   const [status, setStatus] = useState<"loading" | "ready" | "error" | "no-token">(
-    configuredToken ? "loading" : "no-token",
+    "loading",
   );
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -118,7 +119,6 @@ const InpostGeowidget = ({ onSelect }: Props) => {
   }, [onSelect]);
 
   useEffect(() => {
-    if (configuredToken) return;
     let cancelled = false;
 
     // The current integration is served by Vercel Functions. In local
@@ -145,7 +145,7 @@ const InpostGeowidget = ({ onSelect }: Props) => {
     return () => {
       cancelled = true;
     };
-  }, [configuredToken]);
+  }, []);
 
   useEffect(() => {
     if (!token) return;

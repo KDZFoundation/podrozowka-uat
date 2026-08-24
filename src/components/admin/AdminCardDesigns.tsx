@@ -3,12 +3,9 @@ import { Plus, Pencil, Trash2, Image as ImageIcon, Sparkles, Languages, ListFilt
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { AdminCardCreator } from "./AdminCardCreator";
 import { AdminLanguageTemplates } from "./AdminLanguageTemplates";
-import { deleteCardDesignCascade } from "@/lib/cardDesignUtils";
 
 interface Country {
   id: string;
@@ -34,28 +31,6 @@ interface CardDesign {
   category_name?: string;
 }
 
-interface AdminCardDesignJoin {
-  id: string;
-  country_id: string;
-  author_id?: string | null;
-  category_id?: string | null;
-  language_code: string;
-  view_no: number;
-  title: string | null;
-  thank_you_text: string | null;
-  image_front_url: string | null;
-  photo_author: string | null;
-  back_qr_label: string | null;
-  crop_settings?: unknown;
-  active: boolean;
-  countries: {
-    name_pl: string;
-  } | null;
-  categories: {
-    name: string;
-  } | null;
-}
-
 const AdminCardDesigns = () => {
   const [designs, setDesigns] = useState<CardDesign[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
@@ -67,7 +42,7 @@ const AdminCardDesigns = () => {
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
-    if (isFirestoreCatalogEnabled) {
+    try {
       const [firestoreDesigns, firestoreCountries, firestoreCategories] = await Promise.all([
         firestoreService.getCardDesigns({ includeInactive: true }),
         firestoreService.getCountries(),
@@ -97,31 +72,16 @@ const AdminCardDesigns = () => {
         iso2: country.iso2 || "",
         name_pl: country.name_pl || country.name,
       })));
+    } catch (error) {
+      toast({
+        title: "Nie udało się wczytać wzorów",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    } finally {
       setIsLoading(false);
-      return;
     }
-    const [{ data: designsData }, { data: countriesData }] = await Promise.all([
-      supabase
-        .from("card_designs")
-        .select("*, countries!inner(name_pl), categories(name)")
-        .order("country_id")
-        .order("view_no"),
-      supabase.from("countries").select("id, iso2, name_pl").order("name_pl"),
-    ]);
-
-    if (designsData) {
-      const typedDesigns = designsData as unknown as AdminCardDesignJoin[];
-      setDesigns(
-        typedDesigns.map((d: AdminCardDesignJoin) => ({
-          ...d,
-          country_name: d.countries?.name_pl,
-          category_name: d.categories?.name,
-        }))
-      );
-    }
-    if (countriesData) setCountries(countriesData as Country[]);
-    setIsLoading(false);
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     fetchData();
@@ -129,33 +89,22 @@ const AdminCardDesigns = () => {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć ten wzór kartki?")) return;
-    if (isFirestoreCatalogEnabled) {
-      try {
-        await firestoreService.deleteCardDesign(id);
-        toast({ title: "Wzór usunięty lokalnie z Firestore" });
-        fetchData();
-      } catch (error) {
-        toast({ title: "Błąd usuwania", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      }
-      return;
-    }
-    const res = await deleteCardDesignCascade(id);
-    if (!res.success) {
-      toast({ title: "Błąd usuwania", description: res.error, variant: "destructive" });
-    } else {
-      toast({ title: "Usuwanie wzoru", description: res.message || "Wzór kartki został usunięty" });
+    try {
+      await firestoreService.deleteCardDesign(id);
+      toast({ title: "Wzór usunięty z Firestore" });
       fetchData();
+    } catch (error) {
+      toast({ title: "Błąd usuwania", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
   };
 
   const toggleActive = async (id: string, active: boolean) => {
-    if (isFirestoreCatalogEnabled) {
+    try {
       await firestoreService.setCardDesignActive(id, !active);
       fetchData();
-      return;
+    } catch (error) {
+      toast({ title: "Błąd zmiany statusu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
-    await supabase.from("card_designs").update({ active: !active }).eq("id", id);
-    fetchData();
   };
 
   const startNewCreator = () => {

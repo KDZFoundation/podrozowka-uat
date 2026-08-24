@@ -6,8 +6,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 
 type AgreementStatus = "draft" | "sent" | "signed" | "expired" | "terminated";
@@ -33,10 +31,9 @@ export default function AdminAuthors() {
 
   const loadAuthors = useCallback(async () => {
     setLoading(true);
-    if (isFirestoreCatalogEnabled) {
-      try {
-        const data = await firestoreService.getAuthors();
-        setAuthors((data as unknown as Record<string, unknown>[]).map((row) => ({
+    try {
+      const data = await firestoreService.getAuthors();
+      setAuthors((data as unknown as Record<string, unknown>[]).map((row) => ({
           id: String(row.id ?? ""),
           display_name: String(row.display_name ?? row.name ?? ""),
           legal_name: (row.legal_name as string | null | undefined) ?? null,
@@ -51,18 +48,12 @@ export default function AdminAuthors() {
           agreement_file_url: (row.agreement_file_url as string | null | undefined) ?? null,
           notes: (row.notes as string | null | undefined) ?? null,
           active: Boolean(row.active ?? row.is_active ?? true),
-        })));
-      } catch (error) {
-        toast({ title: "Nie udało się wczytać autorów", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      } finally {
-        setLoading(false);
-      }
-      return;
+      })));
+    } catch (error) {
+      toast({ title: "Nie udało się wczytać autorów", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setLoading(false);
     }
-    const { data, error } = await supabase.from("authors").select("*").order("display_name");
-    if (error) toast({ title: "Nie udało się wczytać autorów", description: error.message, variant: "destructive" });
-    else setAuthors((data || []) as Author[]);
-    setLoading(false);
   }, [toast]);
   useEffect(() => { if (isAdmin) loadAuthors(); }, [isAdmin, loadAuthors]);
   if (!isAdmin) return null;
@@ -77,41 +68,29 @@ export default function AdminAuthors() {
     if (!form.display_name.trim()) { toast({ title: "Podaj nazwę autora", variant: "destructive" }); return; }
     setSaving(true);
     const payload = { ...form, display_name: form.display_name.trim(), legal_name: form.legal_name || null, email: form.email || null, website_url: form.website_url || null, social_handle: form.social_handle || null, bio: form.bio || null, avatar_url: form.avatar_url || null, agreement_signed_at: form.agreement_signed_at || null, agreement_expires_at: form.agreement_expires_at || null, agreement_file_url: form.agreement_file_url || null, notes: form.notes || null };
-    if (isFirestoreCatalogEnabled) {
-      try {
-        await firestoreService.upsertAuthor(editingId ?? crypto.randomUUID(), {
-          ...payload,
-          name: payload.display_name,
-          is_active: payload.active,
-        });
-        toast({ title: editingId ? "Autor zaktualizowany" : "Autor dodany" });
-        startNew();
-        await loadAuthors();
-      } catch (error) {
-        toast({ title: "Błąd zapisu autora", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      } finally {
-        setSaving(false);
-      }
-      return;
+    try {
+      await firestoreService.upsertAuthor(editingId ?? crypto.randomUUID(), {
+        ...payload,
+        name: payload.display_name,
+        is_active: payload.active,
+      });
+      toast({ title: editingId ? "Autor zaktualizowany" : "Autor dodany" });
+      startNew();
+      await loadAuthors();
+    } catch (error) {
+      toast({ title: "Błąd zapisu autora", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
-    const result = editingId ? await supabase.from("authors").update(payload).eq("id", editingId) : await supabase.from("authors").insert(payload);
-    if (result.error) toast({ title: "Błąd zapisu autora", description: result.error.message, variant: "destructive" });
-    else { toast({ title: editingId ? "Autor zaktualizowany" : "Autor dodany" }); startNew(); await loadAuthors(); }
-    setSaving(false);
   };
   const remove = async (author: Author) => {
     if (!confirm(`Usunąć autora „${author.display_name}”? Wzory pozostaną bez przypisanego autora.`)) return;
-    if (isFirestoreCatalogEnabled) {
-      try {
-        await firestoreService.deleteAuthor(author.id);
-        await loadAuthors();
-      } catch (error) {
-        toast({ title: "Nie udało się usunąć autora", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      }
-      return;
+    try {
+      await firestoreService.deleteAuthor(author.id);
+      await loadAuthors();
+    } catch (error) {
+      toast({ title: "Nie udało się usunąć autora", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
-    const { error } = await supabase.from("authors").delete().eq("id", author.id);
-    if (error) toast({ title: "Nie udało się usunąć autora", description: error.message, variant: "destructive" }); else loadAuthors();
   };
   const filtered = authors.filter((a) => `${a.display_name} ${a.email || ""} ${a.social_handle || ""}`.toLowerCase().includes(query.toLowerCase()));
   const field = (label: string, key: keyof FormState, placeholder?: string) => <label className="space-y-1 text-sm"><span className="font-medium">{label}</span><Input value={String(form[key] ?? "")} onChange={(e) => setField(key, e.target.value as never)} placeholder={placeholder} /></label>;

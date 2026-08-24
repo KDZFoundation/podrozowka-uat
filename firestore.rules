@@ -98,6 +98,20 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+      allow update: if isAdmin() || (
+        signedIn() && resource.data.user_id == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read'])
+      );
+      allow create, delete: if isAdmin();
+    }
+
+    match /shipments/{shipmentId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
     match /{collection}/{documentId} {
       allow read, write: if isAdmin()
         && collection in [
@@ -106,9 +120,11 @@ service cloud.firestore {
           'inventory_locations',
           'inventory_movements',
           'inventory_unit_events',
+          'shipments',
           'qr_print_jobs',
           'qr_print_job_items',
-          'notifications',
+          'pod_production_batches',
+          'pod_production_batch_orders',
           'config',
           'platform_stats',
           'gamification_config',

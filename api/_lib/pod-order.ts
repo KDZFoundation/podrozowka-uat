@@ -152,6 +152,7 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
         return "Zwiadowca";
       };
       const rank = calculateRank(newPoints);
+      const previousRank = String(userData.current_rank || userData.current_tier || "Zwiadowca");
       const userUpdate = {
         gamification_points: newPoints,
         total_points: newPoints,
@@ -166,6 +167,33 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
         await updateDocument(`profiles/${order.user_id}`, userUpdate);
       } catch {
         // A missing legacy profile must not block completing a paid order.
+      }
+
+      // Keep the notification deterministic: retrying the payment/POD flow
+      // updates the same document instead of creating duplicate bell entries.
+      await setDocument("notifications", `order-${orderId}-purchase`, {
+        id: `order-${orderId}-purchase`,
+        user_id: String(order.user_id),
+        type: "purchase_points",
+        title: "Punkty za zakup",
+        message: `Za zakup ${totalUnits} ${totalUnits === 1 ? "Podróżówki" : "Podróżówek"} otrzymujesz +${addedPoints} pkt.`,
+        is_read: false,
+        created_at: now,
+        order_id: orderId,
+        schema_version: 1,
+      });
+      if (previousRank !== rank) {
+        await setDocument("notifications", `order-${orderId}-rank-${rank}`, {
+          id: `order-${orderId}-rank-${rank}`,
+          user_id: String(order.user_id),
+          type: "rank_up",
+          title: "Nowa ranga Podróżnika",
+          message: `Awansujesz z rangi ${previousRank} do rangi ${rank}.`,
+          is_read: false,
+          created_at: now,
+          order_id: orderId,
+          schema_version: 1,
+        });
       }
     } catch (e) {
       console.warn("[pod-order] User points update warning:", e);

@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { backendApiUrl } from "@/lib/backendApi";
 
 const CONTACT_EMAIL = "kontakt@podrozowka.pl";
 
@@ -18,17 +18,30 @@ const Contact = () => {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSending(true);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
     try {
-      const { data, error } = await supabase.functions.invoke<{ error?: string }>("contact-form", { body: form });
-      if (error || data?.error) throw new Error(data?.error || error?.message);
+      const response = await fetch(backendApiUrl("/api/contact"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+        signal: controller.signal,
+      });
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok || data.error) throw new Error(data.error || "contact_request_failed");
       toast.success("Wiadomość została wysłana", { description: "Odpowiemy na podany adres e-mail." });
       setForm({ name: "", email: "", subject: "", message: "" });
     } catch (error) {
       const code = error instanceof Error ? error.message : "";
       toast.error("Nie udało się wysłać wiadomości", {
-        description: code === "email_not_configured" ? "Formularz wymaga jeszcze konfiguracji poczty." : "Spróbuj ponownie lub napisz bezpośrednio na kontakt@podrozowka.pl.",
+        description: code === "email_not_configured"
+          ? "Formularz wymaga jeszcze konfiguracji poczty na backendzie."
+          : code === "AbortError"
+            ? "Serwer poczty nie odpowiedział w ciągu 15 sekund."
+            : "Spróbuj ponownie lub napisz bezpośrednio na kontakt@podrozowka.pl.",
       });
     } finally {
+      window.clearTimeout(timeout);
       setIsSending(false);
     }
   };

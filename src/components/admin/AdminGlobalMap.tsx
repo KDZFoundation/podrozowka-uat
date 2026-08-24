@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Globe2, MapPin, Users } from "lucide-react";
 import L from "leaflet";
-import { supabase } from "@/integrations/supabase/client";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
@@ -92,19 +90,6 @@ interface RegistrationRow {
   countryName: string | null;
 }
 
-interface AdminGlobalMapJoin {
-  id: string;
-  recipient_name: string;
-  registered_at: string;
-  inventory_units: {
-    card_designs: {
-      countries: {
-        name_pl: string;
-      } | null;
-    } | null;
-  } | null;
-}
-
 const jitter = (val: number) => val + (Math.random() - 0.5) * 1.5;
 
 const escHtml = (s: string) =>
@@ -119,36 +104,17 @@ const AdminGlobalMap = () => {
 
   useEffect(() => {
     const fetch = async () => {
-      if (isFirestoreCatalogEnabled) {
+      try {
         const registrations = await firestoreService.getAdminRegistrations(250);
-        if (registrations.length > 0) {
-          setData(registrations.map((registration) => ({
-            id: registration.id,
-            recipient_name: registration.recipient_name,
-            registered_at: registration.registered_at,
-            countryName: registration.country_name,
-          })));
-          setIsLoading(false);
-          return;
-        }
+        setData(registrations.map((registration) => ({
+          id: registration.id,
+          recipient_name: registration.recipient_name,
+          registered_at: registration.registered_at,
+          countryName: registration.country_name,
+        })));
+      } finally {
+        setIsLoading(false);
       }
-
-      const { data: rows, error } = await supabase
-        .from("recipient_registrations")
-        .select("id, recipient_name, registered_at, inventory_units!inner(card_designs!inner(countries!inner(name_pl)))");
-
-      if (!error && rows) {
-        const typedRows = rows as unknown as AdminGlobalMapJoin[];
-        setData(
-          typedRows.map((r: AdminGlobalMapJoin) => ({
-            id: r.id,
-            recipient_name: r.recipient_name,
-            registered_at: r.registered_at,
-            countryName: r.inventory_units?.card_designs?.countries?.name_pl ?? null,
-          }))
-        );
-      }
-      setIsLoading(false);
     };
     fetch();
   }, []);

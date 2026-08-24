@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
-  Image as ImageIcon,
-  Upload,
   Check,
   X,
   Languages,
@@ -24,13 +22,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { deleteCardDesignCascade } from "@/lib/cardDesignUtils";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import type { FirestoreCardDesign } from "@/integrations/firebase/types";
-import type { Json } from "@/integrations/supabase/types";
 
 interface Country {
   id: string;
@@ -93,7 +87,6 @@ export const AdminCardCreator = ({
   const [categories, setCategories] = useState<Category[]>([]);
   const [authors, setAuthors] = useState<Author[]>([]);
   const [langTemplates, setLangTemplates] = useState<LanguageTemplate[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<"front" | "back">("front");
   const { toast } = useToast();
@@ -128,7 +121,7 @@ export const AdminCardCreator = ({
 
   // Fetch Countries, Categories & Templates
   const loadData = useCallback(async () => {
-    if (isFirestoreCatalogEnabled) {
+    try {
       const [fireCountries, fireTemplates, fireCategories, fireAuthors] = await Promise.all([
         firestoreService.getCountries(),
         // Templates are filtered after country selection, but load all once for the local creator.
@@ -152,20 +145,10 @@ export const AdminCardCreator = ({
       })));
       setCategories(fireCategories.map((category) => ({ id: category.id, name: category.name_pl || category.name || category.slug, slug: category.slug })));
       setAuthors(fireAuthors.map((author) => ({ id: author.id, display_name: author.name, agreement_status: "zaakceptowana", active: author.is_active })));
-      return;
+    } catch (error) {
+      toast({ title: "Nie udało się wczytać danych kreatora", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
-    const [{ data: cData }, { data: tData }, { data: catData }, { data: aData }] = await Promise.all([
-      supabase.from("countries").select("*").order("name_pl"),
-      supabase.from("card_language_templates").select("*").order("country_id"),
-      supabase.from("categories").select("id, name, slug").order("sort_order").order("name"),
-      supabase.from("authors").select("id, display_name, agreement_status, active").eq("active", true).order("display_name"),
-    ]);
-
-    if (cData) setCountries(cData as unknown as Country[]);
-    if (tData) setLangTemplates(tData as unknown as LanguageTemplate[]);
-    if (catData) setCategories(catData as Category[]);
-    if (aData) setAuthors(aData as Author[]);
-  }, [countryId]);
+  }, [countryId, toast]);
 
   useEffect(() => {
     loadData();
@@ -177,7 +160,7 @@ export const AdminCardCreator = ({
   const handleCountrySelect = async (cId: string) => {
     setCountryId(cId);
     setSelectedTemplateId("");
-    if (isFirestoreCatalogEnabled) {
+    try {
       const templates = await firestoreService.getLanguageTemplatesForCountry(cId);
       setLangTemplates(templates.map((template) => ({
         id: template.id,
@@ -194,57 +177,23 @@ export const AdminCardCreator = ({
         setThankYouText(firstTpl.front_thank_you_text);
         setBackQrLabel(firstTpl.back_qr_label);
       }
-    }
-    // Find first template for this country
-    const firstTpl = !isFirestoreCatalogEnabled ? langTemplates.find((t) => t.country_id === cId) : undefined;
-    if (firstTpl) {
-      setSelectedTemplateId(firstTpl.id);
-      setLanguageCode(firstTpl.language_code);
-      setThankYouText(firstTpl.front_thank_you_text);
-      setBackQrLabel(firstTpl.back_qr_label);
+    } catch (error) {
+      toast({ title: "Nie udało się wczytać wariantów językowych", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
 
-    if (cId && categoryId && !initialDesign?.id && isFirestoreCatalogEnabled) {
+    if (cId && categoryId && !initialDesign?.id) {
       const designs = await firestoreService.getCardDesigns({ includeInactive: true });
       const matching = designs.filter((design) => design.country_id === cId && design.category_id === categoryId);
       setViewNo(Math.max(0, ...matching.map((design) => design.view_no || 0)) + 1);
-    } else if (cId && categoryId && !initialDesign?.id && !isFirestoreCatalogEnabled) {
-      const { data } = await supabase
-        .from("card_designs")
-        .select("view_no")
-        .eq("country_id", cId)
-        .eq("category_id", categoryId)
-        .order("view_no", { ascending: false })
-        .limit(1);
-
-      if (data && data.length > 0) {
-        setViewNo((data[0].view_no || 0) + 1);
-      } else {
-        setViewNo(1);
-      }
     }
   };
 
   const handleCategorySelect = async (catId: string) => {
     setCategoryId(catId);
-    if (countryId && catId && !initialDesign?.id && isFirestoreCatalogEnabled) {
+    if (countryId && catId && !initialDesign?.id) {
       const designs = await firestoreService.getCardDesigns({ includeInactive: true });
       const matching = designs.filter((design) => design.country_id === countryId && design.category_id === catId);
       setViewNo(Math.max(0, ...matching.map((design) => design.view_no || 0)) + 1);
-    } else if (countryId && catId && !initialDesign?.id && !isFirestoreCatalogEnabled) {
-      const { data } = await supabase
-        .from("card_designs")
-        .select("view_no")
-        .eq("country_id", countryId)
-        .eq("category_id", catId)
-        .order("view_no", { ascending: false })
-        .limit(1);
-
-      if (data && data.length > 0) {
-        setViewNo((data[0].view_no || 0) + 1);
-      } else {
-        setViewNo(1);
-      }
     }
   };
 
@@ -255,57 +204,6 @@ export const AdminCardCreator = ({
       setLanguageCode(tpl.language_code);
       setThankYouText(tpl.front_thank_you_text);
       setBackQrLabel(tpl.back_qr_label);
-    }
-  };
-
-  // Image File Upload Handler
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Wybierz plik graficzny (JPG, PNG, WEBP)", variant: "destructive" });
-      return;
-    }
-
-    if (isFirestoreCatalogEnabled) {
-      toast({
-        title: "Upload z panelu jest wyłączony w trybie Spark",
-        description: "Podglądy wzorów są optymalizowane i publikowane jako statyczne pliki Firebase Hosting.",
-      });
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      const fileExt = file.name.split(".").pop();
-      const fileName = `postcard_front_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
-      const filePath = `card-designs/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("postcards")
-        .upload(filePath, file, { upsert: true });
-
-      if (uploadError) {
-        // Fallback to base64 preview if bucket upload is not configured
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          setImageUrl(event.target?.result as string);
-          toast({ title: "Wczytano podgląd lokalny obrazu" });
-        };
-        reader.readAsDataURL(file);
-      } else {
-        const { data: publicUrlData } = supabase.storage
-          .from("postcards")
-          .getPublicUrl(filePath);
-
-        setImageUrl(publicUrlData.publicUrl);
-        toast({ title: "Przesłano zdjęcie" });
-      }
-    } catch (err) {
-      toast({ title: "Błąd przesyłania", description: (err as Error).message, variant: "destructive" });
-    } finally {
-      setIsUploading(false);
     }
   };
 
@@ -350,34 +248,15 @@ export const AdminCardCreator = ({
       crop_settings: cropSettingsObj,
       active: initialDesign?.active ?? false,
     };
-    const supabasePayload = { ...payload, crop_settings: cropSettingsObj as unknown as Json };
-
     try {
-      if (isFirestoreCatalogEnabled) {
-        const id = initialDesign?.id || crypto.randomUUID();
-        await firestoreService.upsertCardDesign(id, {
-          ...payload,
-          id,
-          slug: id,
-          is_active: initialDesign?.active ?? false,
-        } as Partial<FirestoreCardDesign> & Record<string, unknown>);
-        toast({ title: initialDesign?.id ? "Wzór zaktualizowany lokalnie" : "Nowy wzór utworzony lokalnie" });
-        onSaveSuccess();
-        return;
-      }
-      if (initialDesign?.id) {
-        const { error } = await supabase
-          .from("card_designs")
-          .update(supabasePayload)
-          .eq("id", initialDesign.id);
-
-        if (error) throw error;
-        toast({ title: "Wzór zaktualizowany w kreatorze" });
-      } else {
-        const { error } = await supabase.from("card_designs").insert(supabasePayload);
-        if (error) throw error;
-        toast({ title: "Nowy wzór utworzony pomyślnie" });
-      }
+      const id = initialDesign?.id || crypto.randomUUID();
+      await firestoreService.upsertCardDesign(id, {
+        ...payload,
+        id,
+        slug: id,
+        is_active: initialDesign?.active ?? false,
+      } as Partial<FirestoreCardDesign> & Record<string, unknown>);
+      toast({ title: initialDesign?.id ? "Wzór zaktualizowany w Firestore" : "Nowy wzór utworzony w Firestore" });
       onSaveSuccess();
     } catch (err) {
       toast({ title: "Błąd zapisu", description: (err as Error).message, variant: "destructive" });
@@ -391,19 +270,9 @@ export const AdminCardCreator = ({
     if (!confirm(`Czy na pewno chcesz usunąć ten wzór kartki (Widok #${initialDesign.view_no})?`)) return;
     setIsSaving(true);
     try {
-      if (isFirestoreCatalogEnabled) {
-        await firestoreService.deleteCardDesign(initialDesign.id);
-        toast({ title: "Wzór usunięty lokalnie" });
-        onSaveSuccess();
-        return;
-      }
-      const res = await deleteCardDesignCascade(initialDesign.id);
-      if (!res.success) {
-        toast({ title: "Błąd usuwania", description: res.error, variant: "destructive" });
-      } else {
-        toast({ title: "Usuwanie wzoru", description: res.message || "Wzór kartki został usunięty" });
-        onSaveSuccess();
-      }
+      await firestoreService.deleteCardDesign(initialDesign.id);
+      toast({ title: "Wzór usunięty z Firestore" });
+      onSaveSuccess();
     } catch (err) {
       toast({ title: "Błąd usuwania", description: (err as Error).message, variant: "destructive" });
     } finally {
@@ -552,29 +421,16 @@ export const AdminCardCreator = ({
 
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">
-                1. Obrazek na przód pocztówki (Plik lub URL)
+                1. Obrazek na przód pocztówki (publiczny adres HTTPS)
               </label>
-              <div className="flex gap-2 mb-2">
+              <div className="mb-2">
                 <Input
-                  placeholder="https://..."
+                  placeholder="https://example.com/zdjecie.jpg"
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
-                  className="flex-1"
                 />
-                <label className="cursor-pointer">
-                  <span className="inline-flex items-center gap-1.5 px-3 py-2 bg-secondary text-secondary-foreground text-xs font-medium rounded-md hover:bg-secondary/80 border transition-colors h-10">
-                    <Upload className="w-3.5 h-3.5" />
-                    {isUploading ? "..." : "Wczytaj"}
-                  </span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    disabled={isUploading}
-                  />
-                </label>
               </div>
+              <p className="text-[11px] text-muted-foreground">Pliki graficzne publikujemy jako statyczne zasoby Hosting lub podajemy z zaufanego publicznego źródła. Nie zapisujemy obrazów w bazie.</p>
             </div>
 
             <div>

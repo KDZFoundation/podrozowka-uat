@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, Check, X, Tags, Upload } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Tags } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,12 +15,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import { diagnoseUploadError, logUploadAttempt } from "@/lib/uploadDiagnostics";
 import { slugify } from "@/lib/slugify";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 
 interface Category {
   id: string;
@@ -29,10 +26,6 @@ interface Category {
   icon_url: string | null;
   sort_order: number;
   created_at: string;
-}
-
-interface AdminCategoryDesignJoin {
-  category_id: string | null;
 }
 
 const emptyForm = { name: "", slug: "", icon_url: "", sort_order: 0 };
@@ -50,14 +43,12 @@ const AdminCategories = () => {
   const [form, setForm] = useState(emptyForm);
   const [slugTouched, setSlugTouched] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-
   const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
   const [blockedDelete, setBlockedDelete] = useState<{ cat: Category; count: number } | null>(null);
 
   const fetchAll = useCallback(async () => {
     setIsLoading(true);
-    if (isFirestoreCatalogEnabled) {
+    try {
       const [categoryData, designData] = await Promise.all([
         firestoreService.getCategories(),
         firestoreService.getCardDesigns({ includeInactive: true }),
@@ -75,30 +66,12 @@ const AdminCategories = () => {
         if (design.category_id) counts[design.category_id] = (counts[design.category_id] || 0) + 1;
       });
       setUsage(counts);
+    } catch (error) {
+      toast({ title: "Błąd wczytywania kategorii", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
       setIsLoading(false);
-      return;
     }
-    const [{ data: cats }, { data: designs }] = await Promise.all([
-      supabase.from("categories").select("*").order("sort_order").order("name"),
-      supabase.from("card_designs").select("category_id"),
-    ]);
-    const rawCategories = (cats as Category[]) || [];
-    const normalized = rawCategories.map((c) => {
-      if (c.slug === "architektura" && c.icon_url && c.icon_url.includes("architektura-1784144956289.png")) {
-        supabase.from("categories").update({ icon_url: null }).eq("id", c.id).then();
-        return { ...c, icon_url: null };
-      }
-      return c;
-    });
-    setCategories(normalized);
-    const u: Record<string, number> = {};
-    const typedDesigns = (designs || []) as unknown as AdminCategoryDesignJoin[];
-    typedDesigns.forEach((d: AdminCategoryDesignJoin) => {
-      if (d.category_id) u[d.category_id] = (u[d.category_id] || 0) + 1;
-    });
-    setUsage(u);
-    setIsLoading(false);
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     fetchAll();
@@ -133,39 +106,6 @@ const AdminCategories = () => {
     }));
   };
 
-  const uploadIcon = async (file: File) => {
-    if (isFirestoreCatalogEnabled) {
-      toast({ title: "Wgrywanie ikon jest wyłączone w trybie Spark", description: "Użyj domyślnej ikony kategorii lub opublikowanego adresu HTTPS." });
-      return;
-    }
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Wybierz plik graficzny", description: `Otrzymany typ: ${file.type || "nieznany"}`, variant: "destructive" });
-      return;
-    }
-    if (file.size > 4 * 1024 * 1024) {
-      toast({ title: "Maks. 4 MB", description: `Plik ma ${Math.round(file.size / 1024)} KB`, variant: "destructive" });
-      return;
-    }
-    setUploading(true);
-    const ext = file.name.split(".").pop() || "png";
-    const s = form.slug || slugify(form.name) || "cat";
-    const path = `categories/${s}-${Date.now()}.${ext}`;
-    await logUploadAttempt({ bucket: "postcard-photos", path, file, extra: { categoryId: editingId, slug: s } });
-    const { error } = await supabase.storage.from("postcard-photos").upload(path, file, {
-      cacheControl: "3600",
-    });
-    if (error) {
-      setUploading(false);
-      const info = diagnoseUploadError(error, { bucket: "postcard-photos", path, file });
-      toast({ title: `[${info.category.toUpperCase()}] ${info.title}`, description: info.description, variant: "destructive" });
-      return;
-    }
-    const { data } = supabase.storage.from("postcard-photos").getPublicUrl(path);
-    setForm((f) => ({ ...f, icon_url: data.publicUrl }));
-    console.info("[upload] category icon ok", { path, url: data.publicUrl });
-    setUploading(false);
-  };
-
   const handleSave = async () => {
     const name = form.name.trim();
     const slug = (form.slug || slugify(name)).trim();
@@ -184,30 +124,16 @@ const AdminCategories = () => {
       icon_url: form.icon_url.trim() || null,
       sort_order: Number(form.sort_order) || 0,
     };
-    if (isFirestoreCatalogEnabled) {
-      try {
-        await firestoreService.upsertCategory(editingId || crypto.randomUUID(), payload);
-        toast({ title: editingId ? "Kategoria zaktualizowana" : "Kategoria dodana" });
-        closeDialog();
-        fetchAll();
-      } catch (error) {
-        toast({ title: "Błąd zapisu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      } finally {
-        setSaving(false);
-      }
-      return;
+    try {
+      await firestoreService.upsertCategory(editingId || crypto.randomUUID(), payload);
+      toast({ title: editingId ? "Kategoria zaktualizowana" : "Kategoria dodana" });
+      closeDialog();
+      fetchAll();
+    } catch (error) {
+      toast({ title: "Błąd zapisu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
-    const { error } = editingId
-      ? await supabase.from("categories").update(payload).eq("id", editingId)
-      : await supabase.from("categories").insert(payload);
-    setSaving(false);
-    if (error) {
-      toast({ title: "Błąd zapisu", description: error.message, variant: "destructive" });
-      return;
-    }
-    toast({ title: editingId ? "Kategoria zaktualizowana" : "Kategoria dodana" });
-    closeDialog();
-    fetchAll();
   };
 
   const tryDelete = (c: Category) => {
@@ -221,23 +147,12 @@ const AdminCategories = () => {
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    if (isFirestoreCatalogEnabled) {
-      try {
-        await firestoreService.deleteCategory(deleteTarget.id);
-        toast({ title: "Kategoria usunięta" });
-        fetchAll();
-      } catch (error) {
-        toast({ title: "Nie udało się usunąć", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      }
-      setDeleteTarget(null);
-      return;
-    }
-    const { error } = await supabase.from("categories").delete().eq("id", deleteTarget.id);
-    if (error) {
-      toast({ title: "Nie udało się usunąć", description: error.message, variant: "destructive" });
-    } else {
+    try {
+      await firestoreService.deleteCategory(deleteTarget.id);
       toast({ title: "Kategoria usunięta" });
       fetchAll();
+    } catch (error) {
+      toast({ title: "Nie udało się usunąć", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
     setDeleteTarget(null);
   };
@@ -360,26 +275,11 @@ const AdminCategories = () => {
                       })()}
                     </div>
                   )}
-                  <label className="cursor-pointer">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) uploadIcon(f);
-                        e.target.value = "";
-                      }}
-                    />
-                    <span className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md border border-input bg-background hover:bg-muted">
-                      <Upload className="w-4 h-4" /> {uploading ? "Wysyłanie..." : "Wgraj ikonę"}
-                    </span>
-                  </label>
                   {form.icon_url && (
                     <Button variant="ghost" size="sm" onClick={() => setForm({ ...form, icon_url: "" })}>Usuń</Button>
                   )}
                 </div>
-                <Input value={form.icon_url} onChange={(e) => setForm({ ...form, icon_url: e.target.value })} placeholder="lub wklej URL" />
+                <Input value={form.icon_url} onChange={(e) => setForm({ ...form, icon_url: e.target.value })} placeholder="Wklej publiczny adres HTTPS ikony (opcjonalnie)" />
               </div>
             </div>
             <div className="flex justify-end gap-2 p-4 border-t border-border">

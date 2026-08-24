@@ -23,6 +23,7 @@ import type {
   FirestoreRecipientRegistration,
   FirestoreUserProfile,
   FirestoreLanguageTemplate,
+  FirestoreCardDesignImage,
 } from "../types";
 
 function normalizeCardDesign(id: string, raw: Record<string, unknown>): FirestoreCardDesign {
@@ -192,23 +193,41 @@ export const firestoreService = {
 
   async upsertCardDesign(id: string, data: Partial<FirestoreCardDesign> & Record<string, unknown>): Promise<void> {
     if (!isFirebaseConfigured) return;
-    try {
-      const docRef = doc(db, "card_designs", id);
-      const active = data.active ?? data.is_active ?? true;
-      await setDoc(docRef, {
-        ...data,
-        active,
-        is_active: active,
-        currency: "PLN",
-        updated_at: new Date().toISOString(),
-      }, { merge: true });
-    } catch (e) {
-      console.warn("Firestore upsertCardDesign error:", e);
-    }
+    const docRef = doc(db, "card_designs", id);
+    const active = data.active ?? data.is_active;
+    await setDoc(docRef, {
+      ...data,
+      currency: "PLN",
+      ...(active === undefined ? {} : { active, is_active: active }),
+      updated_at: new Date().toISOString(),
+    }, { merge: true });
   },
 
   async setCardDesignActive(id: string, active: boolean): Promise<void> {
     await this.upsertCardDesign(id, { active, is_active: active });
+  },
+
+  async setCardDesignImages(id: string, images: FirestoreCardDesignImage[]): Promise<void> {
+    await this.upsertCardDesign(id, { images });
+  },
+
+  async getInStockUnitCounts(): Promise<Record<string, number>> {
+    if (!isFirebaseConfigured) return {};
+    try {
+      const snapshot = await getDocs(
+        query(collection(db, "inventory_units"), where("fulfillment_status", "==", "in_stock")),
+      );
+      const counts: Record<string, number> = {};
+      snapshot.docs.forEach((unit) => {
+        const data = unit.data();
+        if (data.order_id != null || typeof data.card_design_id !== "string") return;
+        counts[data.card_design_id] = (counts[data.card_design_id] || 0) + 1;
+      });
+      return counts;
+    } catch (error) {
+      console.warn("Firestore getInStockUnitCounts error:", error);
+      return {};
+    }
   },
 
   async deleteCardDesign(id: string): Promise<void> {

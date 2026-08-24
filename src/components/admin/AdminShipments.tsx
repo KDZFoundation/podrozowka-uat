@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { collection, doc, getDocs, setDoc, updateDoc } from "firebase/firestore";
+import { db } from "@/integrations/firebase/config";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,10 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Search, ArrowLeft, Plus, Truck, Download, CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { Database } from "@/integrations/supabase/types";
 import { backendApiUrl } from "@/lib/backendApi";
-
-type ShipmentStatus = Database["public"]["Enums"]["shipment_status"];
 
 interface ShipmentRow {
   id: string;
@@ -69,52 +68,41 @@ const AdminShipments = () => {
 
   const fetchShipments = useCallback(async () => {
     setIsLoading(true);
-    let query = supabase
-      .from("shipments")
-      .select("id, order_id, user_id, status, tracking_number, carrier, shipped_at, delivered_at, created_at, inpost_shipment_id, inpost_status, inpost_offer_id, size")
-      .order("created_at", { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-
-    if (statusFilter !== "all") query = query.eq("status", statusFilter as ShipmentStatus);
-
-    const { data } = await query;
-    if (data) {
-      // Fetch order numbers and display names safely
-      const orderIds = [...new Set(data.map(s => s.order_id))].filter((id): id is string => Boolean(id));
-      const userIds = [...new Set(data.map(s => s.user_id))].filter((id): id is string => Boolean(id));
-
-      let orders: { id: string; order_number: string }[] | null = null;
-      let profiles: { user_id: string; display_name: string | null }[] | null = null;
-
-      const promises: Promise<void>[] = [];
-
-      if (orderIds.length > 0) {
-        promises.push(
-          supabase.from("orders").select("id, order_number").in("id", orderIds).then(({ data }) => {
-            orders = data;
-          })
-        );
-      }
-      if (userIds.length > 0) {
-        promises.push(
-          supabase.from("profiles").select("user_id, display_name").in("user_id", userIds).then(({ data }) => {
-            profiles = data;
-          })
-        );
-      }
-
-      await Promise.all(promises);
-
-      const orderMap = new Map(orders?.map(o => [o.id, o.order_number]) || []);
-      const nameMap = new Map(profiles?.map(p => [p.user_id, p.display_name]) || []);
-
-      setShipments(data.map(s => ({
-        ...s,
-        order_number: s.order_id ? orderMap.get(s.order_id) || null : null,
-        display_name: s.user_id ? nameMap.get(s.user_id) || null : null,
-      })));
+    try {
+      const [shipmentSnapshot, orders] = await Promise.all([
+        getDocs(collection(db, "shipments")),
+        firestoreService.getAllOrders(),
+      ]);
+      const orderMap = new Map(orders.map((order) => [order.id, order]));
+      const rows = shipmentSnapshot.docs.map((shipment) => {
+        const data = shipment.data();
+        const order = orderMap.get(String(data.order_id || ""));
+        return {
+          id: shipment.id,
+          order_id: String(data.order_id || ""),
+          order_number: order?.order_number || null,
+          user_id: typeof data.user_id === "string" ? data.user_id : order?.user_id || "",
+          display_name: typeof data.display_name === "string" ? data.display_name : order?.guest_email || null,
+          status: String(data.status || "pending"),
+          tracking_number: typeof data.tracking_number === "string" ? data.tracking_number : null,
+          carrier: typeof data.carrier === "string" ? data.carrier : null,
+          shipped_at: typeof data.shipped_at === "string" ? data.shipped_at : null,
+          delivered_at: typeof data.delivered_at === "string" ? data.delivered_at : null,
+          created_at: typeof data.created_at === "string" ? data.created_at : "",
+          inpost_shipment_id: typeof data.inpost_shipment_id === "string" ? data.inpost_shipment_id : null,
+          inpost_status: typeof data.inpost_status === "string" ? data.inpost_status : null,
+          inpost_offer_id: typeof data.inpost_offer_id === "string" ? data.inpost_offer_id : null,
+          size: typeof data.size === "string" ? data.size : null,
+        };
+      }).filter((shipment) => statusFilter === "all" || shipment.status === statusFilter)
+        .sort((left, right) => right.created_at.localeCompare(left.created_at));
+      setShipments(rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE));
+    } catch (error) {
+      console.warn("Firestore shipments fetch failed:", error);
+      setShipments([]);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, [statusFilter, page]);
 
   useEffect(() => { fetchShipments(); }, [fetchShipments]);
@@ -126,25 +114,25 @@ const AdminShipments = () => {
     }
     setIsCreating(true);
 
-    // Get order to find user_id
-    const { data: order } = await supabase.from("orders").select("id, user_id").eq("id", newOrderId).single();
+    const order = await firestoreService.getOrderById(newOrderId);
     if (!order) {
       toast({ title: "Zamówienie nie znalezione", variant: "destructive" });
       setIsCreating(false);
       return;
     }
 
-    const { error } = await supabase.from("shipments").insert({
-      order_id: order.id,
-      user_id: order.user_id,
-      carrier: newCarrier || null,
-      tracking_number: newTracking || null,
-      shipping_method: newMethod || null,
-    });
-
-    if (error) {
-      toast({ title: "Błąd tworzenia wysyłki", description: error.message, variant: "destructive" });
-    } else {
+    try {
+      const id = crypto.randomUUID();
+      await setDoc(doc(db, "shipments", id), {
+        id,
+        order_id: order.id,
+        user_id: order.user_id || "",
+        carrier: newCarrier || null,
+        tracking_number: newTracking || null,
+        shipping_method: newMethod || null,
+        status: "pending",
+        created_at: new Date().toISOString(),
+      });
       toast({ title: "Wysyłka utworzona" });
       setShowCreate(false);
       setNewOrderId("");
@@ -152,6 +140,8 @@ const AdminShipments = () => {
       setNewTracking("");
       setNewMethod("");
       fetchShipments();
+    } catch (error) {
+      toast({ title: "Błąd tworzenia wysyłki", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
     setIsCreating(false);
   };
@@ -185,39 +175,7 @@ const AdminShipments = () => {
         return;
       }
 
-      // Fallback to Supabase function if available
-      const { data, error } = await supabase.functions.invoke("create-inpost-shipment", {
-        body: { order_id: orderId, size },
-      });
-
-      if (error) {
-        toast({
-          title: "Błąd integracji InPost ShipX",
-          description: createRes?.error || error.message || "Nie udało się połączyć z API InPost.",
-          variant: "destructive",
-        });
-      } else if (data?.error) {
-        toast({
-          title: "Błąd InPost ShipX",
-          description: typeof data.error === "string" ? data.error : JSON.stringify(data.error),
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Przesyłka zarejestrowana w InPost!",
-          description: `Numer przesyłki: ${data.shipment?.tracking_number || data.tracking_number}`,
-        });
-        fetchShipments();
-        if (selectedShipment) {
-          setSelectedShipment({
-            ...selectedShipment,
-            tracking_number: data.shipment?.tracking_number || data.tracking_number,
-            carrier: "InPost",
-            inpost_shipment_id: data.shipment?.inpost_shipment_id || data.shipx_response?.id,
-            inpost_status: data.shipment?.inpost_status || data.shipx_status || "created",
-          });
-        }
-      }
+      throw new Error(createRes?.error || "Nie udało się połączyć z API InPost.");
     } catch (err: unknown) {
       toast({
         title: "Błąd wywołania",
@@ -249,17 +207,7 @@ const AdminShipments = () => {
         return;
       }
 
-      // Fallback to Supabase function
-      const { data, error } = await supabase.functions.invoke("buy-inpost-shipment", {
-        body: { shipment_id: selectedShipment.id },
-      });
-      if (error || data?.error) {
-        toast({ title: "Nie udało się kupić przesyłki InPost", description: apiRes?.error || data?.error || error?.message, variant: "destructive" });
-      } else {
-        toast({ title: "Zakup zlecony w InPost", description: data?.message });
-        setSelectedShipment({ ...selectedShipment, inpost_status: "purchase_requested" });
-        fetchShipments();
-      }
+      throw new Error(apiRes?.error || "Nie udało się kupić przesyłki InPost.");
     } finally {
       setIsBuyingInpost(false);
     }
@@ -285,23 +233,7 @@ const AdminShipments = () => {
         return;
       }
 
-      // Fallback to Supabase URL
-      const { data: { session } } = await supabase.auth.getSession();
-      const fallbackResponse = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/get-inpost-label?shipment_id=${encodeURIComponent(selectedShipment.id)}`,
-        { headers: { Authorization: `Bearer ${session?.access_token || ""}` } },
-      );
-      if (!fallbackResponse.ok) {
-        const error = await fallbackResponse.json().catch(() => ({}));
-        throw new Error(error.error || "Etykieta nie jest jeszcze dostępna w ShipX.");
-      }
-      const blob = await fallbackResponse.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `inpost-${selectedShipment.inpost_shipment_id || selectedShipment.id}.pdf`;
-      link.click();
-      URL.revokeObjectURL(url);
+      throw new Error("Etykieta nie jest jeszcze dostępna w ShipX.");
     } catch (error) {
       toast({ title: "Nie udało się pobrać etykiety", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     } finally {
@@ -310,31 +242,28 @@ const AdminShipments = () => {
   };
 
   const updateStatus = async (shipmentId: string, status: string) => {
-    const { error } = await supabase
-      .from("shipments")
-      .update({ status: status as ShipmentStatus })
-      .eq("id", shipmentId);
-
-    if (error) {
-      toast({ title: "Błąd aktualizacji", description: error.message, variant: "destructive" });
-    } else {
+    try {
+      const patch: Record<string, unknown> = { status };
+      if (status === "shipped") patch.shipped_at = new Date().toISOString();
+      if (status === "delivered") patch.delivered_at = new Date().toISOString();
+      await updateDoc(doc(db, "shipments", shipmentId), patch);
       toast({ title: `Status: ${STATUS_LABELS[status]?.label || status}` });
       fetchShipments();
       if (selectedShipment?.id === shipmentId) {
         setSelectedShipment({ ...selectedShipment, status });
       }
+    } catch (error) {
+      toast({ title: "Błąd aktualizacji", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
   };
 
   const updateTracking = async (shipmentId: string, tracking: string, carrier: string) => {
-    const { error } = await supabase
-      .from("shipments")
-      .update({ tracking_number: tracking, carrier })
-      .eq("id", shipmentId);
-
-    if (!error) {
+    try {
+      await updateDoc(doc(db, "shipments", shipmentId), { tracking_number: tracking, carrier });
       toast({ title: "Dane śledzenia zaktualizowane" });
       fetchShipments();
+    } catch (error) {
+      toast({ title: "Nie udało się zapisać danych śledzenia", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
   };
 

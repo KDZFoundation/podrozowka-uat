@@ -1,9 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { supabase } from "@/integrations/supabase/client";
+import { collection, doc, getDocs, query, updateDoc, where, writeBatch } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import type { Database } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -46,13 +44,6 @@ interface PodProductionBatch {
   pod_production_batch_orders: Array<PodBatchShippingRow & { print_job_id: string }>;
 }
 
-interface PodBatchApiResponse {
-  batches?: PodProductionBatch[];
-  batch?: PodProductionBatch;
-  error?: string;
-  skipped_order_numbers?: string[];
-}
-
 interface OrderDetail {
   id: string;
   order_number: string;
@@ -84,46 +75,12 @@ interface OrderDetail {
   }[];
 }
 
-interface AdminOrderItemJoin {
-  id: string;
-  quantity: number;
-  unit_price: number;
-  total_price: number;
-  card_design_id: string;
-  card_designs: {
-    title: string | null;
-    view_no: number;
-    countries: {
-      name_pl: string;
-    } | null;
-  } | null;
-}
-
 interface ReservedUnit {
   id: string;
   code: string;
   fulfillment: string;
   design: string;
   country: string | null;
-}
-
-interface AdminInventoryUnitJoin {
-  id: string;
-  internal_inventory_code: string;
-  fulfillment_status: string;
-  card_design_id: string;
-  card_designs: {
-    title: string | null;
-    view_no: number;
-    countries: {
-      name_pl: string;
-    } | null;
-  } | null;
-}
-
-interface ConfirmCodResponse {
-  error?: string;
-  success?: boolean;
 }
 
 const getErrorMessage = (error: unknown): string => {
@@ -183,18 +140,52 @@ const AdminOrders = () => {
   const fetchProductionBatches = useCallback(async () => {
     setIsLoadingBatches(true);
     try {
-      const { data, error } = await supabase.functions.invoke<PodBatchApiResponse>("pod-production-batches", {
-        body: { operation: "list" },
+      const [batchesSnapshot, rowsSnapshot] = await Promise.all([
+        getDocs(collection(db, "pod_production_batches")),
+        getDocs(collection(db, "pod_production_batch_orders")),
+      ]);
+      const rowsByBatch = new Map<string, Array<PodBatchShippingRow & { print_job_id: string }>>();
+      rowsSnapshot.docs.forEach((item) => {
+        const data = item.data();
+        const batchId = String(data.batch_id || "");
+        if (!batchId) return;
+        const row = {
+          order_number: String(data.order_number || ""),
+          postcard_count: Number(data.postcard_count || 0),
+          shipping_method: String(data.shipping_method || "courier"),
+          recipient_name: typeof data.recipient_name === "string" ? data.recipient_name : null,
+          recipient_email: typeof data.recipient_email === "string" ? data.recipient_email : null,
+          recipient_street: typeof data.recipient_street === "string" ? data.recipient_street : null,
+          recipient_postal_code: typeof data.recipient_postal_code === "string" ? data.recipient_postal_code : null,
+          recipient_city: typeof data.recipient_city === "string" ? data.recipient_city : null,
+          pickup_point_code: typeof data.pickup_point_code === "string" ? data.pickup_point_code : null,
+          pickup_point_name: typeof data.pickup_point_name === "string" ? data.pickup_point_name : null,
+          pickup_point_address: typeof data.pickup_point_address === "string" ? data.pickup_point_address : null,
+          pickup_point_city: typeof data.pickup_point_city === "string" ? data.pickup_point_city : null,
+          carrier_label_status: typeof data.carrier_label_status === "string" ? data.carrier_label_status : "not_created",
+          tracking_number: typeof data.tracking_number === "string" ? data.tracking_number : null,
+          print_job_id: String(data.print_job_id || ""),
+        };
+        rowsByBatch.set(batchId, [...(rowsByBatch.get(batchId) || []), row]);
       });
-      if (error || data?.error) {
-        // Soft fallback for unconfigured edge functions or sandbox environments
-        console.warn("POD production batches info:", error?.message || data?.error);
-        setProductionBatches([]);
-      } else {
-        setProductionBatches(data?.batches ?? []);
-      }
-    } catch (e) {
-      console.warn("POD production batches fetch skipped:", e);
+      setProductionBatches(batchesSnapshot.docs
+        .map((item) => {
+          const data = item.data();
+          return {
+            id: item.id,
+            batch_number: String(data.batch_number || item.id),
+            production_date: String(data.production_date || ""),
+            status: String(data.status || "queued") as PodProductionBatch["status"],
+            total_orders: Number(data.total_orders || 0),
+            total_postcards: Number(data.total_postcards || 0),
+            sent_to_printer_at: typeof data.sent_to_printer_at === "string" ? data.sent_to_printer_at : null,
+            printer_email: typeof data.printer_email === "string" ? data.printer_email : null,
+            pod_production_batch_orders: rowsByBatch.get(item.id) || [],
+          };
+        })
+        .sort((left, right) => right.production_date.localeCompare(left.production_date)));
+    } catch (error) {
+      console.warn("POD production batches fetch failed:", error);
       setProductionBatches([]);
     } finally {
       setIsLoadingBatches(false);
@@ -213,26 +204,77 @@ const AdminOrders = () => {
       month: "2-digit",
       day: "2-digit",
     }).format(new Date());
-    const { data, error } = await supabase.functions.invoke<PodBatchApiResponse>("pod-production-batches", {
-      body: { operation: "create", production_date: date },
-    });
-    setIsCreatingBatch(false);
-    if (error || data?.error) {
+    try {
+      const [orders, jobsSnapshot, existingRows] = await Promise.all([
+        firestoreService.getAllOrders(),
+        getDocs(collection(db, "qr_print_jobs")),
+        getDocs(collection(db, "pod_production_batch_orders")),
+      ]);
+      const existingOrderIds = new Set(existingRows.docs.map((item) => String(item.data().order_id || "")));
+      const readyJobsByOrder = new Map(
+        jobsSnapshot.docs
+          .filter((item) => ["ready", "printed"].includes(String(item.data().status || "")) && typeof item.data().order_id === "string")
+          .map((item) => [String(item.data().order_id), { id: item.id, ...item.data() }]),
+      );
+      const eligible = orders.filter((order) => order.payment_status === "paid" && order.status === "paid" && !existingOrderIds.has(order.id) && readyJobsByOrder.has(order.id));
+      if (eligible.length === 0) {
+        toast({ title: "Nie utworzono paczki produkcyjnej", description: "Brak opłaconych zamówień z gotowymi kodami QR, które nie są już w paczce.", variant: "destructive" });
+        return;
+      }
+      const id = crypto.randomUUID();
+      const batchNumber = `POD-${date.replaceAll("-", "")}-${id.slice(0, 5).toUpperCase()}`;
+      const batch = writeBatch(db);
+      let totalPostcards = 0;
+      eligible.forEach((order) => {
+        const job = readyJobsByOrder.get(order.id)!;
+        const address = (order.shipping_address || {}) as Record<string, unknown>;
+        const postcardCount = order.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+        totalPostcards += postcardCount;
+        const rowId = crypto.randomUUID();
+        batch.set(doc(db, "pod_production_batch_orders", rowId), {
+          id: rowId,
+          batch_id: id,
+          order_id: order.id,
+          print_job_id: job.id,
+          order_number: order.order_number,
+          postcard_count: postcardCount,
+          shipping_method: String((order as unknown as Record<string, unknown>).shipping_method || "courier"),
+          recipient_name: String(address.name || [address.first_name, address.last_name].filter(Boolean).join(" ") || "") || null,
+          recipient_email: order.guest_email || null,
+          recipient_street: String(address.address || address.street || "") || null,
+          recipient_postal_code: String(address.postal_code || "") || null,
+          recipient_city: String(address.city || "") || null,
+          pickup_point_code: typeof address.pickup_point_code === "string" ? address.pickup_point_code : null,
+          pickup_point_name: typeof address.pickup_point_name === "string" ? address.pickup_point_name : null,
+          pickup_point_address: typeof address.pickup_point_address === "string" ? address.pickup_point_address : null,
+          pickup_point_city: typeof address.pickup_point_city === "string" ? address.pickup_point_city : null,
+          carrier_label_status: "not_created",
+          tracking_number: null,
+          created_at: new Date().toISOString(),
+        });
+      });
+      batch.set(doc(db, "pod_production_batches", id), {
+        id,
+        batch_number: batchNumber,
+        production_date: date,
+        status: "prepared",
+        total_orders: eligible.length,
+        total_postcards: totalPostcards,
+        created_at: new Date().toISOString(),
+      });
+      await batch.commit();
+      toast({ title: `Utworzono paczkę ${batchNumber}`, description: `${eligible.length} zamówień / ${totalPostcards} Podróżówek gotowych do wspólnego druku.` });
+      await fetchProductionBatches();
+      fetchOrders();
+    } catch (error) {
       toast({
         title: "Nie utworzono paczki produkcyjnej",
-        description: data?.error === "no_ready_paid_orders"
-          ? "Brak opłaconych zamówień z gotowymi kodami QR, które nie są już w paczce."
-          : data?.error || error?.message || "Spróbuj ponownie za chwilę.",
+        description: getErrorMessage(error),
         variant: "destructive",
       });
-      return;
+    } finally {
+      setIsCreatingBatch(false);
     }
-    toast({
-      title: `Utworzono paczkę ${data?.batch?.batch_number}`,
-      description: `${data?.batch?.total_orders ?? 0} zamówień / ${data?.batch?.total_postcards ?? 0} Podróżówek gotowych do wspólnego druku.`,
-    });
-    await fetchProductionBatches();
-    fetchOrders();
   };
 
   const downloadBatchProductionPdf = async (batch: PodProductionBatch) => {
@@ -256,15 +298,13 @@ const AdminOrders = () => {
   };
 
   const markBatchSent = async (batch: PodProductionBatch) => {
-    const { data, error } = await supabase.functions.invoke<PodBatchApiResponse>("pod-production-batches", {
-      body: { operation: "mark_sent", batch_id: batch.id },
-    });
-    if (error || data?.error) {
-      toast({ title: "Nie udało się zmienić statusu paczki", description: data?.error || error?.message || "", variant: "destructive" });
-      return;
+    try {
+      await updateDoc(doc(db, "pod_production_batches", batch.id), { status: "sent_to_printer", sent_to_printer_at: new Date().toISOString() });
+      toast({ title: "Paczka przekazana do drukarni", description: "Status paczki został zapisany. Etykiety przewoźników pozostają osobnym etapem." });
+      await fetchProductionBatches();
+    } catch (error) {
+      toast({ title: "Nie udało się zmienić statusu paczki", description: getErrorMessage(error), variant: "destructive" });
     }
-    toast({ title: "Paczka przekazana do drukarni", description: "Status paczki został zapisany. Etykiety przewoźników pozostają osobnym etapem." });
-    await fetchProductionBatches();
   };
 
   const handleGeneratePodPdf = async (order: OrderDetail) => {
@@ -448,41 +488,65 @@ const AdminOrders = () => {
   };
 
   const fetchReservedUnits = async (orderId: string) => {
-    const { data } = await supabase
-      .from("inventory_units")
-      .select("id, internal_inventory_code, fulfillment_status, card_design_id, card_designs!inner(title, view_no, countries!inner(name_pl))")
-      .eq("order_id", orderId);
-    const typedData = (data || []) as unknown as AdminInventoryUnitJoin[];
-    setReservedUnits(
-      typedData.map((u: AdminInventoryUnitJoin) => ({
-        id: u.id,
-        code: u.internal_inventory_code,
-        fulfillment: u.fulfillment_status,
-        design: `V${u.card_designs?.view_no} ${u.card_designs?.title || ""}`,
-        country: u.card_designs?.countries?.name_pl || null,
-      }))
-    );
+    try {
+      const [unitsSnapshot, designsSnapshot, countriesSnapshot] = await Promise.all([
+        getDocs(query(collection(db, "inventory_units"), where("order_id", "==", orderId))),
+        getDocs(collection(db, "card_designs")),
+        getDocs(collection(db, "countries")),
+      ]);
+      const countries = new Map(countriesSnapshot.docs.map((country) => {
+        const data = country.data();
+        return [country.id, String(data.name_pl || data.name || "")];
+      }));
+      const designs = new Map(designsSnapshot.docs.map((design) => {
+        const data = design.data();
+        return [design.id, {
+          title: String(data.title || ""),
+          viewNo: Number(data.view_no || 0),
+          countryId: typeof data.country_id === "string" ? data.country_id : "",
+        }];
+      }));
+      setReservedUnits(unitsSnapshot.docs.map((unit) => {
+        const data = unit.data();
+        const design = designs.get(String(data.card_design_id || ""));
+        return {
+          id: unit.id,
+          code: String(data.internal_inventory_code || data.inventory_code || unit.id),
+          fulfillment: String(data.fulfillment_status || data.status || "reserved"),
+          design: design ? `V${design.viewNo} ${design.title}`.trim() : "Wzór niedostępny",
+          country: design?.countryId ? countries.get(design.countryId) || null : null,
+        };
+      }));
+    } catch (error) {
+      console.warn("Reserved inventory units fetch failed:", error);
+      setReservedUnits([]);
+    }
   };
 
   const [confirmingCod, setConfirmingCod] = useState(false);
   const confirmCodPayment = async (orderId: string) => {
     setConfirmingCod(true);
-    const { data, error } = await supabase.functions.invoke("confirm-cod-payment", {
-      body: { order_id: orderId },
-    });
-    setConfirmingCod(false);
-    const res = data as ConfirmCodResponse;
-    if (error || res?.error) {
+    try {
+      const order = await firestoreService.getOrderById(orderId);
+      if (!order) throw new Error("Nie znaleziono zamówienia.");
+      await firestoreService.updateOrder(orderId, {
+        payment_status: "paid",
+        status: "paid",
+        paid_at: new Date().toISOString(),
+        cod_confirmed_at: new Date().toISOString(),
+      });
+      toast({ title: "Płatność za pobraniem potwierdzona" });
+      await fetchDetail(orderId);
+      fetchOrders();
+    } catch (error) {
       toast({
         title: "Nie udało się potwierdzić odbioru gotówki",
-        description: res?.error || error?.message || "",
+        description: getErrorMessage(error),
         variant: "destructive",
       });
-      return;
+    } finally {
+      setConfirmingCod(false);
     }
-    toast({ title: "Płatność za pobraniem potwierdzona" });
-    fetchDetail(orderId);
-    fetchOrders();
   };
 
 

@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "@/integrations/firebase/config";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { Loader2, Truck } from "lucide-react";
 
 interface Shipment {
@@ -28,27 +30,31 @@ const MyShipments = ({ userId }: { userId: string }) => {
 
   const fetchShipments = useCallback(async () => {
     setIsLoading(true);
-    const { data } = await supabase
-      .from("shipments")
-      .select("id, order_id, status, tracking_number, carrier, shipped_at, delivered_at, created_at")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    if (data) {
-      const orderIds = [...new Set(data.map(s => s.order_id))];
-      const { data: orders } = await supabase
-        .from("orders")
-        .select("id, order_number")
-        .in("id", orderIds);
-
-      const orderMap = new Map(orders?.map(o => [o.id, o.order_number]) || []);
-
-      setShipments(data.map(s => ({
-        ...s,
-        order_number: orderMap.get(s.order_id) || null,
-      })));
+    try {
+      const [shipmentSnapshot, orders] = await Promise.all([
+        getDocs(query(collection(db, "shipments"), where("user_id", "==", userId))),
+        firestoreService.getOrdersByUser(userId),
+      ]);
+      const orderMap = new Map(orders.map((order) => [order.id, order.order_number]));
+      setShipments(shipmentSnapshot.docs
+        .map((shipment) => {
+          const data = shipment.data();
+          return {
+            id: shipment.id,
+            order_id: String(data.order_id || ""),
+            order_number: orderMap.get(String(data.order_id || "")) || null,
+            status: String(data.status || "pending"),
+            tracking_number: typeof data.tracking_number === "string" ? data.tracking_number : null,
+            carrier: typeof data.carrier === "string" ? data.carrier : null,
+            shipped_at: typeof data.shipped_at === "string" ? data.shipped_at : null,
+            delivered_at: typeof data.delivered_at === "string" ? data.delivered_at : null,
+            created_at: typeof data.created_at === "string" ? data.created_at : "",
+          };
+        })
+        .sort((left, right) => right.created_at.localeCompare(left.created_at)));
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, [userId]);
 
   useEffect(() => {

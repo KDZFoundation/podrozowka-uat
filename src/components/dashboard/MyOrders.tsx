@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -32,6 +31,7 @@ import PocztexPointForm from "@/components/checkout/PocztexPointForm";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
+import { backendApiUrl } from "@/lib/backendApi";
 
 interface Order {
   id: string;
@@ -234,25 +234,22 @@ const MyOrders = ({ userId }: { userId: string }) => {
   };
 
   const loadDesigns = async () => {
-    const { data } = await supabase
-      .from("card_designs")
-      .select("id, title, view_no, price_grosze, image_front_url, countries(name_pl)")
-      .eq("active", true)
-      .gt("price_grosze", 0)
-      .order("view_no");
-
-    if (data) {
-      setDesigns(
-        (data as unknown as CardDesignJoin[]).map((d: CardDesignJoin) => ({
-          id: d.id,
-          title: d.title,
-          view_no: d.view_no,
-          country_name: d.countries?.name_pl || "",
-          price_grosze: d.price_grosze,
-          image: d.image_front_url ?? null,
-        })),
-      );
-    }
+    const [designs, countries] = await Promise.all([
+      firestoreService.getCardDesigns(),
+      firestoreService.getCountries(),
+    ]);
+    const countryNames = new Map(countries.map((country) => [country.id, country.name_pl]));
+    setDesigns(designs
+      .filter((design) => design.active !== false && Number(design.price_grosze || 0) > 0)
+      .sort((left, right) => Number(left.view_no || 0) - Number(right.view_no || 0))
+      .map((design) => ({
+        id: design.id,
+        title: design.title,
+        view_no: design.view_no,
+        country_name: countryNames.get(design.country_id) || "",
+        price_grosze: design.price_grosze,
+        image: design.image_front_url ?? null,
+      })));
   };
 
   const openNewOrder = () => {
@@ -348,19 +345,17 @@ const MyOrders = ({ userId }: { userId: string }) => {
         payment_method: paymentMethod,
         invoice: { requested: false },
       };
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
-      if (!accessToken) {
-        toast.error("Sesja wygasła", { description: "Zaloguj się ponownie przed przejściem do płatności." });
-        setIsSubmitting(false);
-        return;
-      }
-      const { data, error } = await supabase.functions.invoke("create-payment", {
-        body: payload,
-        headers: { Authorization: `Bearer ${accessToken}` },
+      const response = await fetch(backendApiUrl("/api/payments/create-hotpay"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...payload,
+          user_id: userId,
+          origin_url: window.location.origin,
+        }),
       });
-      if (error) throw error;
-      const res = data as CreatePaymentResponse;
+      const res = await response.json().catch(() => null) as CreatePaymentResponse | null;
+      if (!response.ok && !res?.error) throw new Error("payment_initialization_failed");
       const errCode = res?.error;
       if (errCode === "out_of_stock") {
         toast.error("Zabrakło sztuk w magazynie", {

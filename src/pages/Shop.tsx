@@ -4,9 +4,7 @@ import { ArrowRight, Info, Package, ShoppingBag, ShoppingCart, Tags, X } from "l
 import { toast } from "sonner";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { getProductTitle } from "@/lib/productTitle";
 import { useCart } from "@/contexts/CartContext";
 import { getCategoryIcon } from "@/lib/categoryIcons";
@@ -66,47 +64,29 @@ const Shop = () => {
 
   useEffect(() => {
     const loadFilters = async () => {
-      let rawCategories: Category[] = [];
-      let rawCountries: Country[] = [];
-
-      if (!isFirestoreCatalogEnabled) {
-        try {
-          const [{ data: cats }, { data: countriesData }] = await Promise.all([
-            supabase.from("categories").select("id, name, slug, icon_url, sort_order").order("sort_order").order("name"),
-            supabase.from("countries").select("id, iso2, name_pl").eq("active", true).order("name_pl"),
-          ]);
-          if (cats && cats.length > 0) rawCategories = cats as Category[];
-          if (countriesData && countriesData.length > 0) rawCountries = countriesData as Country[];
-        } catch (e) {
-          console.warn("Supabase loadFilters error, fallback to Firestore:", e);
-        }
-      }
-
-      // Firestore fallback for filters
-      if (rawCategories.length === 0) {
-        const fireCats = await firestoreService.getCategories();
-        rawCategories = fireCats.map((c) => ({
+      const [fireCats, fireCountries] = await Promise.all([
+        firestoreService.getCategories(),
+        firestoreService.getCountries(),
+      ]);
+      const rawCategories: Category[] = fireCats
+        .filter((category) => category.is_active !== false)
+        .map((c) => ({
           id: c.id,
           name: c.name_pl || c.name || c.slug,
           slug: c.slug,
           icon_url: c.icon || c.icon_url || null,
           sort_order: c.sort_order || 0,
         }));
-      }
-      if (rawCountries.length === 0) {
-        const fireCountries = await firestoreService.getCountries();
-        rawCountries = fireCountries.map((c) => ({
+      const rawCountries: Country[] = fireCountries
+        .filter((country) => country.is_active !== false)
+        .map((c) => ({
           id: c.id,
           iso2: c.iso2 || (c.id || "PL").toUpperCase(),
           name_pl: c.name_pl || c.name || c.english_name || "Polska",
         }));
-      }
 
       const normalizedCategories = rawCategories.map((c) => {
         if (c.slug === "architektura" && c.icon_url && c.icon_url.includes("architektura-1784144956289.png")) {
-          if (!isFirestoreCatalogEnabled) {
-            supabase.from("categories").update({ icon_url: null }).eq("id", c.id).then();
-          }
           return { ...c, icon_url: null };
         }
         return c;
@@ -124,52 +104,10 @@ const Shop = () => {
   useEffect(() => {
     const loadProducts = async () => {
       setIsLoading(true);
-      const select =
-        "id, title, image_front_url, photo_author, thank_you_text, crop_settings, price_grosze, country_id, category_id, language_code, view_no, countries(id, iso2, name_pl), categories(id, name, slug, icon_url, sort_order)";
       const isPopular = countryFilter === "all" && categoryFilter === "all";
-
       let fetchedProducts: Product[] = [];
 
-      if (!isFirestoreCatalogEnabled) {
-        try {
-        let query = supabase.from("card_designs").select(select).eq("active", true);
-
-        if (isPopular) {
-          try {
-            const { data: popularRows } = await (supabase.rpc as unknown as (
-              fn: string,
-              args: Record<string, unknown>
-            ) => Promise<{ data: Array<{ card_design_id: string }> | null }>)("get_popular_card_designs", { _limit: 20 });
-            const popularIds = (popularRows || []).map((row) => row.card_design_id);
-            if (popularIds.length > 0) {
-              const { data } = await query.in("id", popularIds);
-              const positions = new Map(popularIds.map((id, index) => [id, index]));
-              fetchedProducts = ((data as unknown as Product[]) || []).sort(
-                (a, b) => (positions.get(a.id) ?? 0) - (positions.get(b.id) ?? 0)
-              );
-            }
-          } catch {
-            // ignore rpc error
-          }
-
-          if (fetchedProducts.length === 0) {
-            const { data } = await query.order("created_at", { ascending: false }).limit(20);
-            fetchedProducts = (data as unknown as Product[]) || [];
-          }
-        } else {
-          if (countryFilter !== "all") query = query.eq("country_id", countryFilter);
-          if (categoryFilter !== "all") query = query.eq("category_id", categoryFilter);
-          const { data } = await query.order("created_at", { ascending: false }).limit(100);
-          fetchedProducts = (data as unknown as Product[]) || [];
-        }
-        } catch (e) {
-          console.warn("Supabase loadProducts error:", e);
-        }
-      }
-
-      // If Supabase returned 0 items, fallback to Firestore
-      if (fetchedProducts.length === 0) {
-        try {
+      try {
           const [firestoreCards, firestoreCountries, firestoreCats] = await Promise.all([
             firestoreService.getCardDesigns(),
             firestoreService.getCountries(),
@@ -186,6 +124,9 @@ const Shop = () => {
           if (categoryFilter !== "all") {
             filtered = filtered.filter((c) => c.category_id === categoryFilter);
           }
+          filtered = [...filtered]
+            .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))
+            .slice(0, isPopular ? 20 : 100);
 
           fetchedProducts = filtered.map((c, index) => {
             const countryDoc = c.country_id ? countriesMap.get(c.country_id) : null;
@@ -221,9 +162,8 @@ const Shop = () => {
                 : null,
             };
           });
-        } catch (err) {
-          console.error("Firestore loadProducts fallback error:", err);
-        }
+      } catch (err) {
+        console.error("Firestore loadProducts error:", err);
       }
 
       setProducts(fetchedProducts);

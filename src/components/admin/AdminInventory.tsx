@@ -1,9 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { inventoryService, type LocalInventoryBatch, type LocalInventoryCountry, type LocalInventoryDesign, type LocalInventoryUnit, type LocalStockOrder } from "@/integrations/firebase/services/inventoryService";
 import { useAuth } from "@/hooks/useAuth";
-import type { Database } from "@/integrations/supabase/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,15 +13,6 @@ import {
 import { Loader2, Search, Plus, Package, ArrowLeft, Clock, Trash2, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { generatePodPrintPdf } from "@/lib/generatePodPrintPdf";
-
-interface PrepareStockPrintBatchResult {
-  success: boolean;
-  batch_id: string;
-  stock_order_id: string;
-  print_job_id: string;
-  quantity: number;
-  document_number: string;
-}
 
 interface StockProductionOrder {
   id: string;
@@ -59,39 +47,6 @@ interface InventoryUnit {
   event_name: string | null;
   partner_name: string | null;
   production_status: string;
-}
-
-interface AdminInventoryJoin {
-  id: string;
-  internal_inventory_code: string;
-  business_status: string;
-  fulfillment_status: string;
-  traveler_user_id: string | null;
-  order_id: string | null;
-  public_claim_code: string;
-  qr_generated_at: string | null;
-  shipped_at: string | null;
-  registered_at: string | null;
-  created_at: string;
-  card_design_id: string;
-  stock_batch_id: string | null;
-  current_location_id: string | null;
-  card_designs: {
-    title: string | null;
-    view_no: number;
-    countries: {
-      name_pl: string;
-    } | null;
-  } | null;
-  stock_batches: {
-    name: string;
-    source_type: string;
-    purpose: string | null;
-    distribution_channel: string;
-    event_name: string | null;
-    partner_name: string | null;
-    production_status: string;
-  } | null;
 }
 
 interface CountryOption {
@@ -185,39 +140,26 @@ const AdminInventory = () => {
   const openUnitDetail = async (unit: InventoryUnit) => {
     setSelectedUnit(unit);
     setEventsLoading(true);
-    if (isFirestoreCatalogEnabled) {
+    try {
       const events = await inventoryService.getUnitEvents(unit.id);
       setUnitEvents(events as typeof unitEvents);
+    } catch (error) {
+      toast({ title: "Nie udało się wczytać historii jednostki", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      setUnitEvents([]);
+    } finally {
       setEventsLoading(false);
-      return;
     }
-    const { data } = await supabase
-      .from("inventory_unit_events")
-      .select("id, event_type, actor_type, actor_id, payload_json, created_at")
-      .eq("inventory_unit_id", unit.id)
-      .order("created_at", { ascending: true });
-    setUnitEvents(data || []);
-    setEventsLoading(false);
   };
 
   const fetchFilters = useCallback(async () => {
-    if (isFirestoreCatalogEnabled) {
-      const snapshot = await inventoryService.getInventorySnapshot();
-      setCountries(snapshot.countries.map((country: LocalInventoryCountry) => ({ id: country.id, name_pl: country.name_pl || country.name || "" })));
-      setDesigns(snapshot.designs.map((design: LocalInventoryDesign) => ({ id: design.id, title: design.title || null, view_no: design.view_no || 1, country_id: design.country_id || "" })));
-      return;
-    }
-    const [{ data: c }, { data: d }] = await Promise.all([
-      supabase.from("countries").select("id, name_pl").order("name_pl"),
-      supabase.from("card_designs").select("id, title, view_no, country_id").order("view_no"),
-    ]);
-    if (c) setCountries(c);
-    if (d) setDesigns(d);
+    const snapshot = await inventoryService.getInventorySnapshot();
+    setCountries(snapshot.countries.map((country: LocalInventoryCountry) => ({ id: country.id, name_pl: country.name_pl || country.name || "" })));
+    setDesigns(snapshot.designs.map((design: LocalInventoryDesign) => ({ id: design.id, title: design.title || null, view_no: design.view_no || 1, country_id: design.country_id || "" })));
   }, []);
 
   const fetchUnits = useCallback(async () => {
     setIsLoading(true);
-    if (isFirestoreCatalogEnabled) {
+    try {
       const snapshot = await inventoryService.getInventorySnapshot();
       const countriesById = new Map<string, LocalInventoryCountry>(snapshot.countries.map((country) => [country.id, country]));
       const designsById = new Map<string, LocalInventoryDesign>(snapshot.designs.map((design) => [design.id, design]));
@@ -244,66 +186,12 @@ const AdminInventory = () => {
       if (businessFilter !== "all") localUnits = localUnits.filter((unit) => unit.business_status === businessFilter);
       if (countryFilter !== "all") localUnits = localUnits.filter((unit) => designsById.get(unit.card_design_id)?.country_id === countryFilter);
       setUnits(localUnits.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE));
+    } catch (error) {
+      setUnits([]);
+      toast({ title: "Nie udało się wczytać magazynu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    let query = supabase
-      .from("inventory_units")
-      .select(`
-        id, internal_inventory_code, business_status, fulfillment_status,
-        traveler_user_id, order_id, public_claim_code,
-        qr_generated_at, shipped_at, registered_at, created_at,
-        card_design_id, stock_batch_id, current_location_id,
-        card_designs!inner(title, view_no, countries!inner(name_pl)),
-        stock_batches!inner(name, source_type, purpose, distribution_channel, event_name, partner_name, production_status)
-      `)
-      .order("created_at", { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-
-    if (fulfillmentFilter !== "all") {
-      query = query.eq("fulfillment_status", fulfillmentFilter as Database["public"]["Enums"]["fulfillment_status"]);
-    }
-    if (businessFilter !== "all") {
-      query = query.eq("business_status", businessFilter as Database["public"]["Enums"]["business_status"]);
-    }
-    if (countryFilter !== "all") {
-      query = query.eq("card_designs.countries.id", countryFilter);
-    }
-
-    const { data, error } = await query;
-
-    if (!error && data) {
-      const typedData = data as unknown as AdminInventoryJoin[];
-      setUnits(
-        typedData.map((u: AdminInventoryJoin) => ({
-          id: u.id,
-          internal_inventory_code: u.internal_inventory_code,
-          business_status: u.business_status,
-          fulfillment_status: u.fulfillment_status,
-          traveler_user_id: u.traveler_user_id,
-          order_id: u.order_id,
-          public_claim_code: u.public_claim_code,
-          qr_generated_at: u.qr_generated_at,
-          shipped_at: u.shipped_at,
-          registered_at: u.registered_at,
-          created_at: u.created_at,
-          card_design_id: u.card_design_id,
-          stock_batch_id: u.stock_batch_id || "",
-          design_title: u.card_designs?.title || null,
-          country_name: u.card_designs?.countries?.name_pl || null,
-          view_no: u.card_designs?.view_no || null,
-          batch_name: u.stock_batches?.name || null,
-          source_type: u.stock_batches?.source_type || "stock",
-          distribution_channel: u.stock_batches?.distribution_channel || "warehouse",
-          purpose: u.stock_batches?.purpose || null,
-          event_name: u.stock_batches?.event_name || null,
-          partner_name: u.stock_batches?.partner_name || null,
-          production_status: u.stock_batches?.production_status || "received",
-        }))
-      );
-    }
-    setIsLoading(false);
   }, [countryFilter, fulfillmentFilter, businessFilter, page]);
 
   useEffect(() => {
@@ -315,19 +203,10 @@ const AdminInventory = () => {
   }, [fetchUnits]);
 
   const fetchStockOrders = useCallback(async () => {
-    if (isFirestoreCatalogEnabled) {
-      const snapshot = await inventoryService.getInventorySnapshot();
-      setStockOrders(snapshot.orders
-        .filter((order: LocalStockOrder) => ["draft", "ordered", "in_production"].includes(order.status || ""))
-        .map((order: LocalStockOrder) => ({ id: order.id, order_number: order.order_number || "", name: order.name || "", total_quantity: order.total_quantity || 0, status: order.status || "draft", created_at: order.created_at || "" })));
-      return;
-    }
-    const { data } = await supabase
-      .from("stock_production_orders")
-      .select("id, order_number, name, total_quantity, status, created_at")
-      .in("status", ["draft", "ordered", "in_production"])
-      .order("created_at", { ascending: false });
-    setStockOrders((data || []) as StockProductionOrder[]);
+    const snapshot = await inventoryService.getInventorySnapshot();
+    setStockOrders(snapshot.orders
+      .filter((order: LocalStockOrder) => ["draft", "ordered", "in_production"].includes(order.status || ""))
+      .map((order: LocalStockOrder) => ({ id: order.id, order_number: order.order_number || "", name: order.name || "", total_quantity: order.total_quantity || 0, status: order.status || "draft", created_at: order.created_at || "" })));
   }, []);
 
   useEffect(() => {
@@ -363,159 +242,83 @@ const AdminInventory = () => {
     const design = designs.find((candidate) => candidate.id === initDesignId);
     const country = countries.find((candidate) => candidate.id === design?.country_id);
     const batchName = initBatchName.trim() || `Magazyn — ${country?.name_pl || "Wzór"} V${design?.view_no || 0} — ${new Date().toLocaleDateString("pl-PL")}`;
-    if (isFirestoreCatalogEnabled) {
-      try {
-        const result = await inventoryService.prepareStockPrintOrder({
-          cardDesignId: initDesignId,
-          quantity,
-          name: batchName,
-          adminUid: user?.id || "local-admin",
-        });
-        toast({ title: `Partia ${result.quantity} sztuk jest gotowa`, description: `${result.documentNumber}; wygenerowano jednostki i zadanie QR.` });
-        setShowInitDialog(false);
-        setInitBatchName("");
-        setInitDesignId("");
-        setInitQuantity("5000");
-        await Promise.all([fetchUnits(), fetchStockOrders()]);
-      } catch (error) {
-        toast({ title: "Nie udało się przygotować partii do druku", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      } finally {
-        setIsInitializing(false);
-      }
-      return;
-    }
-    const { data, error } = await supabase.rpc("prepare_stock_print_batch", {
-      _card_design_id: initDesignId,
-      _quantity: quantity,
-      _batch_name: batchName,
-    });
-    const result = data as unknown as PrepareStockPrintBatchResult | null;
-
-    if (error || !result?.success || !result.print_job_id) {
-      toast({ title: "Nie udało się przygotować partii do druku", description: error?.message || "Brak zadania druku QR.", variant: "destructive" });
-      setIsInitializing(false);
-      return;
-    }
-
     try {
-      const pdf = await generatePodPrintPdf(result.print_job_id, result.document_number);
-      toast({
-        title: `PDF dla ${result.quantity} sztuk jest gotowy`,
-        description: `${pdf.fileName}. Po odbiorze wydruku potwierdź przyjęcie na magazyn.`,
+      const result = await inventoryService.prepareStockPrintOrder({
+        cardDesignId: initDesignId,
+        quantity,
+        name: batchName,
+        adminUid: user?.id || "local-admin",
       });
-    } catch (pdfError) {
-      toast({
-        title: `Partia ${result.quantity} sztuk została zapisana`,
-        description: `Nie udało się automatycznie pobrać PDF: ${pdfError instanceof Error ? pdfError.message : "Nieznany błąd"}. Plik możesz ponowić w menu Druk QR.`,
-        variant: "destructive",
-      });
-    }
+      try {
+        const pdf = await generatePodPrintPdf(result.printJobId, result.documentNumber);
+        toast({
+          title: `PDF dla ${result.quantity} sztuk jest gotowy`,
+          description: `${pdf.fileName}. Po odbiorze wydruku potwierdź przyjęcie na magazyn.`,
+        });
+      } catch (pdfError) {
+        toast({
+          title: `Partia ${result.quantity} sztuk została zapisana`,
+          description: `Nie udało się automatycznie pobrać PDF: ${pdfError instanceof Error ? pdfError.message : "Nieznany błąd"}. Plik możesz ponowić w menu Druk QR.`,
+          variant: "destructive",
+        });
+      }
 
-    setShowInitDialog(false);
-    setInitBatchName("");
-    setInitDesignId("");
-    setInitQuantity("5000");
-    setIsInitializing(false);
-    await fetchUnits();
-    await fetchStockOrders();
+      setShowInitDialog(false);
+      setInitBatchName("");
+      setInitDesignId("");
+      setInitQuantity("5000");
+      await Promise.all([fetchUnits(), fetchStockOrders()]);
+    } catch (error) {
+      toast({ title: "Nie udało się przygotować partii do druku", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setIsInitializing(false);
+    }
   };
 
   const receiveStockOrder = async (stockOrder: StockProductionOrder) => {
     setReceivingOrderId(stockOrder.id);
-    if (isFirestoreCatalogEnabled) {
-      try {
-        const receivedUnits = await inventoryService.receiveStockProductionOrder(stockOrder.id);
-        toast({ title: "Wydruk przyjęty na magazyn", description: `${receivedUnits} szt. jest dostępnych fizycznie na magazynie.` });
-        await Promise.all([fetchUnits(), fetchStockOrders()]);
-      } catch (error) {
-        toast({ title: "Nie udało się przyjąć wydruku", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      } finally {
-        setReceivingOrderId(null);
-      }
-      return;
+    try {
+      const receivedUnits = await inventoryService.receiveStockProductionOrder(stockOrder.id);
+      toast({ title: "Wydruk przyjęty na magazyn", description: `${receivedUnits} szt. jest dostępnych fizycznie na magazynie.` });
+      await Promise.all([fetchUnits(), fetchStockOrders()]);
+    } catch (error) {
+      toast({ title: "Nie udało się przyjąć wydruku", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setReceivingOrderId(null);
     }
-    const { data, error } = await supabase.rpc("receive_stock_production_order", {
-      _stock_order_id: stockOrder.id,
-    });
-    setReceivingOrderId(null);
-
-    if (error) {
-      const description = error.message.includes("stock_order_qr_not_ready")
-        ? "Dla tego zamówienia nie przygotowano jeszcze kompletu kodów QR."
-        : error.message;
-      toast({ title: "Nie udało się przyjąć wydruku", description, variant: "destructive" });
-      return;
-    }
-
-    const result = data as { received_units?: number } | null;
-    toast({
-      title: "Wydruk przyjęty na magazyn",
-      description: `${result?.received_units || 0} szt. jest dostępnych fizycznie na magazynie.`,
-    });
-    await Promise.all([fetchUnits(), fetchStockOrders()]);
   };
 
   const handleVoid = async (unitId: string) => {
-    if (isFirestoreCatalogEnabled) {
+    try {
       await inventoryService.setUnitStatus(unitId, "voided");
       toast({ title: "Sztuka unieważniona" });
       fetchUnits();
-      return;
-    }
-    const { error } = await supabase
-      .from("inventory_units")
-      .update({ fulfillment_status: "voided" as Database["public"]["Enums"]["fulfillment_status"] })
-      .eq("id", unitId);
-    if (error) {
-      toast({ title: "Błąd", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Sztuka unieważniona" });
-      fetchUnits();
+    } catch (error) {
+      toast({ title: "Błąd", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
   };
 
   const handleDamaged = async (unitId: string) => {
-    if (isFirestoreCatalogEnabled) {
+    try {
       await inventoryService.setUnitStatus(unitId, "damaged");
       toast({ title: "Sztuka oznaczona jako uszkodzona" });
       fetchUnits();
-      return;
-    }
-    const { error } = await supabase
-      .from("inventory_units")
-      .update({ fulfillment_status: "damaged" as Database["public"]["Enums"]["fulfillment_status"] })
-      .eq("id", unitId);
-    if (error) {
-      toast({ title: "Błąd", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "Sztuka oznaczona jako uszkodzona" });
-      fetchUnits();
+    } catch (error) {
+      toast({ title: "Błąd", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
   };
 
   const handleDeleteUnit = async (unitId: string) => {
     setIsDeletingUnit(true);
-    if (isFirestoreCatalogEnabled) {
-      try {
-        await inventoryService.deleteUnit(unitId);
-        toast({ title: "Pozycja usunięta z magazynu" });
-        setPendingDeleteUnit(null);
-        await fetchUnits();
-      } catch (error) {
-        toast({ title: "Błąd usuwania z magazynu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      } finally {
-        setIsDeletingUnit(false);
-      }
-      return;
-    }
-    const { error } = await supabase.from("inventory_units").delete().eq("id", unitId);
-    setIsDeletingUnit(false);
-    if (error) {
-      toast({ title: "Błąd usuwania z magazynu", description: error.message, variant: "destructive" });
-    } else {
+    try {
+      await inventoryService.deleteUnit(unitId);
       toast({ title: "Pozycja usunięta z magazynu" });
       setPendingDeleteUnit(null);
       await fetchUnits();
+    } catch (error) {
+      toast({ title: "Błąd usuwania z magazynu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setIsDeletingUnit(false);
     }
   };
 
@@ -532,23 +335,7 @@ const AdminInventory = () => {
 
     setIsClearingInventory(true);
     try {
-      const { error: jobItemsError } = await supabase
-        .from("qr_print_job_items")
-        .delete()
-        .not("id", "is", null);
-      if (jobItemsError) throw jobItemsError;
-
-      const { error: jobsError } = await supabase
-        .from("qr_print_jobs")
-        .delete()
-        .not("id", "is", null);
-      if (jobsError) throw jobsError;
-
-      const { error: unitsError } = await supabase
-        .from("inventory_units")
-        .delete()
-        .not("id", "is", null);
-      if (unitsError) throw unitsError;
+      await inventoryService.clearTestInventory();
 
       setSelectedUnit(null);
       setUnitEvents([]);
@@ -702,9 +489,7 @@ const AdminInventory = () => {
         <div className="bg-card border border-border rounded-xl p-6 space-y-4">
           <h3 className="font-display text-lg font-semibold">Nowe zamówienie magazynowe</h3>
           <p className="text-sm text-muted-foreground">
-            {isFirestoreCatalogEnabled
-              ? "System przygotuje jednostki i kody QR. Generator PDF SRA3 zostanie podłączony w kolejnym etapie backendu."
-              : "System wygeneruje PDF SRA3 z QR dla drukarni. Stan magazynowy powstanie dopiero po potwierdzeniu odbioru fizycznego wydruku."}
+            System wygeneruje PDF SRA3 z kodami QR dla drukarni. Stan magazynowy powstanie dopiero po potwierdzeniu odbioru fizycznego wydruku.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -734,7 +519,7 @@ const AdminInventory = () => {
           </div>
           <div className="flex gap-2">
             <Button onClick={initializeBatch} disabled={isInitializing}>
-              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Przygotowuję...</> : <><Package className="w-4 h-4 mr-2" /> {isFirestoreCatalogEnabled ? "Utwórz zamówienie i kody QR" : "Utwórz zamówienie i PDF"}</>}
+              {isInitializing ? <><Loader2 className="w-4 h-4 animate-spin mr-2" /> Przygotowuję...</> : <><Package className="w-4 h-4 mr-2" /> Utwórz zamówienie i PDF</>}
             </Button>
             <Button variant="outline" onClick={() => setShowInitDialog(false)} disabled={isInitializing}>Anuluj</Button>
           </div>
@@ -756,7 +541,7 @@ const AdminInventory = () => {
                 <div>
                   <p className="font-medium">{stockOrder.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {stockOrder.order_number} · {stockOrder.total_quantity} szt. · {isFirestoreCatalogEnabled ? "kody QR gotowe — PDF SRA3 jeszcze nie wygenerowany" : "PDF przekazany do drukarni"}
+                    {stockOrder.order_number} · {stockOrder.total_quantity} szt. · PDF SRA3 z kodami QR gotowy do przekazania drukarni
                   </p>
                 </div>
                 <Button size="sm" onClick={() => receiveStockOrder(stockOrder)} disabled={receivingOrderId === stockOrder.id}>

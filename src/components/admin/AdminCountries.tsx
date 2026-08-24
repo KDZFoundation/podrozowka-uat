@@ -1,13 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, Check, X, Globe2, Sparkles, Search, Upload } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Globe2, Sparkles, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import { WORLD_COUNTRIES } from "@/data/worldCountries";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 
 interface Country {
   id: string;
@@ -27,15 +25,13 @@ const AdminCountries = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [isFlagUploading, setIsFlagUploading] = useState(false);
-  const flagInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   // Form state
   const [form, setForm] = useState({ iso2: '', iso3: '', name_pl: '', slug: '', flag_url: '', active: true });
 
   const fetchCountries = useCallback(async () => {
-    if (isFirestoreCatalogEnabled) {
+    try {
       const data = await firestoreService.getCountries();
       setCountries(data.map((country) => ({
         id: country.id,
@@ -47,17 +43,12 @@ const AdminCountries = () => {
         created_at: country.created_at || "",
         flag_url: country.flag_url || null,
       })));
+    } catch (error) {
+      toast({ title: "Błąd wczytywania krajów", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
       setIsLoading(false);
-      return;
     }
-    const { data, error } = await supabase
-      .from('countries')
-      .select('*')
-      .order('name_pl');
-
-    if (!error && data) setCountries(data as Country[]);
-    setIsLoading(false);
-  }, []);
+  }, [toast]);
 
   useEffect(() => { fetchCountries(); }, [fetchCountries]);
 
@@ -70,32 +61,8 @@ const AdminCountries = () => {
   const handleSeedAllWorldCountries = async () => {
     setIsSeeding(true);
     try {
-      if (isFirestoreCatalogEnabled) {
-        await Promise.all(WORLD_COUNTRIES.map((country) => firestoreService.upsertCountry(country.iso2, country)));
-        toast({ title: "Słownik krajów zaktualizowany!", description: `Pomyślnie zaimportowano/zaktualizowano ${WORLD_COUNTRIES.length} krajów świata.` });
-        fetchCountries();
-        return;
-      }
-      // Chunking upserts in batches of 50 for safety
-      const batchSize = 50;
-      let successCount = 0;
-
-      for (let i = 0; i < WORLD_COUNTRIES.length; i += batchSize) {
-        const batch = WORLD_COUNTRIES.slice(i, i + batchSize);
-        const { error } = await supabase
-          .from('countries')
-          .upsert(batch, { onConflict: 'iso2' });
-
-        if (error) {
-          throw error;
-        }
-        successCount += batch.length;
-      }
-
-      toast({
-        title: "Słownik krajów zaktualizowany!",
-        description: `Pomyślnie zaimportowano/zaktualizowano ${successCount} krajów świata.`,
-      });
+      await Promise.all(WORLD_COUNTRIES.map((country) => firestoreService.upsertCountry(country.iso2, country)));
+      toast({ title: "Słownik krajów zaktualizowany!", description: `Pomyślnie zaimportowano/zaktualizowano ${WORLD_COUNTRIES.length} krajów świata.` });
       fetchCountries();
     } catch (err) {
       toast({
@@ -116,46 +83,16 @@ const AdminCountries = () => {
 
     const slug = form.slug || form.name_pl.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-    if (isFirestoreCatalogEnabled) {
-      try {
-        await firestoreService.upsertCountry(editingId || form.iso2.toUpperCase(), {
-          iso2: form.iso2.toUpperCase(), iso3: form.iso3 || null, name_pl: form.name_pl, slug,
-          flag_url: form.flag_url || null, active: form.active,
-        });
-        toast({ title: editingId ? "Kraj zaktualizowany" : "Kraj dodany" });
-        resetForm();
-        fetchCountries();
-      } catch (error) {
-        toast({ title: "Błąd zapisu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      }
-      return;
-    }
-
-    if (editingId) {
-      const { error } = await supabase
-        .from('countries')
-        .update({ iso2: form.iso2, iso3: form.iso3 || null, name_pl: form.name_pl, slug, flag_url: form.flag_url || null, active: form.active })
-        .eq('id', editingId);
-
-      if (error) {
-        toast({ title: "Błąd zapisu", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "Kraj zaktualizowany" });
-        resetForm();
-        fetchCountries();
-      }
-    } else {
-      const { error } = await supabase
-        .from('countries')
-        .insert({ iso2: form.iso2, iso3: form.iso3 || null, name_pl: form.name_pl, slug, flag_url: form.flag_url || null, active: form.active });
-
-      if (error) {
-        toast({ title: "Błąd dodawania", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "Kraj dodany" });
-        resetForm();
-        fetchCountries();
-      }
+    try {
+      await firestoreService.upsertCountry(editingId || form.iso2.toUpperCase(), {
+        iso2: form.iso2.toUpperCase(), iso3: form.iso3 || null, name_pl: form.name_pl, slug,
+        flag_url: form.flag_url || null, active: form.active,
+      });
+      toast({ title: editingId ? "Kraj zaktualizowany" : "Kraj dodany" });
+      resetForm();
+      fetchCountries();
+    } catch (error) {
+      toast({ title: "Błąd zapisu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
   };
 
@@ -165,101 +102,29 @@ const AdminCountries = () => {
     setShowAdd(true);
   };
 
-  const handleFlagUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (isFirestoreCatalogEnabled) {
-      toast({ title: "Wgrywanie flag jest wyłączone w trybie Spark", description: "Użyj adresu HTTPS do gotowego obrazu flagi." });
-      event.target.value = "";
-      return;
-    }
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Wybierz plik graficzny", description: "Obsługiwane są PNG, JPG i WEBP.", variant: "destructive" });
-      return;
-    }
-    if (file.size > 2 * 1024 * 1024) {
-      toast({ title: "Plik jest zbyt duży", description: "Flaga może mieć maksymalnie 2 MB.", variant: "destructive" });
-      return;
-    }
-
-    setIsFlagUploading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Zaloguj się ponownie przed przesłaniem flagi.");
-
-      const extension = file.name.split(".").pop() || "png";
-      const countryCode = form.iso2.trim().toLowerCase() || "country";
-      const path = `${user.id}/country-flags/${countryCode}-${Date.now()}.${extension}`;
-      const { error: uploadError } = await supabase.storage
-        .from("postcard-photos")
-        .upload(path, file, { cacheControl: "3600" });
-
-      if (uploadError) throw uploadError;
-      const { data } = supabase.storage.from("postcard-photos").getPublicUrl(path);
-      setForm((current) => ({ ...current, flag_url: data.publicUrl }));
-      toast({ title: "Flaga przesłana" });
-    } catch (error) {
-      toast({ title: "Błąd przesyłania flagi", description: (error as Error).message, variant: "destructive" });
-    } finally {
-      setIsFlagUploading(false);
-      event.target.value = "";
-    }
-  };
-
   const handleDelete = async (id: string) => {
     const country = countries.find((item) => item.id === id);
-    if (isFirestoreCatalogEnabled) {
-      const designCount = (await firestoreService.getCardDesigns({ includeInactive: true })).filter((design) => design.country_id === id).length;
-      if (designCount > 0) {
-        toast({ title: "Nie można usunąć kraju używanego przez wzory", description: `${country?.name_pl ?? "Ten kraj"} ma przypisane wzory (${designCount}). Ustaw kraj jako nieaktywny zamiast go usuwać.`, variant: "destructive" });
-        return;
-      }
-      try {
-        await firestoreService.deleteCountry(id);
-        toast({ title: "Kraj usunięty" });
-        fetchCountries();
-      } catch (error) {
-        toast({ title: "Błąd usuwania", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      }
+    const designCount = (await firestoreService.getCardDesigns({ includeInactive: true })).filter((design) => design.country_id === id).length;
+    if (designCount > 0) {
+      toast({ title: "Nie można usunąć kraju używanego przez wzory", description: `${country?.name_pl ?? "Ten kraj"} ma przypisane wzory (${designCount}). Ustaw kraj jako nieaktywny zamiast go usuwać.`, variant: "destructive" });
       return;
     }
-    const { count, error: usageError } = await supabase
-      .from('card_designs')
-      .select('id', { count: 'exact', head: true })
-      .eq('country_id', id);
-
-    if (usageError) {
-      toast({ title: "Nie udało się sprawdzić kraju", description: usageError.message, variant: "destructive" });
-      return;
-    }
-
-    if ((count ?? 0) > 0) {
-      toast({
-        title: "Nie można usunąć kraju używanego przez wzory",
-        description: `${country?.name_pl ?? "Ten kraj"} ma przypisane wzory (${count}). Aby zachować historię zamówień, ustaw kraj jako nieaktywny zamiast go usuwać.`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const { error } = await supabase.from('countries').delete().eq('id', id);
-    if (error) {
-      toast({ title: "Błąd usuwania", description: error.message, variant: "destructive" });
-    } else {
+    try {
+      await firestoreService.deleteCountry(id);
       toast({ title: "Kraj usunięty" });
       fetchCountries();
+    } catch (error) {
+      toast({ title: "Błąd usuwania", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
   };
 
   const toggleActive = async (id: string, active: boolean) => {
-    if (isFirestoreCatalogEnabled) {
+    try {
       await firestoreService.setCountryActive(id, !active);
       fetchCountries();
-      return;
+    } catch (error) {
+      toast({ title: "Błąd zmiany statusu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
-    await supabase.from('countries').update({ active: !active }).eq('id', id);
-    fetchCountries();
   };
 
   const filteredCountries = countries.filter((c) => {
@@ -350,16 +215,17 @@ const AdminCountries = () => {
             />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium">Flaga kraju na tyle kartki</p>
-              <p className="text-xs text-muted-foreground">Własny plik zastępuje automatyczną flagę ISO2.</p>
+              <p className="text-xs text-muted-foreground">Własny adres HTTPS zastępuje automatyczną flagę ISO2.</p>
             </div>
-            <input ref={flagInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleFlagUpload} />
-            <Button type="button" variant="outline" size="sm" onClick={() => flagInputRef.current?.click()} disabled={isFlagUploading}>
-              <Upload className="mr-1.5 h-4 w-4" />
-              {isFlagUploading ? "Przesyłanie..." : "Wczytaj flagę"}
-            </Button>
+            <Input
+              value={form.flag_url}
+              onChange={(event) => setForm((current) => ({ ...current, flag_url: event.target.value }))}
+              placeholder="https://example.com/flaga.png"
+              className="max-w-sm"
+            />
             {form.flag_url && (
               <Button type="button" variant="ghost" size="sm" onClick={() => setForm((current) => ({ ...current, flag_url: "" }))}>
-                Usuń własną
+                Usuń adres
               </Button>
             )}
           </div>

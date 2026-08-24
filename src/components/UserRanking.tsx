@@ -2,7 +2,6 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Trophy, Medal, Award, Heart, Globe2, Sparkles, Users, TrendingUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import type { FirestoreUserProfile } from "@/integrations/firebase/types";
 import { Badge } from "@/components/ui/badge";
@@ -16,30 +15,6 @@ interface RankedUser {
   unitCount: number;
   regCount: number;
   countries: { iso2: string; name_pl: string }[];
-}
-
-interface DBProfile {
-  user_id: string;
-  display_name: string | null;
-  avatar_url: string | null;
-  total_points: number;
-  current_rank: string;
-}
-
-interface RankingUnitJoin {
-  id: string;
-  traveler_user_id: string | null;
-  card_designs: {
-    country_id: string;
-    countries: {
-      iso2: string;
-      name_pl: string;
-    } | null;
-  } | null;
-}
-
-interface RegJoin {
-  inventory_unit_id: string;
 }
 
 const RANK_STYLE: Record<string, { badgeClass: string; glow: string }> = {
@@ -78,7 +53,6 @@ type RankingProfile = FirestoreUserProfile & {
 };
 
 const fetchRanking = async (): Promise<RankedUser[]> => {
-  // 1. Try Firestore
   try {
     const firestoreUsers = await firestoreService.getTopTravelers(10);
     if (firestoreUsers.length > 0 && firestoreUsers.some(u => (u.gamification_points || 0) > 0)) {
@@ -99,80 +73,7 @@ const fetchRanking = async (): Promise<RankedUser[]> => {
   } catch (e) {
     console.warn("Firestore fetchRanking error:", e);
   }
-
-  // 2. Fallback to Supabase
-  try {
-    const { data } = await supabase
-      .from("profiles_public" as unknown as "profiles")
-      .select("user_id, display_name, avatar_url, total_points, current_rank")
-      .gt("total_points", 0)
-      .order("total_points", { ascending: false })
-      .limit(10);
-
-    const profiles = data as unknown as DBProfile[] | null;
-    if (!profiles || profiles.length === 0) return [];
-
-
-  const userIds = profiles.map((p) => p.user_id);
-
-  // Fetch units with country info
-  const { data: units } = await supabase
-    .from("inventory_units")
-    .select("id, traveler_user_id, card_designs!inner(country_id, countries!inner(iso2, name_pl))")
-    .in("traveler_user_id", userIds);
-
-  const typedUnits = (units || []) as unknown as RankingUnitJoin[];
-
-  // Build per-user maps
-  const userCountryMap = new Map<string, Map<string, { iso2: string; name_pl: string }>>();
-  const userUnitCount = new Map<string, number>();
-  const userUnitIds = new Map<string, string[]>();
-
-  typedUnits.forEach((u: RankingUnitJoin) => {
-    const uid = u.traveler_user_id;
-    if (!uid) return;
-
-    userUnitCount.set(uid, (userUnitCount.get(uid) || 0) + 1);
-    if (!userUnitIds.has(uid)) userUnitIds.set(uid, []);
-    userUnitIds.get(uid)!.push(u.id);
-
-    const country = u.card_designs?.countries;
-    if (!country) return;
-    if (!userCountryMap.has(uid)) userCountryMap.set(uid, new Map());
-    userCountryMap.get(uid)!.set(country.iso2, { iso2: country.iso2, name_pl: country.name_pl });
-  });
-
-  // Fetch registration counts per user (batch)
-  const allUnitIds = typedUnits.map((u: RankingUnitJoin) => u.id);
-  const { data: regs } = allUnitIds.length > 0
-    ? await supabase
-        .from("recipient_registrations")
-        .select("inventory_unit_id")
-        .in("inventory_unit_id", allUnitIds)
-    : { data: [] };
-
-  const typedRegs = (regs || []) as unknown as RegJoin[];
-
-  // Map reg counts per user
-  const userRegCount = new Map<string, number>();
-  typedRegs.forEach((r: RegJoin) => {
-    for (const [uid, ids] of userUnitIds.entries()) {
-      if (ids.includes(r.inventory_unit_id)) {
-        userRegCount.set(uid, (userRegCount.get(uid) || 0) + 1);
-        break;
-      }
-    }
-  });
-
-  return profiles.map((p) => ({
-    ...p,
-    unitCount: userUnitCount.get(p.user_id) || 0,
-    regCount: userRegCount.get(p.user_id) || 0,
-    countries: Array.from(userCountryMap.get(p.user_id)?.values() ?? []),
-  }));
-  } catch {
-    return [];
-  }
+  return [];
 };
 
 

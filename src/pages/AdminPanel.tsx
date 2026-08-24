@@ -27,8 +27,6 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { inventoryService } from "@/integrations/firebase/services/inventoryService";
 import AdminCountries from "@/components/admin/AdminCountries";
@@ -83,7 +81,7 @@ interface AdminStats {
 }
 
 const AdminPanel = () => {
-  const { user, isLoading: authLoading, isAdmin, isDbAdmin } = useAuth();
+  const { user, isLoading: authLoading, isAdmin } = useAuth();
   const navigate = useNavigate();
   const devToolsEnabled = isDevelopmentRuntime();
   const [activeTab, setActiveTab] = useState<TabId>("overview");
@@ -100,7 +98,7 @@ const AdminPanel = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchStats = useCallback(async () => {
-    if (isFirestoreCatalogEnabled) {
+    try {
       const [inventory, countries, designs] = await Promise.all([
         inventoryService.getInventorySnapshot(),
         firestoreService.getCountries(),
@@ -117,44 +115,9 @@ const AdminPanel = () => {
         countries: countries.length,
         designs: designs.length,
       });
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    const [
-      { count: totalUnits },
-      { count: inStock },
-      { count: reserved },
-      { count: shipped },
-      { count: registered },
-      { count: voided },
-      { count: countries },
-      { count: designs },
-    ] = await Promise.all([
-      supabase.from("inventory_units").select("*", { count: "exact", head: true }),
-      supabase.from("inventory_units").select("*", { count: "exact", head: true }).eq("fulfillment_status", "in_stock"),
-      supabase.from("inventory_units").select("*", { count: "exact", head: true }).eq("fulfillment_status", "reserved"),
-      supabase.from("inventory_units").select("*", { count: "exact", head: true }).eq("fulfillment_status", "shipped"),
-      supabase.from("inventory_units").select("*", { count: "exact", head: true }).eq("business_status", "registered"),
-      supabase
-        .from("inventory_units")
-        .select("*", { count: "exact", head: true })
-        .in("fulfillment_status", ["voided", "damaged"]),
-      supabase.from("countries").select("*", { count: "exact", head: true }),
-      supabase.from("card_designs").select("*", { count: "exact", head: true }),
-    ]);
-
-    setStats({
-      totalUnits: totalUnits || 0,
-      inStock: inStock || 0,
-      reserved: reserved || 0,
-      shipped: shipped || 0,
-      registered: registered || 0,
-      voided: voided || 0,
-      countries: countries || 0,
-      designs: designs || 0,
-    });
-    setIsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -260,175 +223,6 @@ const AdminPanel = () => {
       </div>
 
       <main className="container mx-auto px-4 py-8">
-        {devToolsEnabled && !isDbAdmin && user && (
-          <div className="mb-6 p-5 border border-amber-200 bg-amber-50/60 rounded-xl space-y-4 shadow-sm max-w-4xl">
-            <div className="flex items-start gap-3">
-              <span className="text-xl">⚠️</span>
-              <div className="space-y-1">
-                <h3 className="font-semibold text-amber-900">Brak pełnej konfiguracji administratora i grywalizacji w bazie danych</h3>
-                <p className="text-sm text-amber-800 leading-relaxed">
-                  Twój adres e-mail (<strong className="font-medium">{user.email}</strong>) jest zalogowany, ale Twoje konto nie posiada roli <code className="px-1 py-0.5 bg-amber-100 rounded text-xs font-mono text-amber-900">admin</code> w nowej bazie danych Supabase, oraz brakuje w niej tabel grywalizacji. Może to powodować błędy RLS (np. przy generowaniu danych testowych lub rejestracji kart).
-                </p>
-              </div>
-            </div>
-            <div className="space-y-2 bg-white/95 p-4 rounded-lg border border-amber-200">
-              <p className="text-xs font-semibold text-amber-900 uppercase tracking-wider">
-                Uruchom poniższy skrypt SQL w panelu Supabase SQL Editor, aby to naprawić (skonfiguruje on Twoją rolę oraz brakujące tabele grywalizacji, zdjęć i kategorii kart):
-              </p>
-              <pre className="text-[11px] font-mono p-3 bg-slate-900 text-slate-100 rounded-lg overflow-x-auto select-all">
-{`-- 1. Nadanie roli admina Twojemu użytkownikowi
-INSERT INTO public.user_roles (user_id, role)
-VALUES ('${user.id}', 'admin')
-ON CONFLICT (user_id, role) DO NOTHING;
-
--- 2. Tworzenie brakującej tabeli gamification_config
-CREATE TABLE IF NOT EXISTS public.gamification_config (
-  id integer PRIMARY KEY DEFAULT 1,
-  points_per_unit integer NOT NULL DEFAULT 10,
-  points_per_country integer NOT NULL DEFAULT 50,
-  points_per_registration integer NOT NULL DEFAULT 100,
-  updated_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now())
-);
-
-INSERT INTO public.gamification_config (id, points_per_unit, points_per_country, points_per_registration)
-VALUES (1, 10, 50, 100)
-ON CONFLICT (id) DO NOTHING;
-
--- 3. Tworzenie brakującej tabeli gamification_tiers
-CREATE TABLE IF NOT EXISTS public.gamification_tiers (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  min_points integer NOT NULL UNIQUE,
-  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now())
-);
-
-INSERT INTO public.gamification_tiers (name, min_points) VALUES
-('Zwiadowca', 0),
-('Ambasador', 500),
-('Misjonarz Kultury', 2500),
-('Legenda Podróżówki', 7500)
-ON CONFLICT (name) DO NOTHING;
-
--- 4. Tworzenie brakującej tabeli card_design_images
-CREATE TABLE IF NOT EXISTS public.card_design_images (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  card_design_id uuid NOT NULL REFERENCES public.card_designs(id) ON DELETE CASCADE,
-  url text NOT NULL,
-  sort_order integer NOT NULL DEFAULT 0,
-  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now())
-);
-
-CREATE INDEX IF NOT EXISTS card_design_images_design_idx ON public.card_design_images(card_design_id, sort_order);
-
--- 5. Tworzenie i uzupełnianie tabeli categories
-CREATE TABLE IF NOT EXISTS public.categories (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL UNIQUE,
-  slug text NOT NULL UNIQUE,
-  icon_url text,
-  sort_order integer NOT NULL DEFAULT 0,
-  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now())
-);
-
-INSERT INTO public.categories (id, name, slug, icon_url, sort_order) VALUES
-('d58de85b-ab9a-48c3-9315-f7bd76a404c6', 'Natura', 'natura', NULL, 10),
-('0f367839-8b75-4a73-b8bd-94017c810cbe', 'Architektura', 'architektura', NULL, 20),
-('910aa227-07a3-49fe-a007-9fdf01170038', 'Sztuka', 'sztuka', NULL, 30),
-('8889ecf8-fbdd-42ba-bc36-587177f6365c', 'Wydarzenia', 'wydarzenia', NULL, 40),
-('8c15c469-9579-40c6-98b6-722ec0d59715', 'Postacie', 'postacie', NULL, 50)
-ON CONFLICT (id) DO UPDATE SET
-  name = EXCLUDED.name,
-  slug = EXCLUDED.slug,
-  icon_url = EXCLUDED.icon_url,
-  sort_order = EXCLUDED.sort_order;
-
--- 5b. Dodanie kolumny category_id do card_designs i aktualizacja unikalnego klucza oraz walut/cen
-ALTER TABLE public.card_designs ADD COLUMN IF NOT EXISTS category_id uuid NULL REFERENCES public.categories(id) ON DELETE SET NULL;
-ALTER TABLE public.card_designs ADD COLUMN IF NOT EXISTS price_grosze integer NOT NULL DEFAULT 0;
-ALTER TABLE public.card_designs ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'PLN';
-ALTER TABLE public.card_designs ADD COLUMN IF NOT EXISTS description text;
-CREATE INDEX IF NOT EXISTS idx_card_designs_category_id ON public.card_designs(category_id);
-
-DO $$
-DECLARE
-  cname text;
-BEGIN
-  SELECT conname INTO cname
-  FROM pg_constraint
-  WHERE conrelid = 'public.card_designs'::regclass
-    AND contype = 'u'
-    AND (
-      SELECT array_agg(attname::text ORDER BY attname::text)
-      FROM unnest(conkey) k
-      JOIN pg_attribute a ON a.attrelid = 'public.card_designs'::regclass AND a.attnum = k
-    ) = ARRAY['country_id','view_no']
-  LIMIT 1;
-
-  IF cname IS NOT NULL THEN
-    EXECUTE format('ALTER TABLE public.card_designs DROP CONSTRAINT %I', cname);
-  END IF;
-END $$;
-
-ALTER TABLE public.card_designs DROP CONSTRAINT IF EXISTS card_designs_country_category_view_uniq;
-ALTER TABLE public.card_designs ADD CONSTRAINT card_designs_country_category_view_uniq UNIQUE (country_id, category_id, view_no);
-
--- 6. Nadanie wymaganych uprawnień
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.gamification_config TO authenticated;
-GRANT ALL ON public.gamification_config TO service_role;
-GRANT SELECT ON public.gamification_config TO anon;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.gamification_tiers TO authenticated;
-GRANT ALL ON public.gamification_tiers TO service_role;
-GRANT SELECT ON public.gamification_tiers TO anon;
-
-GRANT SELECT ON public.card_design_images TO anon, authenticated;
-GRANT INSERT, UPDATE, DELETE ON public.card_design_images TO authenticated;
-GRANT ALL ON public.card_design_images TO service_role;
-
-GRANT SELECT ON public.categories TO anon, authenticated;
-GRANT INSERT, UPDATE, DELETE ON public.categories TO authenticated;
-GRANT ALL ON public.categories TO service_role;
-
--- 7. Włączenie RLS i dodanie polityk bezpieczeństwa
-ALTER TABLE public.card_design_images ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Public can view images of active designs" ON public.card_design_images;
-CREATE POLICY "Public can view images of active designs"
-  ON public.card_design_images FOR SELECT
-  USING (
-    EXISTS (
-      SELECT 1 FROM public.card_designs cd
-      WHERE cd.id = card_design_images.card_design_id
-        AND cd.active = true
-    )
-  );
-
-DROP POLICY IF EXISTS "Admins can manage card_design_images" ON public.card_design_images;
-CREATE POLICY "Admins can manage card_design_images"
-  ON public.card_design_images FOR ALL
-  USING (public.has_role(auth.uid(), 'admin'))
-  WITH CHECK (public.has_role(auth.uid(), 'admin'));
-
-DROP POLICY IF EXISTS "Categories are viewable by everyone" ON public.categories;
-CREATE POLICY "Categories are viewable by everyone"
-  ON public.categories FOR SELECT
-  USING (true);
-
-DROP POLICY IF EXISTS "Admins manage categories" ON public.categories;
-CREATE POLICY "Admins manage categories"
-  ON public.categories FOR ALL
-  TO authenticated
-  USING (public.has_role(auth.uid(), 'admin'))
-  WITH CHECK (public.has_role(auth.uid(), 'admin'));`}
-              </pre>
-              <p className="text-xs text-amber-700 leading-relaxed">
-                Przejdź do: <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="underline hover:text-amber-900 font-medium">Supabase Dashboard</a> → Wybierz swój projekt (<strong>{import.meta.env.VITE_SUPABASE_PROJECT_ID || "xiqhaiyieisgemqopxfw"}</strong>) → SQL Editor → Wklej powyższy skrypt i kliknij <strong>Run</strong>. Po wykonaniu zapytania odśwież tę stronę.
-              </p>
-            </div>
-          </div>
-        )}
-
         {activeTab === "overview" && (
           <div className="space-y-6">
             <div>

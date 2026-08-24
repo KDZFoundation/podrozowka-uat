@@ -1,7 +1,8 @@
 import { Bell, Check, Trophy, Users, Info } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { collection, doc, getDocs, query, updateDoc, where } from "firebase/firestore";
 import { useAuth } from "@/hooks/useAuth";
+import { db } from "@/integrations/firebase/config";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,6 +21,8 @@ interface Notification {
 const typeIcon: Record<string, React.ReactNode> = {
   rank_up: <Trophy className="w-4 h-4 text-[hsl(var(--gold))]" />,
   new_registration: <Users className="w-4 h-4 text-accent" />,
+  postcard_registered: <Users className="w-4 h-4 text-accent" />,
+  purchase_points: <Trophy className="w-4 h-4 text-[hsl(var(--gold))]" />,
 };
 
 const NotificationsBell = () => {
@@ -29,25 +32,18 @@ const NotificationsBell = () => {
   const { data: notifications = [] } = useQuery<Notification[]>({
     queryKey: ["notifications", user?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("user_id", user!.id)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      if (error) throw error;
-      return data as Notification[];
+      const snapshot = await getDocs(query(collection(db, "notifications"), where("user_id", "==", user!.id)));
+      return snapshot.docs
+        .map((item) => ({ id: item.id, ...item.data() }) as Notification)
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 20);
     },
     enabled: !!user,
   });
 
   const markAsRead = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("id", id);
-      if (error) throw error;
+      await updateDoc(doc(db, "notifications", id), { is_read: true });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications", user?.id] });
@@ -56,12 +52,8 @@ const NotificationsBell = () => {
 
   const markAllAsRead = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("user_id", user!.id)
-        .eq("is_read", false);
-      if (error) throw error;
+      const snapshot = await getDocs(query(collection(db, "notifications"), where("user_id", "==", user!.id), where("is_read", "==", false)));
+      await Promise.all(snapshot.docs.map((item) => updateDoc(item.ref, { is_read: true })));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications", user?.id] });

@@ -12,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
+import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 
 interface FailedOrder {
   id: string;
@@ -37,18 +37,27 @@ const AdminFiscalFailures = () => {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("orders")
-      .select(
-        "id, order_number, created_at, total_amount, invoice_requested, company_name, company_nip, fiscal_document_error, user_id",
-      )
-      .eq("fiscal_document_status", "failed")
-      .order("created_at", { ascending: false });
-    if (error) {
-      toast.error("Nie udało się pobrać listy", { description: error.message });
+    try {
+      const orders = await firestoreService.getAllOrders();
+      setRows(orders
+        .filter((order) => (order as Record<string, unknown>).fiscal_document_status === "failed")
+        .map((order) => {
+          const raw = order as Record<string, unknown>;
+          return {
+            id: order.id,
+            order_number: order.order_number,
+            created_at: order.created_at,
+            total_amount: order.total_amount_pln,
+            invoice_requested: Boolean(raw.invoice_requested),
+            company_name: typeof raw.company_name === "string" ? raw.company_name : null,
+            company_nip: typeof raw.company_nip === "string" ? raw.company_nip : null,
+            fiscal_document_error: typeof raw.fiscal_document_error === "string" ? raw.fiscal_document_error : null,
+            user_id: order.user_id,
+          };
+        }));
+    } catch (error) {
+      toast.error("Nie udało się pobrać listy", { description: error instanceof Error ? error.message : undefined });
       setRows([]);
-    } else {
-      setRows((data || []) as FailedOrder[]);
     }
     setLoading(false);
   }, []);
@@ -72,12 +81,14 @@ const AdminFiscalFailures = () => {
       fiscal_document_issued_at: new Date().toISOString(),
     };
     if (manualNumber.trim()) patch.fiscal_document_number = manualNumber.trim().slice(0, 100);
-    const { error } = await supabase.from("orders").update(patch).eq("id", selected.id);
-    setSaving(false);
-    if (error) {
-      toast.error("Nie udało się zapisać", { description: error.message });
+    try {
+      await firestoreService.updateOrder(selected.id, patch);
+    } catch (error) {
+      toast.error("Nie udało się zapisać", { description: error instanceof Error ? error.message : undefined });
+      setSaving(false);
       return;
     }
+    setSaving(false);
     toast.success("Oznaczono jako rozwiązane");
     setSelected(null);
     load();

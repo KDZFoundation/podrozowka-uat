@@ -6,9 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { isFirestoreCatalogEnabled } from "@/integrations/firebase/config";
 import { WORLD_LANGUAGES, LanguageOption } from "@/data/languages";
 
 interface Country {
@@ -50,43 +48,25 @@ export const AdminLanguageTemplates = () => {
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
-    if (isFirestoreCatalogEnabled) {
-      const [templateData, countryData] = await Promise.all([
-        firestoreService.getLanguageTemplates(),
-        firestoreService.getCountries(),
-      ]);
-      const countriesById = new Map(countryData.map((country) => [country.id, country]));
-      setTemplates(templateData.map((template) => ({
-        ...template,
-        countries: countriesById.get(template.country_id)
-          ? {
-              name_pl: countriesById.get(template.country_id)!.name_pl || countriesById.get(template.country_id)!.name,
-              iso2: countriesById.get(template.country_id)!.iso2 || "",
-            }
-          : null,
-      })));
-      setCountries(countryData.map((country) => ({
-        id: country.id,
-        iso2: country.iso2 || "",
-        name_pl: country.name_pl || country.name,
-      })));
-      setIsLoading(false);
-      return;
-    }
-    const [{ data: templatesData }, { data: countriesData }] = await Promise.all([
-      supabase
-        .from("card_language_templates")
-        .select("*, countries!inner(name_pl, iso2)")
-        .order("country_id"),
-      supabase.from("countries").select("id, iso2, name_pl").order("name_pl"),
+    const [templateData, countryData] = await Promise.all([
+      firestoreService.getLanguageTemplates(),
+      firestoreService.getCountries(),
     ]);
-
-    if (templatesData) {
-      setTemplates(templatesData as unknown as LanguageTemplate[]);
-    }
-    if (countriesData) {
-      setCountries(countriesData as Country[]);
-    }
+    const countriesById = new Map(countryData.map((country) => [country.id, country]));
+    setTemplates(templateData.map((template) => ({
+      ...template,
+      countries: countriesById.get(template.country_id)
+        ? {
+            name_pl: countriesById.get(template.country_id)!.name_pl || countriesById.get(template.country_id)!.name,
+            iso2: countriesById.get(template.country_id)!.iso2 || "",
+          }
+        : null,
+    })));
+    setCountries(countryData.map((country) => ({
+      id: country.id,
+      iso2: country.iso2 || "",
+      name_pl: country.name_pl || country.name,
+    })));
     setIsLoading(false);
   }, []);
 
@@ -160,41 +140,13 @@ export const AdminLanguageTemplates = () => {
       back_qr_label: form.back_qr_label,
     };
 
-    if (isFirestoreCatalogEnabled) {
-      try {
-        await firestoreService.upsertLanguageTemplate(editingId || crypto.randomUUID(), payload);
-        toast({ title: editingId ? "Szablon językowy zaktualizowany" : "Szablon językowy dodany" });
-        resetForm();
-        fetchData();
-      } catch (error) {
-        toast({ title: "Błąd zapisu szablonu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      }
-      return;
-    }
-
-    if (editingId) {
-      const { error } = await supabase
-        .from("card_language_templates")
-        .update(payload)
-        .eq("id", editingId);
-
-      if (error) {
-        toast({ title: "Błąd zapisu szablonu", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "Szablon językowy zaktualizowany" });
-        resetForm();
-        fetchData();
-      }
-    } else {
-      const { error } = await supabase.from("card_language_templates").insert(payload);
-
-      if (error) {
-        toast({ title: "Błąd dodawania szablonu", description: error.message, variant: "destructive" });
-      } else {
-        toast({ title: "Szablon językowy dodany" });
-        resetForm();
-        fetchData();
-      }
+    try {
+      await firestoreService.upsertLanguageTemplate(editingId || crypto.randomUUID(), payload);
+      toast({ title: editingId ? "Szablon językowy zaktualizowany" : "Szablon językowy dodany" });
+      resetForm();
+      fetchData();
+    } catch (error) {
+      toast({ title: "Błąd zapisu szablonu", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
   };
 
@@ -213,23 +165,12 @@ export const AdminLanguageTemplates = () => {
   const handleDelete = async (id: string) => {
     if (!confirm("Czy na pewno chcesz usunąć ten szablon językowy?")) return;
 
-    if (isFirestoreCatalogEnabled) {
-      try {
-        await firestoreService.deleteLanguageTemplate(id);
-        toast({ title: "Szablon usunięty" });
-        fetchData();
-      } catch (error) {
-        toast({ title: "Błąd usuwania", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
-      }
-      return;
-    }
-
-    const { error } = await supabase.from("card_language_templates").delete().eq("id", id);
-    if (error) {
-      toast({ title: "Błąd usuwania", description: error.message, variant: "destructive" });
-    } else {
+    try {
+      await firestoreService.deleteLanguageTemplate(id);
       toast({ title: "Szablon usunięty" });
       fetchData();
+    } catch (error) {
+      toast({ title: "Błąd usuwania", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
   };
 

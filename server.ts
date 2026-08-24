@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 
 import hotpayWebhookHandler from "./api/payments/hotpay-webhook";
 import registerPostcardHandler from "./api/register-postcard";
+import contactHandler from "./api/contact";
 
 async function startServer() {
   const app = express();
@@ -79,6 +80,20 @@ async function startServer() {
     } catch (error) {
       console.error("[API payments/create-hotpay proxy error]:", error);
       res.status(502).json({ error: "payment_backend_unavailable" });
+    }
+  });
+
+  app.all("/api/contact", async (req, res) => {
+    try {
+      const response = await contactHandler.fetch(new Request(`http://localhost:${PORT}${req.originalUrl}`, {
+        method: req.method,
+        headers: { "Content-Type": "application/json" },
+        body: req.method === "POST" ? JSON.stringify(req.body || {}) : undefined,
+      }));
+      res.status(response.status).send(await response.text());
+    } catch (error) {
+      console.error("[server.ts /api/contact error]:", error);
+      res.status(500).json({ error: "internal_server_error" });
     }
   });
 

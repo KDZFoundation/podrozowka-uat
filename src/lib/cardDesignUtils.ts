@@ -1,30 +1,24 @@
-import { supabase } from "@/integrations/supabase/client";
+import { collection, deleteDoc, doc, getDocs, query, updateDoc, where, writeBatch } from "firebase/firestore";
+import { db } from "@/integrations/firebase/config";
 
 export async function deleteCardDesignCascade(
   id: string
 ): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
-    // 1. Delete associated card_design_images
-    await supabase.from("card_design_images").delete().eq("card_design_id", id);
+    const [orders, units, stockBatches] = await Promise.all([
+      getDocs(collection(db, "orders")),
+      getDocs(query(collection(db, "inventory_units"), where("card_design_id", "==", id))),
+      getDocs(query(collection(db, "stock_batches"), where("card_design_id", "==", id))),
+    ]);
+    const hasOrders = orders.docs.some((order) => {
+      const items = order.data().items;
+      return Array.isArray(items) && items.some((item) => item && typeof item === "object" && (item as Record<string, unknown>).design_id === id);
+    });
 
-    // 2. Check if order_items exist for this design
-    const { data: orderItems } = await supabase
-      .from("order_items")
-      .select("id")
-      .eq("card_design_id", id)
-      .limit(1);
-
-    if (orderItems && orderItems.length > 0) {
+    if (hasOrders) {
       // Cannot hard-delete card design because customer orders exist for it.
       // Deactivate it instead so it is hidden from shop & creator.
-      const { error: updateError } = await supabase
-        .from("card_designs")
-        .update({ active: false })
-        .eq("id", id);
-
-      if (updateError) {
-        return { success: false, error: updateError.message };
-      }
+      await updateDoc(doc(db, "card_designs", id), { active: false, is_active: false, updated_at: new Date().toISOString() });
 
       return {
         success: true,
@@ -33,23 +27,11 @@ export async function deleteCardDesignCascade(
       };
     }
 
-    // 3. Delete inventory_units referencing this design
-    await supabase.from("inventory_units").delete().eq("card_design_id", id);
-
-    // 4. Delete stock_batches referencing this design
-    await supabase.from("stock_batches").delete().eq("card_design_id", id);
-
-    // 5. Delete the card_design row itself
-    const { error: deleteError } = await supabase.from("card_designs").delete().eq("id", id);
-
-    if (deleteError) {
-      // Fallback: mark active = false if delete fails for another FK reason
-      await supabase.from("card_designs").update({ active: false }).eq("id", id);
-      return {
-        success: true,
-        message: `Wzór został oznaczony jako nieaktywny (${deleteError.message}).`,
-      };
-    }
+    const batch = writeBatch(db);
+    units.docs.forEach((unit) => batch.delete(unit.ref));
+    stockBatches.docs.forEach((stockBatch) => batch.delete(stockBatch.ref));
+    batch.delete(doc(db, "card_designs", id));
+    await batch.commit();
 
     return { success: true, message: "Wzór kartki został pomyślnie usunięty." };
   } catch (err) {

@@ -11,7 +11,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { db, isFirestoreCatalogEnabled } from "../config";
+import { db } from "../config";
 
 const MAX_WRITE_OPERATIONS = 400;
 
@@ -63,9 +63,6 @@ export const inventoryService = {
     name: string;
     adminUid: string;
   }): Promise<PreparedStockPrintOrder> {
-    if (!isFirestoreCatalogEnabled) {
-      throw new Error("Magazyn Firestore nie jest włączony w tym środowisku.");
-    }
     if (!Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > 10000) {
       throw new Error("Ilość musi mieścić się w zakresie 1–10000.");
     }
@@ -203,7 +200,6 @@ export const inventoryService = {
   },
 
   async receiveStockProductionOrder(stockOrderId: string): Promise<number> {
-    if (!isFirestoreCatalogEnabled) throw new Error("Magazyn Firestore nie jest włączony w tym środowisku.");
     const stockOrderRef = doc(db, "stock_production_orders", stockOrderId);
     const stockOrder = await getDoc(stockOrderRef);
     if (!stockOrder.exists()) throw new Error("Nie znaleziono zlecenia magazynowego.");
@@ -262,5 +258,26 @@ export const inventoryService = {
 
   async deleteUnit(unitId: string): Promise<void> {
     await deleteDoc(doc(db, "inventory_units", unitId));
+  },
+
+  /**
+   * Development-only cleanup used by the administrator's test inventory
+   * button. Keep the scope identical to the former database cleanup: QR
+   * print items, their jobs, and inventory units. Production orders and
+   * batches remain as an audit trail and are not silently erased.
+   */
+  async clearTestInventory(): Promise<void> {
+    const collectionsToClear = ["qr_print_job_items", "qr_print_jobs", "inventory_units"] as const;
+
+    for (const collectionName of collectionsToClear) {
+      const snapshot = await getDocs(collection(db, collectionName));
+      for (let index = 0; index < snapshot.docs.length; index += MAX_WRITE_OPERATIONS) {
+        const batch = writeBatch(db);
+        for (const item of snapshot.docs.slice(index, index + MAX_WRITE_OPERATIONS)) {
+          batch.delete(item.ref);
+        }
+        await batch.commit();
+      }
+    }
   },
 };
