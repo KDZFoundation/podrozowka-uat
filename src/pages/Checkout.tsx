@@ -188,6 +188,12 @@ const Checkout = () => {
           }),
         });
         responseData = await apiRes.json().catch(() => null);
+        // A proxy/runtime failure can return an empty or HTML response.  Treat
+        // it as a payment failure instead of continuing as if an order had
+        // been initialized — the cart must stay intact for a retry.
+        if (!apiRes.ok && !responseData?.error) {
+          responseData = { error: "payment_service_unavailable" };
+        }
       } catch (apiErr) {
         console.warn("[HotPay API direct error, trying fallback]:", apiErr);
       }
@@ -211,10 +217,9 @@ const Checkout = () => {
         return;
       }
 
-      clearCart();
-
       if (responseData?.payment_method === "cod" || paymentMethod === "cod") {
         const orderNumber = responseData?.order_number || "";
+        clearCart();
         toast.success("Zamówienie złożone", { description: "Zapłacisz przy odbiorze." });
         window.location.href = `/checkout/potwierdzenie?order=${encodeURIComponent(orderNumber)}&cod=1`;
         return;
@@ -225,6 +230,9 @@ const Checkout = () => {
         setIsSubmitting(false);
         return;
       }
+      // Clear the cart only after the gateway supplied a valid redirect.
+      // Otherwise the traveler can correct the issue and try again.
+      clearCart();
       window.location.href = url;
     } catch (e) {
       console.error(e);

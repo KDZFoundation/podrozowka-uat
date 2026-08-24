@@ -1,39 +1,28 @@
-import contactHandler from "../server/routes/contact";
-import healthHandler from "../server/routes/health";
-import registerPostcardHandler from "../server/routes/register-postcard";
-import buyInpostShipmentHandler from "../server/routes/inpost/buy-shipment";
-import createInpostShipmentHandler from "../server/routes/inpost/create-shipment";
-import inpostGeowidgetConfigHandler from "../server/routes/inpost/geowidget-config";
-import inpostSettingsHandler from "../server/routes/inpost/settings";
-import inpostWebhookHandler from "../server/routes/inpost/webhook";
-import inpostLabelHandler from "../server/routes/inpost/label/shipment-label";
-import orlenWidgetConfigHandler from "../server/routes/orlen/widget-config";
-import createHotpayHandler from "../server/routes/payments/create-hotpay";
-import hotpayWebhookHandler from "../server/routes/payments/hotpay-webhook";
-import paymentStatusHandler from "../server/routes/payments/status";
-import publicCommunityHandler from "../server/routes/public/community";
-import publicDistributionHandler from "../server/routes/public/distribution";
-import publicStatsHandler from "../server/routes/public/stats";
-
 type ApiHandler = { fetch: (request: Request) => Response | Promise<Response> };
+type RouteLoader = () => Promise<{ default: ApiHandler }>;
 
-const routes: Record<string, ApiHandler> = {
-  contact: contactHandler,
-  health: healthHandler,
-  "register-postcard": registerPostcardHandler,
-  "inpost/buy-shipment": buyInpostShipmentHandler,
-  "inpost/create-shipment": createInpostShipmentHandler,
-  "inpost/geowidget-config": inpostGeowidgetConfigHandler,
-  "inpost/settings": inpostSettingsHandler,
-  "inpost/webhook": inpostWebhookHandler,
-  "orlen/widget-config": orlenWidgetConfigHandler,
-  "payments/create-hotpay": createHotpayHandler,
-  "payments/hotpay-webhook": hotpayWebhookHandler,
-  "payments/status": paymentStatusHandler,
-  "public/community": publicCommunityHandler,
-  "public/distribution": publicDistributionHandler,
-  "public/stats": publicStatsHandler,
+// Do not load every integration when the function starts.  In particular,
+// /api/health must remain available even if Firestore or a carrier SDK has a
+// configuration problem.  Vercel still sees only this one function.
+const routes: Record<string, RouteLoader> = {
+  contact: () => import("../server/routes/contact"),
+  health: () => import("../server/routes/health"),
+  "register-postcard": () => import("../server/routes/register-postcard"),
+  "inpost/buy-shipment": () => import("../server/routes/inpost/buy-shipment"),
+  "inpost/create-shipment": () => import("../server/routes/inpost/create-shipment"),
+  "inpost/geowidget-config": () => import("../server/routes/inpost/geowidget-config"),
+  "inpost/settings": () => import("../server/routes/inpost/settings"),
+  "inpost/webhook": () => import("../server/routes/inpost/webhook"),
+  "orlen/widget-config": () => import("../server/routes/orlen/widget-config"),
+  "payments/create-hotpay": () => import("../server/routes/payments/create-hotpay"),
+  "payments/hotpay-webhook": () => import("../server/routes/payments/hotpay-webhook"),
+  "payments/status": () => import("../server/routes/payments/status"),
+  "public/community": () => import("../server/routes/public/community"),
+  "public/distribution": () => import("../server/routes/public/distribution"),
+  "public/stats": () => import("../server/routes/public/stats"),
 };
+
+const inpostLabelRoute: RouteLoader = () => import("../server/routes/inpost/label/shipment-label");
 
 const routePath = (request: Request) => new URL(request.url).pathname.replace(/^\/api\/?/, "").replace(/\/+$/, "");
 
@@ -79,8 +68,8 @@ export default async function handler(nodeRequest: {
   });
 
   const path = routePath(request);
-  const apiHandler = path.startsWith("inpost/label/") ? inpostLabelHandler : routes[path];
-  if (!apiHandler) {
+  const loadHandler = path.startsWith("inpost/label/") ? inpostLabelRoute : routes[path];
+  if (!loadHandler) {
     const target = nodeResponse.status(404);
     target.setHeader("Content-Type", "application/json");
     target.end(Buffer.from(JSON.stringify({ error: "not_found" })));
@@ -88,6 +77,7 @@ export default async function handler(nodeRequest: {
   }
 
   try {
+    const { default: apiHandler } = await loadHandler();
     const response = await apiHandler.fetch(request);
     const target = nodeResponse.status(response.status);
     response.headers.forEach((value, key) => target.setHeader(key, value));
