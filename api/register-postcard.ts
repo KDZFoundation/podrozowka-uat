@@ -95,7 +95,9 @@ export default {
               const uData = fromFirestoreFields(userDoc.fields) as Record<string, unknown>;
               travelerName = String(uData.display_name || uData.first_name || uData.full_name || "Podróżnik");
             }
-          } catch {}
+          } catch {
+            // The postcard can still be registered if the sender profile is absent.
+          }
         }
 
         let recipientName: string | null = null;

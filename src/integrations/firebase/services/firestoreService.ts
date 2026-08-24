@@ -59,6 +59,13 @@ const createdAtValue = (value: unknown): string => {
   return new Date(0).toISOString();
 };
 
+type TravelerInventoryUnit = {
+  id: string;
+  order_id?: string;
+  business_status?: string;
+  card_design_id?: string;
+};
+
 export const normalizeOrder = (id: string, raw: Record<string, unknown>): FirestoreOrder => ({
   ...raw,
   id,
@@ -399,8 +406,8 @@ export const firestoreService = {
         orders.filter((order) => order.payment_status === "paid").map((order) => order.id),
       );
       const units = unitsSnap.docs
-        .map((d) => ({ id: d.id, ...d.data() }))
-        .filter((unit: any) => typeof unit.order_id === "string" && paidOrderIds.has(unit.order_id));
+        .map((d) => ({ id: d.id, ...d.data() } as TravelerInventoryUnit))
+        .filter((unit) => typeof unit.order_id === "string" && paidOrderIds.has(unit.order_id));
       const totalUnits = units.length;
       const registeredUnitIds = new Set(
         regsSnap.docs
@@ -408,14 +415,14 @@ export const firestoreService = {
           .filter((unitId): unitId is string => typeof unitId === "string"),
       );
       const registeredCount = units.filter(
-        (unit: any) => unit.business_status === "registered" || registeredUnitIds.has(unit.id),
+        (unit) => unit.business_status === "registered" || registeredUnitIds.has(unit.id),
       ).length;
-      const purchasedCount = units.filter((u: any) => ["purchased", "assigned"].includes(u.business_status || "")).length;
+      const purchasedCount = units.filter((unit) => ["purchased", "assigned"].includes(unit.business_status || "")).length;
 
       const countrySet = new Set<string>();
       const countryMap = new Map<string, { total: number; registered: number }>();
 
-      units.forEach((u: any) => {
+      units.forEach((u) => {
         const design = designsMap.get(u.card_design_id);
         const countryId = design?.country_id || "PL";
         countrySet.add(countryId);
@@ -442,7 +449,8 @@ export const firestoreService = {
             : totalPoints >= 500
               ? "Odkrywca"
               : "Zwiadowca";
-      const totalKilometers = registeredCount > 0 ? Number((userProfile as any)?.total_kilometers || 0) : 0;
+      const profileRecord = userProfile as unknown as Record<string, unknown> | undefined;
+      const totalKilometers = registeredCount > 0 ? Number(profileRecord?.total_kilometers || 0) : 0;
 
       return {
         totalPoints,

@@ -4,6 +4,7 @@ import { Trophy, Medal, Award, Heart, Globe2, Sparkles, Users, TrendingUp } from
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import type { FirestoreUserProfile } from "@/integrations/firebase/types";
 import { Badge } from "@/components/ui/badge";
 
 interface RankedUser {
@@ -70,21 +71,30 @@ const getRankStyle = (rank: string) => RANK_STYLE[rank] ?? DEFAULT_RANK_STYLE;
 const FLAG_URL = (iso2: string) =>
   `https://flagcdn.com/w40/${iso2.toLowerCase()}.png`;
 
+type RankingProfile = FirestoreUserProfile & {
+  total_points?: number;
+  current_rank?: string;
+  postcards_purchased?: number;
+};
+
 const fetchRanking = async (): Promise<RankedUser[]> => {
   // 1. Try Firestore
   try {
     const firestoreUsers = await firestoreService.getTopTravelers(10);
     if (firestoreUsers.length > 0 && firestoreUsers.some(u => (u.gamification_points || 0) > 0)) {
-      return firestoreUsers.map(u => ({
+      return firestoreUsers.map((user) => {
+        const u = user as RankingProfile;
+        return {
         user_id: u.id || u.user_id || "",
         display_name: u.display_name || u.full_name || "Podróżnik",
         avatar_url: u.avatar_url || null,
-        total_points: u.gamification_points || (u as any).total_points || 0,
-        current_rank: u.current_tier || (u as any).current_rank || "Zwiadowca",
-        unitCount: u.postcards_sent_count || (u as any).postcards_purchased || 0,
+        total_points: u.gamification_points || u.total_points || 0,
+        current_rank: u.current_tier || u.current_rank || "Zwiadowca",
+        unitCount: u.postcards_sent_count || u.postcards_purchased || 0,
         regCount: u.postcards_registered_count || 0,
         countries: [{ iso2: "PL", name_pl: "Polska" }],
-      }));
+        };
+      });
     }
   } catch (e) {
     console.warn("Firestore fetchRanking error:", e);

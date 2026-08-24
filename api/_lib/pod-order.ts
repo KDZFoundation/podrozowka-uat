@@ -164,7 +164,9 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
       await updateDocument(`users/${order.user_id}`, userUpdate);
       try {
         await updateDocument(`profiles/${order.user_id}`, userUpdate);
-      } catch {}
+      } catch {
+        // A missing legacy profile must not block completing a paid order.
+      }
     } catch (e) {
       console.warn("[pod-order] User points update warning:", e);
     }
