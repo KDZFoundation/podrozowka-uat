@@ -114,6 +114,18 @@ const translations: Record<string, RegistrationCopy> = {
     registeredTitle: "¡Gracias! 🎉", registeredText: "Tu Podróżówka de", alreadyRegisteredTitle: "La postal ya está registrada", alreadyRegisteredText: "Esta Podróżówka fue registrada por",
     sentBy: "Enviada por:", learnMore: "Conoce más sobre Podróżówka", footer: "Postales de Polonia para el mundo",
   },
+  cs: {
+    locale: "cs-CZ", registration: "Registrace pohlednice", qrRecognized: "QR kód rozpoznán", heading: "Máš Podróżówku!", from: "Od:",
+    yourName: "Tvé jméno *", namePlaceholder: "Jak se jmenuješ?", shortMessage: "Krátká zpráva (volitelné)", messagePlaceholder: "Napiš něco cestovateli…",
+    receivedCountry: "Země, kde jsi pohlednici obdržel(a)", chooseCountry: "Vyber zemi…", email: "E-mail (volitelné)",
+    contactConsent: "Souhlasím s kontaktem od cestovatele, který tuto pohlednici poslal", shareLocation: "Sdílet polohu (volitelné)",
+    gettingLocation: "Získávám polohu…", locationAdded: "Poloha přidána!", register: "Zaregistrovat pohlednici", registering: "Registruji…",
+    nameRequired: "Zadej své jméno", nameTooLong: "Maximálně 100 znaků", messageTooLong: "Maximálně 500 znaků", emailInvalid: "Zadej platnou e-mailovou adresu",
+    locationUnsupported: "Tvůj prohlížeč nepodporuje geolokaci", locationFailed: "Nepodařilo se získat polohu",
+    genericErrorTitle: "Něco se pokazilo", genericErrorText: "Zkus to prosím znovu", missingQrCode: "Chybí QR kód", postcardNotFound: "Pohlednice nebyla nalezena", loadFailed: "Při načítání došlo k chybě", errorTitle: "Pohlednice nebyla nalezena", backHome: "Zpět na hlavní stránku", pageTitle: "Zaregistruj svou Podróżówku", pageDescription: "Dostal(a) jsi Podróżówku? Naskenuj QR kód a zaregistruj, kdy a kde jsi tuto pohlednici z Polska obdržel(a).",
+    registeredTitle: "Děkujeme! 🎉", registeredText: "Tvoje Podróżówka z", alreadyRegisteredTitle: "Pohlednice už je zaregistrovaná", alreadyRegisteredText: "Tuto Podróżówku zaregistroval(a)",
+    sentBy: "Poslal(a):", learnMore: "Poznej Podróżówku", footer: "Pohlednice z Polska pro svět",
+  },
 };
 
 export function getRegistrationCopy(languageCode?: string | null): RegistrationCopy {
