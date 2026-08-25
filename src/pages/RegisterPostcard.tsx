@@ -10,6 +10,7 @@ import RegisterPostcardSuccess from "@/components/register/RegisterPostcardSucce
 import RegisterPostcardAlreadyRegistered from "@/components/register/RegisterPostcardAlreadyRegistered";
 import { trackEvent } from "@/lib/analytics";
 import { getRegistrationCopy } from "@/lib/registrationI18n";
+import { backendApiUrl } from "@/lib/backendApi";
 
 export interface PostcardInfo {
   business_status: string | null;
@@ -39,8 +40,8 @@ const RegisterPostcard = () => {
 
   const requestRegistration = async (method: "GET" | "POST", body?: Record<string, unknown>) => {
     const apiEndpoint = method === "GET"
-      ? `/api/register-postcard?token=${encodeURIComponent(qrToken || "")}`
-      : "/api/register-postcard";
+      ? backendApiUrl(`/api/register-postcard?token=${encodeURIComponent(qrToken || "")}`)
+      : backendApiUrl("/api/register-postcard");
     const response = await fetch(apiEndpoint, {
       method,
       headers: {
