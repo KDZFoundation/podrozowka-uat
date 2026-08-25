@@ -277,10 +277,10 @@ export const AdminLanguageTemplates = () => {
 
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">
-                Kod języka (ISO) <span className="text-destructive">*</span>
+                Kod języka (ISO / BCP-47) <span className="text-destructive">*</span>
               </label>
               <Input
-                placeholder="np. pl, fr, en, de"
+                placeholder="np. pl, fr, en, de, nl-be, bem"
                 value={form.language_code}
                 onChange={(e) => setForm({ ...form, language_code: e.target.value.toLowerCase() })}
               />
