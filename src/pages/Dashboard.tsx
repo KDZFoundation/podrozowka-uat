@@ -34,6 +34,7 @@ const Dashboard = () => {
   useRealtimeNotifications();
   const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [canonicalPurchasedCount, setCanonicalPurchasedCount] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'my-postcards' | 'my-orders'>('overview');
 
@@ -48,7 +49,11 @@ const Dashboard = () => {
       if (!user) return;
 
       try {
-        const data = await firestoreService.getUserProfile(user.id);
+        const [data, stats] = await Promise.all([
+          firestoreService.getUserProfile(user.id),
+          firestoreService.getTravelerStats(user.id),
+        ]);
+        setCanonicalPurchasedCount(stats.purchasedCount);
         if (data) {
           setProfile({
             id: data.id || user.id,
@@ -118,7 +123,7 @@ const Dashboard = () => {
               )}
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium text-foreground">{profile?.display_name || user.email}</p>
-                <p className="text-xs text-muted-foreground">{profile?.postcards_purchased || 0} zakupionych</p>
+                <p className="text-xs text-muted-foreground">{canonicalPurchasedCount ?? profile?.postcards_purchased ?? 0} zakupionych</p>
               </div>
               <button onClick={signOut} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                 Wyloguj
