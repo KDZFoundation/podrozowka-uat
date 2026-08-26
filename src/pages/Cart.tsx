@@ -15,7 +15,7 @@ const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
 
 const Cart = () => {
-  const { setQuantity, setSecondaryLanguage, removeItem, items: savedCartItems } = useCart();
+  const { setQuantity, setLanguages, removeItem, items: savedCartItems } = useCart();
   const { items, subtotalGrosze, isLoading, isError, error, refetch } = useCartItems();
   const { optionsByLineId } = useCartLanguageOptions(items);
   const { user } = useAuth();
@@ -136,7 +136,7 @@ const Cart = () => {
                           )}
                           {it.secondary_language && (
                             <p className="mt-1 text-xs font-medium text-primary">
-                              Przód: język podstawowy / {it.secondary_language.name}
+                              Języki na przodzie i tyle: {it.primary_language?.name || "podstawowy"} / {it.secondary_language.name}
                             </p>
                           )}
                         </div>
@@ -158,9 +158,10 @@ const Cart = () => {
                         <>
                           <CartLanguagePicker
                             lineId={it.id}
-                            value={it.secondary_language}
+                            primaryValue={it.primary_language}
+                            secondaryValue={it.secondary_language}
                             options={optionsByLineId.get(it.id) || []}
-                            onChange={(language) => setSecondaryLanguage(it.id, language)}
+                            onChange={(primaryLanguage, secondaryLanguage) => setLanguages(it.id, primaryLanguage, secondaryLanguage)}
                           />
                           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                           <div className="flex items-center border border-border rounded-lg">

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Search, ArrowLeft, PackageCheck, Printer, FileText, CheckCircle2, Send, Trash2, CalendarClock, ClipboardList } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import { generatePodBatchPrintPdf, generatePodPrintPdf } from "@/lib/generatePodPrintPdf";
 import { generatePodShippingManifestPdf, type PodBatchShippingRow } from "@/lib/generatePodShippingManifestPdf";
 
@@ -112,6 +113,7 @@ const PAGE_SIZE = 50;
 
 const AdminOrders = () => {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -373,6 +375,7 @@ const AdminOrders = () => {
       if (selectedOrder?.id === orderId) {
         setSelectedOrder(null);
       }
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
       fetchOrders();
     } catch (error) {
       toast({ title: "Nie można usunąć zamówienia", description: getErrorMessage(error), variant: "destructive" });

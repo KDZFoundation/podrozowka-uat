@@ -40,6 +40,15 @@ interface PodUnitRow {
   id: string;
   card_design_id: string;
   order_item_id: string | null;
+  primary_language_code?: string | null;
+  secondary_language_code?: string | null;
+}
+
+interface LanguageTemplateData {
+  country_id: string;
+  language_code: string;
+  front_thank_you_text: string;
+  back_qr_label: string;
 }
 
 interface PodJobItemRow {
@@ -290,6 +299,11 @@ const generatePodPrintPdfForJobs = async (
       { iso2: country.iso2, flag_url: country.flag_url },
     ]),
   );
+  const templatesData = (await Promise.all(countryIds.map(async (countryId) => {
+    const snapshot = await getDocs(query(collection(db, "card_language_templates"), where("country_id", "==", countryId)));
+    return snapshot.docs.map((item) => item.data() as LanguageTemplateData);
+  }))).flat();
+  const templateByCountryAndCode = new Map(templatesData.map((template) => [`${template.country_id}:${template.language_code}`, template]));
 
   const QRCode = await import("qrcode");
   const renderedFronts = new Map<string, string>();
@@ -336,16 +350,25 @@ const generatePodPrintPdfForJobs = async (
         margin: 3,
         errorCorrectionLevel: "M",
       });
-      const frontCacheKey = `${design.id}:${unit?.order_item_id || "primary"}`;
+      const primary = templateByCountryAndCode.get(`${design.country_id}:${unit?.primary_language_code || ""}`);
+      const secondary = unit?.secondary_language_code ? templateByCountryAndCode.get(`${design.country_id}:${unit.secondary_language_code}`) : undefined;
+      const combined = (base: string | null, primaryText?: string, secondaryText?: string) =>
+        [primaryText || base || "", secondaryText || ""].filter((value, index, values) => value && values.indexOf(value) === index).join(" / ");
+      const printDesign: CardDesignData = {
+        ...design,
+        thank_you_text: combined(design.thank_you_text, primary?.front_thank_you_text, secondary?.front_thank_you_text),
+        back_qr_label: combined(design.back_qr_label, primary?.back_qr_label, secondary?.back_qr_label),
+      };
+      const frontCacheKey = `${design.id}:${unit?.primary_language_code || "base"}:${unit?.secondary_language_code || ""}`;
       let front = renderedFronts.get(frontCacheKey);
       if (!front) {
-        front = await renderCard("front", design, qrCodeDataUrl);
+        front = await renderCard("front", printDesign, qrCodeDataUrl);
         renderedFronts.set(frontCacheKey, front);
       }
       sheetItems.push({
         id: item.id,
         front,
-        back: await renderCard("back", design, qrCodeDataUrl),
+        back: await renderCard("back", printDesign, qrCodeDataUrl),
       });
     }
 

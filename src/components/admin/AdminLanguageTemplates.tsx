@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Plus, Pencil, Trash2, Check, X, Languages, Globe, BookOpen } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Languages, Globe, BookOpen, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +22,7 @@ interface LanguageTemplate {
   language_name: string;
   front_thank_you_text: string;
   back_qr_label: string;
+  is_primary?: boolean;
   created_at?: string;
   countries?: {
     name_pl: string;
@@ -44,6 +45,7 @@ export const AdminLanguageTemplates = () => {
     language_name: "Polski",
     front_thank_you_text: "DZIĘKUJĘ, ŻE JESTEŚ CZĘŚCIĄ MOJEJ PODRÓŻY",
     back_qr_label: "Zeskanuj ten kod QR i śledź moje podróże",
+    is_primary: false,
   });
 
   const fetchData = useCallback(async () => {
@@ -81,6 +83,7 @@ export const AdminLanguageTemplates = () => {
       language_name: "Polski",
       front_thank_you_text: "DZIĘKUJĘ, ŻE JESTEŚ CZĘŚCIĄ MOJEJ PODRÓŻY",
       back_qr_label: "Zeskanuj ten kod QR i śledź moje podróże",
+      is_primary: false,
     });
     setEditingId(null);
     setShowAdd(false);
@@ -138,6 +141,7 @@ export const AdminLanguageTemplates = () => {
       language_name: form.language_name,
       front_thank_you_text: form.front_thank_you_text,
       back_qr_label: form.back_qr_label,
+      is_primary: form.is_primary,
     };
 
     try {
@@ -157,6 +161,7 @@ export const AdminLanguageTemplates = () => {
       language_name: t.language_name,
       front_thank_you_text: t.front_thank_you_text,
       back_qr_label: t.back_qr_label,
+      is_primary: Boolean(t.is_primary),
     });
     setEditingId(t.id);
     setShowAdd(true);
@@ -324,6 +329,11 @@ export const AdminLanguageTemplates = () => {
             </div>
           </div>
 
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+            <input type="checkbox" checked={form.is_primary} onChange={(event) => setForm({ ...form, is_primary: event.target.checked })} className="h-4 w-4 accent-primary" />
+            <span><span className="font-semibold">Język podstawowy</span><br /><span className="text-xs text-muted-foreground">Będzie automatycznie używany w kreatorze i jako domyślny przy zakupie. W kraju może być tylko jeden.</span></span>
+          </label>
+
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={resetForm}>
               Anuluj
@@ -364,6 +374,7 @@ export const AdminLanguageTemplates = () => {
                     <td className="p-3">
                       <span className="font-semibold">{t.language_name}</span>{" "}
                       <span className="text-xs text-muted-foreground">({t.language_code})</span>
+                      {t.is_primary && <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"><Star className="h-3 w-3 fill-current" />Podstawowy</span>}
                     </td>
                     <td className="p-3 max-w-xs truncate text-foreground font-mono text-xs">
                       {t.front_thank_you_text}

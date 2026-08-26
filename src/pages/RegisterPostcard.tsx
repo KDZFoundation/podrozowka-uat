@@ -18,6 +18,7 @@ export interface PostcardInfo {
   registered_at: string | null;
   traveler_name: string | null;
   recipient_name: string | null;
+  available_languages?: Array<{ code: string; name: string }>;
   available_countries?: Array<{ iso2: string; name_pl: string }>;
   design: {
     title: string;
@@ -36,7 +37,8 @@ const RegisterPostcard = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
-  const copy = getRegistrationCopy(postcard?.design.language_code);
+  const [selectedLanguageCode, setSelectedLanguageCode] = useState("");
+  const copy = getRegistrationCopy(selectedLanguageCode || postcard?.design.language_code);
 
   const requestRegistration = async (method: "GET" | "POST", body?: Record<string, unknown>) => {
     const apiEndpoint = method === "GET"
@@ -65,7 +67,9 @@ const RegisterPostcard = () => {
 
       try {
         const data = await requestRegistration("GET");
-        setPostcard(data as PostcardInfo);
+        const loaded = data as PostcardInfo;
+        setPostcard(loaded);
+        setSelectedLanguageCode(loaded.design.language_code || loaded.available_languages?.[0]?.code || "en");
       } catch (err) {
         setError(err instanceof Error ? err.message : copy.loadFailed);
       }
@@ -83,6 +87,7 @@ const RegisterPostcard = () => {
     registeredCountryIso2?: string;
     latitude?: number;
     longitude?: number;
+    languageCode?: string;
   }) => {
     await requestRegistration("POST", {
         token: qrToken,
@@ -93,6 +98,7 @@ const RegisterPostcard = () => {
         registered_country_iso2: data.registeredCountryIso2 || undefined,
         latitude: data.latitude ?? undefined,
         longitude: data.longitude ?? undefined,
+        language_code: data.languageCode || selectedLanguageCode || undefined,
     });
 
     setIsSuccess(true);
@@ -152,7 +158,7 @@ const RegisterPostcard = () => {
         <meta property="og:description" content={copy.pageDescription} />
         <meta property="og:url" content="https://podrozowka.lovable.app/r" />
       </Helmet>
-      <RegisterPostcardForm postcard={postcard} onSubmit={handleSubmit} />
+      <RegisterPostcardForm postcard={postcard} languageCode={selectedLanguageCode || postcard.design.language_code} onLanguageChange={setSelectedLanguageCode} onSubmit={handleSubmit} />
     </>
   );
 };

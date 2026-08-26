@@ -47,6 +47,8 @@ interface LanguageTemplate {
   language_code: string;
   language_name: string;
   front_thank_you_text: string;
+  back_qr_label: string;
+  is_primary?: boolean;
 }
 
 const formatPln = (grosze: number) =>
@@ -62,6 +64,7 @@ const ShopProduct = () => {
   const [activeImage, setActiveImage] = useState<string | null>(null);
   const [quantityToAdd, setQuantityToAdd] = useState<number>(1);
   const [languageTemplates, setLanguageTemplates] = useState<LanguageTemplate[]>([]);
+  const [primaryLanguageCode, setPrimaryLanguageCode] = useState("");
   const [secondaryLanguageCode, setSecondaryLanguageCode] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -129,14 +132,16 @@ const ShopProduct = () => {
 
       const templates = await firestoreService.getLanguageTemplatesForCountry(foundProduct.country_id);
       setLanguageTemplates(
-        templates
-          .filter((template) => template.language_code !== foundProduct.language_code)
-          .map((template) => ({
+        templates.map((template) => ({
             language_code: template.language_code,
             language_name: template.language_name,
             front_thank_you_text: template.front_thank_you_text,
+            back_qr_label: template.back_qr_label,
+            is_primary: Boolean(template.is_primary),
           })),
       );
+      const defaultTemplate = templates.find((template) => template.is_primary) || templates.find((template) => template.language_code === foundProduct!.language_code) || templates[0];
+      setPrimaryLanguageCode(defaultTemplate?.language_code || foundProduct.language_code);
 
       setImages(extraImages);
       setActiveImage(foundProduct.image_front_url || (extraImages[0]?.url) || null);
@@ -167,17 +172,24 @@ const ShopProduct = () => {
   const handleAddToCart = () => {
     if (!product) return;
     const quantity = Math.max(1, Math.floor(quantityToAdd) || 1);
-    const secondaryLanguage = languageTemplates.find((template) => template.language_code === secondaryLanguageCode);
+    const primaryTemplate = languageTemplates.find((template) => template.language_code === primaryLanguageCode);
+    const secondaryLanguage = languageTemplates.find((template) => template.language_code === secondaryLanguageCode && template.language_code !== primaryLanguageCode);
     addItem(product.id, quantity, undefined, {
       title: getProductTitle(product),
       image_front_url: product.image_front_url,
       price_grosze: product.price_grosze,
       currency: "PLN",
       country_name: product.countries?.name_pl ?? null,
-    }, secondaryLanguage ? {
+    }, primaryTemplate ? {
+      code: primaryTemplate.language_code,
+      name: primaryTemplate.language_name,
+      front_text: primaryTemplate.front_thank_you_text,
+      back_text: primaryTemplate.back_qr_label,
+    } : undefined, secondaryLanguage ? {
       code: secondaryLanguage.language_code,
       name: secondaryLanguage.language_name,
       front_text: secondaryLanguage.front_thank_you_text,
+      back_text: secondaryLanguage.back_qr_label,
     } : undefined);
     const noun = quantity === 1 ? "pocztówkę" : quantity >= 2 && quantity <= 4 ? "pocztówki" : "pocztówek";
     toast.success(`Dodano ${quantity} ${noun} do koszyka`);
@@ -281,12 +293,24 @@ const ShopProduct = () => {
 
             {languageTemplates.length > 0 && (
               <div className="mb-5 rounded-xl border border-border bg-muted/30 p-4">
-                <label htmlFor="secondary-language" className="block text-sm font-semibold text-foreground">
-                  Dodatkowy język na przodzie kartki <span className="font-normal text-muted-foreground">(opcjonalnie)</span>
+                <label htmlFor="primary-language" className="block text-sm font-semibold text-foreground">
+                  Język podstawowy
                 </label>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                  Podziękowanie zostanie wydrukowane w dwóch językach, rozdzielonych ukośnikiem. Tył z kodem QR pozostanie w języku podstawowym wzoru.
+                  Jest wybierany automatycznie z konfiguracji kraju; możesz go zmienić tylko dla tej kupowanej Podróżówki.
                 </p>
+                <select
+                  id="primary-language"
+                  value={primaryLanguageCode}
+                  onChange={(event) => { setPrimaryLanguageCode(event.target.value); if (event.target.value === secondaryLanguageCode) setSecondaryLanguageCode(""); }}
+                  className="mt-3 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {languageTemplates.map((template) => <option key={template.language_code} value={template.language_code}>{template.language_name}{template.is_primary ? " (domyślny)" : ""}</option>)}
+                </select>
+                <label htmlFor="secondary-language" className="mt-4 block text-sm font-semibold text-foreground">
+                  Dodatkowy język <span className="font-normal text-muted-foreground">(opcjonalnie)</span>
+                </label>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Po wyborze oba języki będą wydrukowane na przodzie i tyle kartki.</p>
                 <select
                   id="secondary-language"
                   value={secondaryLanguageCode}
@@ -294,7 +318,7 @@ const ShopProduct = () => {
                   className="mt-3 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary"
                 >
                   <option value="">Bez dodatkowego języka</option>
-                  {languageTemplates.map((template) => (
+                  {languageTemplates.filter((template) => template.language_code !== primaryLanguageCode).map((template) => (
                     <option key={template.language_code} value={template.language_code}>
                       {template.language_name}
                     </option>

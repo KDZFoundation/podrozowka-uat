@@ -99,6 +99,8 @@ export interface FirestoreLanguageTemplate {
   language_name: string;
   front_thank_you_text: string;
   back_qr_label: string;
+  /** Jeden wariant na kraj jest domyślnie wybierany w kreatorze i sklepie. */
+  is_primary?: boolean;
 }
 
 export interface FirestoreUserProfile {
@@ -127,6 +129,8 @@ export interface FirestoreOrderItem {
   unit_price_pln: number;
   total_price_pln: number;
   language_code?: string;
+  primary_language_code?: string;
+  secondary_language_code?: string;
 }
 
 export interface FirestoreOrder {
@@ -184,5 +188,6 @@ export interface FirestoreRecipientRegistration {
   };
   message?: string;
   photo_url?: string;
+  language_code?: string;
   registered_at: string;
 }

@@ -48,6 +48,7 @@ interface LanguageTemplate {
   language_name: string;
   front_thank_you_text: string;
   back_qr_label: string;
+  is_primary?: boolean;
 }
 
 interface CropSettings {
@@ -135,14 +136,23 @@ export const AdminCardCreator = ({
         name_pl: country.name_pl || country.name,
         flag_url: country.flag_url || null,
       })));
-      setLangTemplates(fireTemplates.map((template) => ({
+      const mappedTemplates = fireTemplates.map((template) => ({
         id: template.id,
         country_id: template.country_id,
         language_code: template.language_code,
         language_name: template.language_name,
         front_thank_you_text: template.front_thank_you_text,
         back_qr_label: template.back_qr_label,
-      })));
+        is_primary: Boolean(template.is_primary),
+      }));
+      setLangTemplates(mappedTemplates);
+      const primary = mappedTemplates.find((template) => template.is_primary) || mappedTemplates[0];
+      if (primary) {
+        setSelectedTemplateId(primary.id);
+        setLanguageCode(primary.language_code);
+        setThankYouText(primary.front_thank_you_text);
+        setBackQrLabel(primary.back_qr_label);
+      }
       setCategories(fireCategories.map((category) => ({ id: category.id, name: category.name_pl || category.name || category.slug, slug: category.slug })));
       setAuthors(fireAuthors.map((author) => ({ id: author.id, display_name: author.name, agreement_status: "zaakceptowana", active: author.is_active })));
     } catch (error) {
@@ -157,6 +167,15 @@ export const AdminCardCreator = ({
   // When Country or Language Template changes
   const availableTemplates = langTemplates.filter((t) => t.country_id === countryId);
 
+  const applyPrimaryTemplate = (templates: LanguageTemplate[]) => {
+    const primary = templates.find((template) => template.is_primary) || templates[0];
+    if (!primary) return;
+    setSelectedTemplateId(primary.id);
+    setLanguageCode(primary.language_code);
+    setThankYouText(primary.front_thank_you_text);
+    setBackQrLabel(primary.back_qr_label);
+  };
+
   const handleCountrySelect = async (cId: string) => {
     setCountryId(cId);
     setSelectedTemplateId("");
@@ -169,14 +188,9 @@ export const AdminCardCreator = ({
         language_name: template.language_name,
         front_thank_you_text: template.front_thank_you_text,
         back_qr_label: template.back_qr_label,
+        is_primary: Boolean(template.is_primary),
       })));
-      const firstTpl = templates[0];
-      if (firstTpl) {
-        setSelectedTemplateId(firstTpl.id);
-        setLanguageCode(firstTpl.language_code);
-        setThankYouText(firstTpl.front_thank_you_text);
-        setBackQrLabel(firstTpl.back_qr_label);
-      }
+      applyPrimaryTemplate(templates);
     } catch (error) {
       toast({ title: "Nie udało się wczytać wariantów językowych", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
@@ -380,7 +394,7 @@ export const AdminCardCreator = ({
                 <label className="text-xs font-medium text-muted-foreground block mb-1">
                   Szablon językowy (z bazy)
                 </label>
-                <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
+                <Select value={selectedTemplateId} disabled>
                   <SelectTrigger>
                     <SelectValue placeholder="Wybierz wariant językowy..." />
                   </SelectTrigger>
@@ -392,7 +406,7 @@ export const AdminCardCreator = ({
                     ) : (
                       availableTemplates.map((t) => (
                         <SelectItem key={t.id} value={t.id}>
-                          {t.language_name} ({t.language_code.toUpperCase()})
+                          {t.language_name} ({t.language_code.toUpperCase()}){t.is_primary ? " — podstawowy" : ""}
                         </SelectItem>
                       ))
                     )}

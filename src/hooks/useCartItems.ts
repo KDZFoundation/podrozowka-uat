@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { cartLineId, type CartSecondaryLanguage, useCart } from "@/contexts/CartContext";
+import { cartLineId, type CartSecondaryLanguage, type CartLanguage, useCart } from "@/contexts/CartContext";
 import { getProductTitle } from "@/lib/productTitle";
 
 export interface EnrichedCartItem {
@@ -16,6 +16,7 @@ export interface EnrichedCartItem {
   language_code: string | null;
   country_name: string | null;
   secondary_language?: CartSecondaryLanguage;
+  primary_language?: CartLanguage;
 }
 
 interface CardDesignRow {
@@ -71,7 +72,7 @@ export const useCartItems = () => {
     // fallback only; checkout still validates the design server-side.
     const unavailable = d ? !d.active || d.price_grosze === 0 : !snapshot;
     return {
-      id: cartLineId(item.card_design_id, item.secondary_language?.code),
+      id: cartLineId(item.card_design_id, item.primary_language?.code, item.secondary_language?.code),
       card_design_id: item.card_design_id,
       title: d ? getProductTitle(d) : snapshot?.title ?? null,
       image: d?.image_front_url ?? snapshot?.image_front_url ?? null,
@@ -83,6 +84,7 @@ export const useCartItems = () => {
       language_code: d?.language_code ?? null,
       country_name: d?.countries?.name_pl ?? snapshot?.country_name ?? null,
       ...(item.secondary_language ? { secondary_language: item.secondary_language } : {}),
+      ...(item.primary_language ? { primary_language: item.primary_language } : {}),
     };
   });
   const subtotalGrosze = enriched

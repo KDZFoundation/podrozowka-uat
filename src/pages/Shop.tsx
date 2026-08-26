@@ -6,7 +6,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { getProductTitle } from "@/lib/productTitle";
-import { useCart } from "@/contexts/CartContext";
+import { useCart, type CartLanguage } from "@/contexts/CartContext";
 import { getCategoryIcon } from "@/lib/categoryIcons";
 import { PostcardFront, type CropSettings } from "@/components/postcard/PostcardFront";
 
@@ -51,6 +51,7 @@ const Shop = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [countries, setCountries] = useState<Country[]>([]);
+  const [primaryLanguagesByCountry, setPrimaryLanguagesByCountry] = useState<Map<string, CartLanguage>>(new Map());
   const [countryFilter, setCountryFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [quantitiesToAdd, setQuantitiesToAdd] = useState<Record<string, number>>({});
@@ -64,9 +65,10 @@ const Shop = () => {
 
   useEffect(() => {
     const loadFilters = async () => {
-      const [fireCats, fireCountries] = await Promise.all([
+      const [fireCats, fireCountries, languageTemplates] = await Promise.all([
         firestoreService.getCategories(),
         firestoreService.getCountries(),
+        firestoreService.getLanguageTemplates(),
       ]);
       const rawCategories: Category[] = fireCats
         .filter((category) => category.is_active !== false)
@@ -93,6 +95,18 @@ const Shop = () => {
       });
       setAllCategories(normalizedCategories);
       setCountries(rawCountries);
+      const defaults = new Map<string, CartLanguage>();
+      languageTemplates.forEach((template) => {
+        if (!defaults.has(template.country_id) || template.is_primary) {
+          defaults.set(template.country_id, {
+            code: template.language_code,
+            name: template.language_name,
+            front_text: template.front_thank_you_text,
+            back_text: template.back_qr_label,
+          });
+        }
+      });
+      setPrimaryLanguagesByCountry(defaults);
       if (countryIso && rawCountries.length > 0) {
         const country = rawCountries.find((item) => item.iso2.toLowerCase() === countryIso.toLowerCase());
         if (country) setCountryFilter(country.id);
@@ -403,7 +417,7 @@ const Shop = () => {
                             price_grosze: p.price_grosze,
                             currency: "PLN",
                             country_name: p.countries?.name_pl ?? null,
-                          });
+                          }, primaryLanguagesByCountry.get(p.country_id));
                           toast.success(`Dodano ${quantity} szt. do koszyka`);
                           setQuantitiesToAdd((current) => ({ ...current, [p.id]: 1 }));
                         }}

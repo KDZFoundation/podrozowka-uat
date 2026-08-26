@@ -69,12 +69,14 @@ export default {
         let designData: Record<string, unknown> = {};
         let countryName = "Polska";
         let countryIso2 = "PL";
+        let countryId = "PL";
+        let availableLanguages: Array<{ code: string; name: string }> = [];
 
         if (designId) {
           try {
             const designDoc = await readDocument("card_designs", designId);
             if (designDoc.fields) designData = fromFirestoreFields(designDoc.fields) as Record<string, unknown>;
-            const countryId = String(designData.country_id || "PL");
+            countryId = String(designData.country_id || "PL");
             const countryDoc = await readDocument("countries", countryId);
             if (countryDoc.fields) {
               const cData = fromFirestoreFields(countryDoc.fields) as Record<string, unknown>;
@@ -85,6 +87,11 @@ export default {
             console.warn("[register-postcard] design load warning:", e);
           }
         }
+        try {
+          availableLanguages = (await queryDocuments("card_language_templates", "country_id", { stringValue: countryId }))
+            .map((template) => ({ code: String(template.data.language_code || ""), name: String(template.data.language_name || template.data.language_code || "") }))
+            .filter((language) => language.code);
+        } catch { /* registration still works with the card's default language */ }
 
         let travelerName: string | null = null;
         const travelerUserId = String(unit.traveler_user_id || "");
@@ -121,6 +128,7 @@ export default {
             country_iso2: countryIso2,
             language_code: designData.language_code || "pl",
           },
+          available_languages: availableLanguages,
         }), { status: 200, headers: jsonHeaders });
       }
 
@@ -135,6 +143,7 @@ export default {
           latitude,
           longitude,
           registered_country_iso2,
+          language_code,
         } = body;
 
         if (!token || !recipient_name) {
@@ -167,6 +176,37 @@ export default {
           return new Response(JSON.stringify({ error: "Nie można bezpiecznie zarejestrować tej kartki" }), { status: 409, headers: jsonHeaders });
         }
 
+        // The recipient may only choose a language configured for the country
+        // of this postcard. Keeping this check server-side prevents a crafted
+        // browser request from storing an unrelated language code.
+        let registeredLanguageCode = language_code ? String(language_code).trim() : "";
+        try {
+          const designDoc = await readDocument("card_designs", String(unit.card_design_id || ""));
+          const designData = designDoc.fields
+            ? fromFirestoreFields(designDoc.fields) as Record<string, unknown>
+            : {};
+          const countryId = String(designData.country_id || "");
+          const templates = countryId
+            ? await queryDocuments("card_language_templates", "country_id", { stringValue: countryId })
+            : [];
+          const languageCodes = templates
+            .map((template) => String(template.data.language_code || ""))
+            .filter(Boolean);
+
+          if (registeredLanguageCode && languageCodes.length > 0 && !languageCodes.includes(registeredLanguageCode)) {
+            return new Response(JSON.stringify({ error: "invalid_language_for_country" }), { status: 400, headers: jsonHeaders });
+          }
+
+          if (!registeredLanguageCode) {
+            const primaryTemplate = templates.find((template) => Boolean(template.data.is_primary));
+            registeredLanguageCode = String(
+              primaryTemplate?.data.language_code || designData.language_code || languageCodes[0] || ""
+            );
+          }
+        } catch (error) {
+          console.warn("[register-postcard] language validation warning:", error);
+        }
+
         const now = new Date().toISOString();
         const regId = crypto.randomUUID();
         const toFields = (data: Record<string, unknown>) =>
@@ -182,6 +222,7 @@ export default {
           recipient_email: recipient_email ? String(recipient_email).trim() : null,
           contact_opt_in: Boolean(contact_opt_in),
           registered_country_iso2: registered_country_iso2 ? String(registered_country_iso2).trim() : null,
+          language_code: registeredLanguageCode || null,
           latitude: typeof latitude === "number" ? latitude : null,
           longitude: typeof longitude === "number" ? longitude : null,
           registered_at: now,
@@ -192,6 +233,7 @@ export default {
           business_status: "registered",
           registered_at: now,
           updated_at: now,
+          recipient_language_code: registeredLanguageCode || null,
         };
         const writes: Record<string, unknown>[] = [
           {

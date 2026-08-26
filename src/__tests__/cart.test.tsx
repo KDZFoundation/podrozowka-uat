@@ -171,7 +171,7 @@ describe('CartContext', () => {
 
   it('keeps language variants of the same postcard as separate cart lines', () => {
     const { result } = renderHook(() => useCart(), { wrapper });
-    const catalan = { code: 'ca', name: 'Kataloński', front_text: 'GRÀCIES PER FORMAR PART DEL MEU VIATGE' };
+    const catalan = { code: 'ca', name: 'Kataloński', front_text: 'GRÀCIES PER FORMAR PART DEL MEU VIATGE', back_text: 'Escaneja el codi QR' };
     act(() => {
       result.current.addItem('prod-es', 2);
       result.current.addItem('prod-es', 3, undefined, undefined, catalan);
@@ -182,31 +182,32 @@ describe('CartContext', () => {
     expect(result.current.getQuantity('prod-es', 'ca')).toBe(3);
   });
 
-  it('adds a secondary language to a cart line without changing its quantity', () => {
+  it('sets primary and secondary languages for a cart line without changing its quantity', () => {
     const { result } = renderHook(() => useCart(), { wrapper });
+    const spanish = { code: 'es', name: 'Hiszpański', front_text: 'GRACIAS', back_text: 'Escanea el código QR' };
     const basque = { code: 'eu', name: 'Baskijski', front_text: 'ESKERRIK ASKO NIRE BIDAIAREN PARTE IZATEAGATIK' };
     act(() => {
       result.current.addItem('prod-es', 4);
-      result.current.setSecondaryLanguage('prod-es', basque);
+      result.current.setLanguages('prod-es', spanish, basque);
     });
 
     expect(result.current.items).toEqual([
-      { card_design_id: 'prod-es', quantity: 4, secondary_language: basque },
+      { card_design_id: 'prod-es', quantity: 4, primary_language: spanish, secondary_language: basque },
     ]);
-    expect(result.current.getQuantity('prod-es', 'eu')).toBe(4);
+    expect(result.current.getQuantity('prod-es', 'es', 'eu')).toBe(4);
   });
 
   it('merges quantities when a cart language change matches an existing variant', () => {
     const { result } = renderHook(() => useCart(), { wrapper });
-    const catalan = { code: 'ca', name: 'KataloĹ„ski', front_text: 'GRĂ€CIES' };
+    const catalan = { code: 'ca', name: 'Kataloński', front_text: 'GRÀCIES', back_text: 'Escaneja el codi QR' };
     act(() => {
       result.current.addItem('prod-es', 2);
       result.current.addItem('prod-es', 3, undefined, undefined, catalan);
-      result.current.setSecondaryLanguage('prod-es', catalan);
+      result.current.setLanguages('prod-es', catalan);
     });
 
     expect(result.current.items).toEqual([
-      { card_design_id: 'prod-es', quantity: 5, secondary_language: catalan },
+      { card_design_id: 'prod-es', quantity: 5, primary_language: catalan },
     ]);
   });
 

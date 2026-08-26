@@ -185,7 +185,7 @@ export const firestoreService = {
       );
       return snap.docs
         .map((item) => ({ id: item.id, ...item.data() } as FirestoreLanguageTemplate))
-        .sort((left, right) => left.language_name.localeCompare(right.language_name, "pl"));
+        .sort((left, right) => Number(Boolean(right.is_primary)) - Number(Boolean(left.is_primary)) || left.language_name.localeCompare(right.language_name, "pl"));
     } catch {
       return [];
     }
@@ -297,9 +297,26 @@ export const firestoreService = {
   async deleteOrdersByNumber(orderNumber: string): Promise<number> {
     if (!isFirebaseConfigured) return 0;
     const snapshot = await getDocs(query(collection(db, "orders"), where("order_number", "==", orderNumber)));
-    const batch = writeBatch(db);
-    snapshot.docs.forEach((orderDocument) => batch.delete(orderDocument.ref));
-    await batch.commit();
+    if (snapshot.empty) return 0;
+
+    const refsToDelete = [...snapshot.docs.map((orderDocument) => orderDocument.ref)];
+    const orderIds = snapshot.docs.map((orderDocument) => orderDocument.id);
+
+    // Purchase and rank notifications belong to an order. Remove them with the
+    // order so the bell cannot retain a notification for deleted test orders.
+    for (let index = 0; index < orderIds.length; index += 30) {
+      const orderIdChunk = orderIds.slice(index, index + 30);
+      const notificationSnapshot = await getDocs(
+        query(collection(db, "notifications"), where("order_id", "in", orderIdChunk)),
+      );
+      notificationSnapshot.docs.forEach((notificationDocument) => refsToDelete.push(notificationDocument.ref));
+    }
+
+    for (let index = 0; index < refsToDelete.length; index += 450) {
+      const batch = writeBatch(db);
+      refsToDelete.slice(index, index + 450).forEach((reference) => batch.delete(reference));
+      await batch.commit();
+    }
     return snapshot.size;
   },
 
@@ -624,7 +641,9 @@ export const firestoreService = {
     if (!isFirebaseConfigured) return [];
     try {
       const snap = await getDocs(collection(db, "card_language_templates"));
-      return snap.docs.map((item) => ({ id: item.id, ...item.data() } as FirestoreLanguageTemplate));
+      return snap.docs
+        .map((item) => ({ id: item.id, ...item.data() } as FirestoreLanguageTemplate))
+        .sort((left, right) => left.country_id.localeCompare(right.country_id) || Number(Boolean(right.is_primary)) - Number(Boolean(left.is_primary)) || left.language_name.localeCompare(right.language_name, "pl"));
     } catch {
       return [];
     }
@@ -635,15 +654,37 @@ export const firestoreService = {
     data: Omit<FirestoreLanguageTemplate, "id">,
   ): Promise<void> {
     if (!isFirebaseConfigured) return;
-    await setDoc(doc(db, "card_language_templates", id), {
-      ...data,
-      updated_at: new Date().toISOString(),
-    }, { merge: true });
+    const templates = await this.getLanguageTemplatesForCountry(data.country_id);
+    const own = templates.find((template) => template.id === id);
+    // Pierwszy wariant kraju staje się podstawowy automatycznie. Późniejsze
+    // warianty są podstawowe wyłącznie po świadomym wyborze administratora.
+    // A country must always keep one default. Demoting the current default is
+    // therefore only possible by promoting another template in the same save.
+    const isPrimary = data.is_primary === true || Boolean(own?.is_primary) || (!own && !templates.some((template) => template.is_primary));
+    const batch = writeBatch(db);
+    const target = doc(db, "card_language_templates", id);
+    if (isPrimary) {
+      templates.filter((template) => template.id !== id && template.is_primary).forEach((template) => {
+        batch.update(doc(db, "card_language_templates", template.id), { is_primary: false, updated_at: new Date().toISOString() });
+      });
+    }
+    batch.set(target, { ...data, is_primary: isPrimary, updated_at: new Date().toISOString() }, { merge: true });
+    await batch.commit();
   },
 
   async deleteLanguageTemplate(id: string): Promise<void> {
     if (!isFirebaseConfigured) return;
-    await deleteDoc(doc(db, "card_language_templates", id));
+    const target = await getDoc(doc(db, "card_language_templates", id));
+    if (!target.exists()) return;
+    const data = target.data() as FirestoreLanguageTemplate;
+    const siblings = await this.getLanguageTemplatesForCountry(data.country_id);
+    const batch = writeBatch(db);
+    batch.delete(target.ref);
+    if (data.is_primary) {
+      const replacement = siblings.find((template) => template.id !== id);
+      if (replacement) batch.update(doc(db, "card_language_templates", replacement.id), { is_primary: true, updated_at: new Date().toISOString() });
+    }
+    await batch.commit();
   },
 
   async getPaidTravelerUnits(userId: string): Promise<Array<Record<string, unknown> & { id: string }>> {

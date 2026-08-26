@@ -17,6 +17,8 @@ type PodOrderItem = {
   title?: string;
   quantity?: number;
   product_code?: string;
+  primary_language_code?: string;
+  secondary_language_code?: string;
 };
 
 export const preparePaidOrderPod = async (orderPath: string, orderNumber: string) => {
@@ -99,6 +101,8 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
         order_id: orderId,
         order_number: orderNumber,
         order_item_id: `${orderId}-${itemIndex}`,
+        primary_language_code: String(item.primary_language_code || design.language_code || "pl"),
+        secondary_language_code: item.secondary_language_code ? String(item.secondary_language_code) : null,
         public_claim_code: claimCode,
         public_claim_token_hash: crypto.createHash("sha256").update(token, "utf8").digest("hex"),
         qr_generated_at: now,

@@ -133,6 +133,7 @@ const Checkout = () => {
             card_design_id: i.card_design_id,
             quantity: i.quantity,
             ...(i.secondary_language ? { secondary_language_code: i.secondary_language.code } : {}),
+            ...(i.primary_language ? { primary_language_code: i.primary_language.code } : {}),
           })),
         shipping_method: shippingMethod,
         pickup_point:

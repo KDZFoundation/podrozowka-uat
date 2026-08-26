@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { fromFirestoreFields, readDocument, writeDocument } from "../../../api/_lib/gcp-firestore.js";
 import { json, preflight } from "../../../api/_lib/http.js";
 
-type CheckoutItem = { card_design_id?: string; quantity?: number; secondary_language_code?: string };
+type CheckoutItem = { card_design_id?: string; quantity?: number; primary_language_code?: string; secondary_language_code?: string };
 
 const sha256 = (value: string) => crypto.createHash("sha256").update(value, "utf8").digest("hex");
 
@@ -40,6 +40,7 @@ export default {
           language_code: String(data.language_code || "pl"),
           product_code: String(data.product_code || ""),
           secondary_language_code: item.secondary_language_code || null,
+          primary_language_code: item.primary_language_code || String(data.language_code || "pl"),
         };
       }));
 

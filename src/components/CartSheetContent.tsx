@@ -11,7 +11,7 @@ const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
 
 const CartSheetContent = () => {
-  const { setQuantity, setSecondaryLanguage, removeItem, items: savedCartItems } = useCart();
+  const { setQuantity, setLanguages, removeItem, items: savedCartItems } = useCart();
   const { items, subtotalGrosze, isLoading } = useCartItems();
   const { optionsByLineId } = useCartLanguageOptions(items);
 
@@ -78,7 +78,9 @@ const CartSheetContent = () => {
                       {it.title || "Podróżówka"}
                     </Link>
                     {it.secondary_language && (
-                      <p className="mt-1 text-xs text-primary">Przód: + {it.secondary_language.name}</p>
+                      <p className="mt-1 text-xs text-primary">
+                        Języki: {it.primary_language?.name || "podstawowy"} / {it.secondary_language.name}
+                      </p>
                     )}
                     <button
                       onClick={() => removeItem(it.id)}
@@ -91,9 +93,10 @@ const CartSheetContent = () => {
                   {!it.unavailable && (
                     <CartLanguagePicker
                       lineId={it.id}
-                      value={it.secondary_language}
+                      primaryValue={it.primary_language}
+                      secondaryValue={it.secondary_language}
                       options={optionsByLineId.get(it.id) || []}
-                      onChange={(language) => setSecondaryLanguage(it.id, language)}
+                      onChange={(primaryLanguage, secondaryLanguage) => setLanguages(it.id, primaryLanguage, secondaryLanguage)}
                       compact
                     />
                   )}

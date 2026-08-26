@@ -7,12 +7,13 @@ export interface CartLanguageOption {
   code: string;
   name: string;
   front_text: string;
+  back_text: string;
+  is_primary: boolean;
 }
 
 /**
- * Returns the secondary front-language choices for each cart line. The
- * language list is scoped to the country of that postcard, just like on the
- * product page.
+ * Returns all language choices for each cart line. The language list is scoped
+ * to the country of that postcard, just like on the product page.
  */
 export const useCartLanguageOptions = (items: EnrichedCartItem[]) => {
   const countryIds = useMemo(
@@ -39,11 +40,13 @@ export const useCartLanguageOptions = (items: EnrichedCartItem[]) => {
       items.map((item) => [
         item.id,
         all
-          .filter((template) => template.country_id === item.country_id && template.language_code !== item.language_code)
+          .filter((template) => template.country_id === item.country_id)
           .map((template) => ({
             code: template.language_code,
             name: template.language_name,
             front_text: template.front_thank_you_text,
+            back_text: template.back_qr_label,
+            is_primary: Boolean(template.is_primary),
           })),
       ]),
     );

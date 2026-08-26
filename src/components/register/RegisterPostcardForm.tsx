@@ -22,18 +22,21 @@ const makeFormSchema = (copy: ReturnType<typeof getRegistrationCopy>) => z.objec
   contactOptIn: z.boolean().default(false),
   latitude: z.number().optional(),
   longitude: z.number().optional(),
+  languageCode: z.string().optional(),
 });
 
 type FormValues = z.infer<ReturnType<typeof makeFormSchema>>;
 
 interface Props {
   postcard: PostcardInfo;
+  languageCode: string;
+  onLanguageChange: (code: string) => void;
   onSubmit: (data: FormValues) => Promise<void>;
 }
 
-const RegisterPostcardForm = ({ postcard, onSubmit }: Props) => {
+const RegisterPostcardForm = ({ postcard, languageCode, onLanguageChange, onSubmit }: Props) => {
   const { toast } = useToast();
-  const copy = getRegistrationCopy(postcard.design.language_code);
+  const copy = getRegistrationCopy(languageCode || postcard.design.language_code);
   const formSchema = useMemo(() => makeFormSchema(copy), [copy]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [geoStatus, setGeoStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
@@ -72,7 +75,7 @@ const RegisterPostcardForm = ({ postcard, onSubmit }: Props) => {
   const handleSubmit = async (values: FormValues) => {
     setIsSubmitting(true);
     try {
-      await onSubmit(values);
+      await onSubmit({ ...values, languageCode });
     } catch (err) {
       toast({
         title: copy.genericErrorTitle,
@@ -115,6 +118,15 @@ const RegisterPostcardForm = ({ postcard, onSubmit }: Props) => {
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-5">
+              {postcard.available_languages && postcard.available_languages.length > 1 && (
+                <div>
+                  <FormLabel>Język</FormLabel>
+                  <Select value={languageCode} onValueChange={onLanguageChange}>
+                    <SelectTrigger className="mt-1 w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>{postcard.available_languages.map((language) => <SelectItem key={language.code} value={language.code}>{language.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              )}
               <FormField
                 control={form.control}
                 name="recipientName"
