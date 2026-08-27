@@ -140,8 +140,8 @@ const ShopProduct = () => {
             is_primary: Boolean(template.is_primary),
           })),
       );
-      const defaultTemplate = templates.find((template) => template.is_primary) || templates.find((template) => template.language_code === foundProduct!.language_code) || templates[0];
-      setPrimaryLanguageCode(defaultTemplate?.language_code || foundProduct.language_code);
+      const defaultTemplate = templates.find((template) => template.is_primary);
+      setPrimaryLanguageCode(defaultTemplate?.language_code || "");
 
       setImages(extraImages);
       setActiveImage(foundProduct.image_front_url || (extraImages[0]?.url) || null);
@@ -173,6 +173,10 @@ const ShopProduct = () => {
     if (!product) return;
     const quantity = Math.max(1, Math.floor(quantityToAdd) || 1);
     const primaryTemplate = languageTemplates.find((template) => template.language_code === primaryLanguageCode);
+    if (languageTemplates.length > 0 && !primaryTemplate) {
+      toast.error("Wybierz język Podróżówki przed dodaniem jej do koszyka.");
+      return;
+    }
     const secondaryLanguage = languageTemplates.find((template) => template.language_code === secondaryLanguageCode && template.language_code !== primaryLanguageCode);
     addItem(product.id, quantity, undefined, {
       title: getProductTitle(product),
@@ -305,6 +309,7 @@ const ShopProduct = () => {
                   onChange={(event) => { setPrimaryLanguageCode(event.target.value); if (event.target.value === secondaryLanguageCode) setSecondaryLanguageCode(""); }}
                   className="mt-3 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary"
                 >
+                  <option value="" disabled>Wybierz język</option>
                   {languageTemplates.map((template) => <option key={template.language_code} value={template.language_code}>{template.language_name}{template.is_primary ? " (domyślny)" : ""}</option>)}
                 </select>
                 <label htmlFor="secondary-language" className="mt-4 block text-sm font-semibold text-foreground">

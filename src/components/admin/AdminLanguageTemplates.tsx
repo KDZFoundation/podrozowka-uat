@@ -346,7 +346,7 @@ export const AdminLanguageTemplates = () => {
 
           <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
             <input type="checkbox" checked={form.is_primary} onChange={(event) => setForm({ ...form, is_primary: event.target.checked })} className="h-4 w-4 accent-primary" />
-            <span><span className="font-semibold">Język podstawowy</span><br /><span className="text-xs text-muted-foreground">Będzie automatycznie używany w kreatorze i jako domyślny przy zakupie. W kraju może być tylko jeden.</span></span>
+            <span><span className="font-semibold">Język podstawowy</span><br /><span className="text-xs text-muted-foreground">Będzie automatycznie używany w kreatorze i jako domyślny przy zakupie. W kraju może być tylko jeden, ale może też nie być żadnego.</span></span>
           </label>
 
           <div className="flex justify-end gap-2 pt-2">

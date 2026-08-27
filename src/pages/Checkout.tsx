@@ -15,6 +15,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/contexts/CartContext";
 import { useCheckout } from "@/contexts/CheckoutContext";
 import { useCartItems } from "@/hooks/useCartItems";
+import { useCartLanguageOptions } from "@/hooks/useCartLanguageOptions";
 import {
   getShippingCostGrosze,
   type PaymentMethod,
@@ -44,6 +45,7 @@ const Checkout = () => {
   const { items: cartItems, clear: clearCart } = useCart();
   const { pickupPoint, setPickupPoint, clearPickupPoint } = useCheckout();
   const { items, subtotalGrosze, isLoading } = useCartItems();
+  const { optionsByLineId, isLoading: areLanguageOptionsLoading } = useCartLanguageOptions(items);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const handleSelectPickupPoint = useCallback(
@@ -94,6 +96,9 @@ const Checkout = () => {
   if (cartItems.length === 0) return <Navigate to="/koszyk" replace />;
 
   const hasUnavailable = items.some((i) => i.unavailable);
+  const hasMissingLanguageSelection = items.some(
+    (item) => !item.unavailable && (optionsByLineId.get(item.id)?.length ?? 0) > 0 && !item.primary_language,
+  );
   const totalItemCount = items.reduce((s, i) => s + (i.unavailable ? 0 : i.quantity), 0);
   const isBelowMin = totalItemCount < 10;
 
@@ -111,7 +116,14 @@ const Checkout = () => {
     (shippingMethod !== "pocztex_point" || pickupPoint.code?.trim()),
   );
   const shippingValid = pickupProvider ? pickupPointValid : isCourierAddressValid(courierAddress);
-  const canProceed = shippingValid && !hasUnavailable && !isLoading && invoiceValid && !isBelowMin;
+  const canProceed =
+    shippingValid &&
+    !hasUnavailable &&
+    !isLoading &&
+    !areLanguageOptionsLoading &&
+    !hasMissingLanguageSelection &&
+    invoiceValid &&
+    !isBelowMin;
 
   const handleShippingMethodChange = (method: ShippingMethod) => {
     if (pickupPoint?.provider !== pickupProviderForMethod(method)) clearPickupPoint();
@@ -122,6 +134,10 @@ const Checkout = () => {
   const handleProceed = async () => {
     if (!shippingValid || isBelowMin) {
       if (isBelowMin) toast.error("Minimalne zamówienie to 10 podróżówek.");
+      return;
+    }
+    if (hasMissingLanguageSelection) {
+      toast.error("Wybierz język dla każdej Podróżówki przed przejściem do płatności.");
       return;
     }
     setIsSubmitting(true);
@@ -502,6 +518,11 @@ const Checkout = () => {
               {hasUnavailable && (
                 <p className="text-xs text-destructive mt-3 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" /> Usuń niedostępne pozycje z koszyka, aby kontynuować.
+                </p>
+              )}
+              {hasMissingLanguageSelection && (
+                <p className="text-xs text-destructive mt-3 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" /> Wróć do koszyka i wybierz język dla każdej Podróżówki.
                 </p>
               )}
 

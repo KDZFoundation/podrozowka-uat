@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Info, Package, ShoppingBag, ShoppingCart, Tags, X } from "lucide-react";
 import { toast } from "sonner";
 import Header from "@/components/Header";
@@ -45,6 +45,7 @@ const formatPln = (grosze: number) =>
 
 const Shop = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const countryIso = searchParams.get("country_iso");
   const { totalCount, addItem } = useCart();
 
@@ -97,7 +98,7 @@ const Shop = () => {
       setCountries(rawCountries);
       const defaults = new Map<string, CartLanguage>();
       languageTemplates.forEach((template) => {
-        if (!defaults.has(template.country_id) || template.is_primary) {
+        if (template.is_primary) {
           defaults.set(template.country_id, {
             code: template.language_code,
             name: template.language_name,
@@ -411,13 +412,19 @@ const Shop = () => {
                         type="button"
                         onClick={() => {
                           const quantity = quantitiesToAdd[p.id] ?? 1;
+                          const primaryLanguage = primaryLanguagesByCountry.get(p.country_id);
+                          if (!primaryLanguage) {
+                            toast.info("Wybierz język Podróżówki na stronie produktu.");
+                            navigate(`/sklep/${p.id}`);
+                            return;
+                          }
                           addItem(p.id, quantity, undefined, {
                             title: getProductTitle(p),
                             image_front_url: p.image_front_url,
                             price_grosze: p.price_grosze,
                             currency: "PLN",
                             country_name: p.countries?.name_pl ?? null,
-                          }, primaryLanguagesByCountry.get(p.country_id));
+                          }, primaryLanguage);
                           toast.success(`Dodano ${quantity} szt. do koszyka`);
                           setQuantitiesToAdd((current) => ({ ...current, [p.id]: 1 }));
                         }}

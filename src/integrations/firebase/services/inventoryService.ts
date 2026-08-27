@@ -12,6 +12,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "../config";
+import { buildWarehouseCleanupPlan, type CleanupDocument } from "./inventoryCleanup";
 
 const MAX_WRITE_OPERATIONS = 400;
 
@@ -55,6 +56,34 @@ export interface PreparedStockPrintOrder {
   quantity: number;
   documentNumber: string;
 }
+
+export interface WarehouseCleanupResult {
+  stockOrders: number;
+  stockBatches: number;
+  inventoryUnits: number;
+  printJobs: number;
+  printJobItems: number;
+  unitEvents: number;
+  movements: number;
+}
+
+const deleteDocumentsInBatches = async (
+  collectionName: string,
+  documentIds: Set<string>,
+): Promise<void> => {
+  const ids = Array.from(documentIds);
+  for (let index = 0; index < ids.length; index += MAX_WRITE_OPERATIONS) {
+    const batch = writeBatch(db);
+    for (const id of ids.slice(index, index + MAX_WRITE_OPERATIONS)) {
+      batch.delete(doc(db, collectionName, id));
+    }
+    await batch.commit();
+  }
+};
+
+const snapshotDocuments = (snapshot: Awaited<ReturnType<typeof getDocs>>): CleanupDocument[] => (
+  snapshot.docs.map((item) => ({ id: item.id, data: item.data() }))
+);
 
 export const inventoryService = {
   async prepareStockPrintOrder(input: {
@@ -205,12 +234,22 @@ export const inventoryService = {
     if (!stockOrder.exists()) throw new Error("Nie znaleziono zlecenia magazynowego.");
     const locationId = stockOrder.data().location_id || null;
     const batches = await getDocs(query(collection(db, "stock_batches"), where("production_order_id", "==", stockOrderId)));
+    if (batches.empty) {
+      throw new Error("Zlecenie nie ma partii produkcyjnej. Nie można przyjąć go na magazyn.");
+    }
     const unitDocs = [] as Array<{ id: string; data: Record<string, unknown> }>;
     for (const batchDoc of batches.docs) {
       const units = await getDocs(query(collection(db, "inventory_units"), where("stock_batch_id", "==", batchDoc.id)));
       unitDocs.push(...units.docs.map((unit) => ({ id: unit.id, data: unit.data() })));
     }
     const receivable = unitDocs.filter((unit) => ["qr_generated", "qr_applied", "reserved"].includes(String(unit.data.fulfillment_status)));
+    const expectedQuantity = Math.max(0, Number(stockOrder.data().total_quantity || 0));
+    if (receivable.length === 0) {
+      throw new Error("Zlecenie nie zawiera jednostek z kodami QR. Najpierw odtwórz albo usuń testowe zlecenie.");
+    }
+    if (expectedQuantity > 0 && receivable.length !== expectedQuantity) {
+      throw new Error(`Zlecenie powinno zawierać ${expectedQuantity} szt., ale do przyjęcia znaleziono ${receivable.length}.`);
+    }
     for (let index = 0; index < receivable.length; index += MAX_WRITE_OPERATIONS) {
       const batch = writeBatch(db);
       for (const unit of receivable.slice(index, index + MAX_WRITE_OPERATIONS)) {
@@ -261,23 +300,47 @@ export const inventoryService = {
   },
 
   /**
-   * Development-only cleanup used by the administrator's test inventory
-   * button. Keep the scope identical to the former database cleanup: QR
-   * print items, their jobs, and inventory units. Production orders and
-   * batches remain as an audit trail and are not silently erased.
+   * Removes complete internal warehouse-order graphs in a test environment.
+   * Ecommerce/POD batches and units are intentionally preserved.
    */
-  async clearTestInventory(): Promise<void> {
-    const collectionsToClear = ["qr_print_job_items", "qr_print_jobs", "inventory_units"] as const;
+  async clearTestInventory(): Promise<WarehouseCleanupResult> {
+    const [stockOrders, stockBatches, inventoryUnits, printJobs, printJobItems, unitEvents, movements] = await Promise.all([
+      getDocs(collection(db, "stock_production_orders")),
+      getDocs(collection(db, "stock_batches")),
+      getDocs(collection(db, "inventory_units")),
+      getDocs(collection(db, "qr_print_jobs")),
+      getDocs(collection(db, "qr_print_job_items")),
+      getDocs(collection(db, "inventory_unit_events")),
+      getDocs(collection(db, "inventory_movements")),
+    ]);
+    const plan = buildWarehouseCleanupPlan({
+      stockOrders: snapshotDocuments(stockOrders),
+      stockBatches: snapshotDocuments(stockBatches),
+      inventoryUnits: snapshotDocuments(inventoryUnits),
+      printJobs: snapshotDocuments(printJobs),
+      printJobItems: snapshotDocuments(printJobItems),
+      unitEvents: snapshotDocuments(unitEvents),
+      movements: snapshotDocuments(movements),
+    });
 
-    for (const collectionName of collectionsToClear) {
-      const snapshot = await getDocs(collection(db, collectionName));
-      for (let index = 0; index < snapshot.docs.length; index += MAX_WRITE_OPERATIONS) {
-        const batch = writeBatch(db);
-        for (const item of snapshot.docs.slice(index, index + MAX_WRITE_OPERATIONS)) {
-          batch.delete(item.ref);
-        }
-        await batch.commit();
-      }
-    }
+    // Delete children before their parents to keep the operation coherent even
+    // if a later batch fails and the administrator retries it.
+    await deleteDocumentsInBatches("qr_print_job_items", plan.printJobItemIds);
+    await deleteDocumentsInBatches("inventory_unit_events", plan.unitEventIds);
+    await deleteDocumentsInBatches("inventory_movements", plan.movementIds);
+    await deleteDocumentsInBatches("inventory_units", plan.inventoryUnitIds);
+    await deleteDocumentsInBatches("qr_print_jobs", plan.printJobIds);
+    await deleteDocumentsInBatches("stock_batches", plan.stockBatchIds);
+    await deleteDocumentsInBatches("stock_production_orders", plan.stockOrderIds);
+
+    return {
+      stockOrders: plan.stockOrderIds.size,
+      stockBatches: plan.stockBatchIds.size,
+      inventoryUnits: plan.inventoryUnitIds.size,
+      printJobs: plan.printJobIds.size,
+      printJobItems: plan.printJobItemIds.size,
+      unitEvents: plan.unitEventIds.size,
+      movements: plan.movementIds.size,
+    };
   },
 };

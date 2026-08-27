@@ -655,12 +655,9 @@ export const firestoreService = {
   ): Promise<void> {
     if (!isFirebaseConfigured) return;
     const templates = await this.getLanguageTemplatesForCountry(data.country_id);
-    const own = templates.find((template) => template.id === id);
-    // Pierwszy wariant kraju staje się podstawowy automatycznie. Późniejsze
-    // warianty są podstawowe wyłącznie po świadomym wyborze administratora.
-    // A country must always keep one default. Demoting the current default is
-    // therefore only possible by promoting another template in the same save.
-    const isPrimary = data.is_primary === true || Boolean(own?.is_primary) || (!own && !templates.some((template) => template.is_primary));
+    // Kraj może nie mieć języka podstawowego. Gdy administrator oznaczy
+    // wariant jako podstawowy, jest on jedynym domyślnym wariantem kraju.
+    const isPrimary = data.is_primary === true;
     const batch = writeBatch(db);
     const target = doc(db, "card_language_templates", id);
     if (isPrimary) {
@@ -677,13 +674,8 @@ export const firestoreService = {
     const target = await getDoc(doc(db, "card_language_templates", id));
     if (!target.exists()) return;
     const data = target.data() as FirestoreLanguageTemplate;
-    const siblings = await this.getLanguageTemplatesForCountry(data.country_id);
     const batch = writeBatch(db);
     batch.delete(target.ref);
-    if (data.is_primary) {
-      const replacement = siblings.find((template) => template.id !== id);
-      if (replacement) batch.update(doc(db, "card_language_templates", replacement.id), { is_primary: true, updated_at: new Date().toISOString() });
-    }
     await batch.commit();
   },
 
