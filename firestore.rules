@@ -7,15 +7,10 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return signedIn() && (
-        request.auth.token.admin == true ||
-        request.auth.token.role == 'admin' ||
-        request.auth.token.email in [
-          'fundacja@d-arka.org',
-          'dariusz.pgry@gmail.com',
-          'fundacja@konopiedlaziemi.org'
-        ]
-      );
+      return signedIn()
+        && exists(/databases/$(database)/documents/admin_roles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admin_roles/$(request.auth.uid)).data.role == 'admin'
+        && get(/databases/$(database)/documents/admin_roles/$(request.auth.uid)).data.active == true;
     }
 
     function ownsUser(userId) {
@@ -45,6 +40,14 @@ service cloud.firestore {
     match /card_language_templates/{templateId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    // Authorization is stored separately from writable user profiles.
+    // A user can only inspect their own role; only an already active
+    // administrator can grant, revoke, or remove administrative access.
+    match /admin_roles/{userId} {
+      allow read: if ownsUser(userId) || isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
     // Public feature switches control storefront availability. Only an

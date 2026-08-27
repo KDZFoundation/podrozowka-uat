@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { json } from "../../api/_lib/http.js";
+import { fromFirestoreFields, readDocument } from "../../api/_lib/gcp-firestore.js";
 
 type FirebaseTokenClaims = {
   aud?: unknown;
@@ -8,6 +9,7 @@ type FirebaseTokenClaims = {
   iss?: unknown;
   role?: unknown;
   admin?: unknown;
+  sub?: unknown;
 };
 
 type GoogleCertificateMap = Record<string, string>;
@@ -16,13 +18,6 @@ const CERTIFICATES_URL = "https://www.googleapis.com/robot/v1/metadata/x509/secu
 const certificateCache: { certificates: GoogleCertificateMap; expiresAt: number } = { certificates: {}, expiresAt: 0 };
 
 const firebaseProjectId = () => process.env.FIREBASE_AUTH_PROJECT_ID || process.env.GCP_PROJECT_ID || "podrozowka";
-
-const adminEmails = () => new Set(
-  (process.env.FIREBASE_ADMIN_EMAILS || "fundacja@d-arka.org,dariusz.pgry@gmail.com,fundacja@konopiedlaziemi.org")
-    .split(",")
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean),
-);
 
 const decodeBase64UrlJson = (value: string): Record<string, unknown> | null => {
   try {
@@ -46,9 +41,22 @@ const certificates = async () => {
   return body;
 };
 
-const isAdmin = (claims: FirebaseTokenClaims) => {
-  const email = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
-  return claims.admin === true || claims.role === "admin" || adminEmails().has(email);
+/**
+ * The role document is the single source of truth for administrative access.
+ * Keeping it in Firestore lets administrators be managed without rebuilding
+ * the frontend or publishing a new server environment variable.
+ */
+const hasFirestoreAdminRole = async (uid: string) => {
+  try {
+    const document = await readDocument("admin_roles", uid);
+    const role = fromFirestoreFields(document.fields);
+    return role.role === "admin" && role.active === true;
+  } catch {
+    // A missing role document is an expected non-admin case. Never fall back
+    // to an e-mail allow-list, otherwise a removed administrator would retain
+    // access until a deployment.
+    return false;
+  }
 };
 
 const verifyFirebaseIdToken = async (idToken: string): Promise<FirebaseTokenClaims | null> => {
@@ -73,7 +81,7 @@ const verifyFirebaseIdToken = async (idToken: string): Promise<FirebaseTokenClai
 /**
  * Stops privileged courier operations before they can call the ShipX API.
  * Firebase ID tokens are verified against Google's signing certificates;
- * authorization follows the same admin claims/email allow-list as Firestore.
+ * authorization follows the active Firestore admin_roles/{uid} document.
  */
 export const requireAdmin = async (request: Request): Promise<Response | null> => {
   const authorization = request.headers.get("authorization") || "";
@@ -83,7 +91,8 @@ export const requireAdmin = async (request: Request): Promise<Response | null> =
   try {
     const claims = await verifyFirebaseIdToken(match[1]);
     if (!claims) return json({ error: "invalid_admin_token" }, 401);
-    if (!isAdmin(claims)) return json({ error: "admin_access_required" }, 403);
+    const uid = typeof claims.sub === "string" ? claims.sub : "";
+    if (!uid || !await hasFirestoreAdminRole(uid)) return json({ error: "admin_access_required" }, 403);
     return null;
   } catch {
     return json({ error: "admin_token_verification_failed" }, 503);

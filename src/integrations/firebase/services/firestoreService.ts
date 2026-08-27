@@ -121,6 +121,23 @@ export const uniqueOrders = (orders: FirestoreOrder[]) => {
 };
 
 export const firestoreService = {
+  /**
+   * Administrative access is intentionally kept outside of a user-editable
+   * profile. The matching Firestore rule only permits existing administrators
+   * to maintain this collection.
+   */
+  async hasAdminRole(userId: string): Promise<boolean> {
+    if (!isFirebaseConfigured || !userId) return false;
+    try {
+      const roleSnapshot = await getDoc(doc(db, "admin_roles", userId));
+      const role = roleSnapshot.data();
+      return roleSnapshot.exists() && role?.role === "admin" && role?.active === true;
+    } catch (error) {
+      console.warn("Firestore admin role lookup error:", error);
+      return false;
+    }
+  },
+
   // --- Katalog i Kraje ---
   async getCountries(): Promise<FirestoreCountry[]> {
     if (!isFirebaseConfigured) return [];
@@ -401,8 +418,11 @@ export const firestoreService = {
     const userRef = doc(db, "users", userId);
     const profRef = doc(db, "profiles", userId);
     
+    // A profile is writable by its owner. Never persist the app role through
+    // this route because doing so would let a traveler grant themself admin.
+    const { role: _ignoredRole, ...safeProfileData } = profileData;
     const cleanData = {
-      ...profileData,
+      ...safeProfileData,
       updated_at: new Date().toISOString(),
     };
 

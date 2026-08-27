@@ -48,7 +48,6 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const ADMIN_EMAILS = new Set(["fundacja@d-arka.org"]);
 
 const toAppUser = (firebaseUser: FirebaseUser): AppUser => ({
   id: firebaseUser.uid,
@@ -68,22 +67,19 @@ const toAppUser = (firebaseUser: FirebaseUser): AppUser => ({
   updated_at: firebaseUser.metadata.lastSignInTime || new Date().toISOString(),
 });
 
-const getRole = (firebaseUser: FirebaseUser): AppRole =>
-  ADMIN_EMAILS.has((firebaseUser.email || "").trim().toLowerCase()) ? "admin" : "traveler";
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<AppUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [role, setRole] = useState<AppRole | null>(null);
 
-  const applyFirebaseUser = useCallback((firebaseUser: FirebaseUser | null) => {
+  const applyFirebaseUser = useCallback(async (firebaseUser: FirebaseUser | null) => {
     if (!firebaseUser) {
       setUser(null);
       setRole(null);
       return;
     }
     setUser(toAppUser(firebaseUser));
-    setRole(getRole(firebaseUser));
+    setRole((await firestoreService.hasAdminRole(firebaseUser.uid)) ? "admin" : "traveler");
   }, []);
 
   const syncFirestoreProfile = useCallback(async (firebaseUser: FirebaseUser) => {
@@ -96,7 +92,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       last_name: lastNameParts.join(" ") || null,
       display_name: displayName,
       full_name: firebaseUser.displayName || displayName,
-      role: getRole(firebaseUser),
       created_at: firebaseUser.metadata.creationTime || new Date().toISOString(),
     });
   }, []);
@@ -115,9 +110,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      applyFirebaseUser(firebaseUser);
+      setIsLoading(true);
+      void applyFirebaseUser(firebaseUser).finally(() => setIsLoading(false));
       if (firebaseUser) void syncFirestoreProfile(firebaseUser);
-      setIsLoading(false);
     });
 
     if (isUsingFirebaseEmulators) {
@@ -130,7 +125,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signOut = useCallback(async () => {
     await firebaseSignOut(auth);
-    applyFirebaseUser(null);
+    await applyFirebaseUser(null);
   }, [applyFirebaseUser]);
 
   const value = useMemo(() => ({
