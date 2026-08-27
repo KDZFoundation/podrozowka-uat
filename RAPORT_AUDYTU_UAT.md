@@ -8,7 +8,7 @@
 
 ---
 
-## 📋 1. PODSUMOWANIE WYKONANAJ ANALIZY
+## 📋 1. PODSUMOWANIE AUDYTU
 
 Przeprowadzono pełną, wszechstronną analizę architektury, kodu źródłowego, konfiguracji i przepływów biznesowych w repozytorium **KDZFoundation/podrozowka-uat**. Repozytorium stanowi wersję UAT aplikacji wspierającej drukowanie, sprzedaż, wysyłkę oraz fizyczną rejestrację kartek pocztowych Podróżówka wraz z modułem grywalizacji i wpływu kulturowego.
 
