@@ -14,6 +14,7 @@ import {
 import { Loader2, Search, ArrowLeft, Plus, Truck, Download, CreditCard } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { backendApiUrl } from "@/lib/backendApi";
+import { adminApiHeaders } from "@/lib/adminApiAuth";
 
 interface ShipmentRow {
   id: string;
@@ -152,7 +153,7 @@ const AdminShipments = () => {
       // First try Node/Express API
       const createRes = await fetch(backendApiUrl("/api/inpost/create-shipment"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await adminApiHeaders(true),
         body: JSON.stringify({ order_id: orderId, size }),
       }).then((r) => r.json().catch(() => null));
 
@@ -196,7 +197,7 @@ const AdminShipments = () => {
       // Try Node/Express API
       const apiRes = await fetch(backendApiUrl("/api/inpost/buy-shipment"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await adminApiHeaders(true),
         body: JSON.stringify({ shipment_id: shipmentId }),
       }).then((r) => r.json().catch(() => null));
 
@@ -220,7 +221,9 @@ const AdminShipments = () => {
       const shipmentId = selectedShipment.inpost_shipment_id || selectedShipment.id;
 
       // Try Node/Express API first
-      const response = await fetch(backendApiUrl(`/api/inpost/label/${encodeURIComponent(shipmentId)}`));
+      const response = await fetch(backendApiUrl(`/api/inpost/label/${encodeURIComponent(shipmentId)}`), {
+        headers: await adminApiHeaders(),
+      });
       if (response.ok) {
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);

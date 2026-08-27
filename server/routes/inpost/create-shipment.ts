@@ -1,4 +1,5 @@
 import { json, preflight } from "../../../api/_lib/http.js";
+import { requireAdmin } from "../../auth/require-admin.js";
 
 const inpostConfig = () => {
   const environment = (process.env.INPOST_SHIPX_ENV || "sandbox").toLowerCase() === "production" ? "production" : "sandbox";
@@ -14,6 +15,8 @@ export default {
   async fetch(request: Request) {
     if (request.method === "OPTIONS") return preflight();
     if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+    const forbidden = await requireAdmin(request);
+    if (forbidden) return forbidden;
     const config = inpostConfig();
     if (!config.organizationId || !config.token) return json({ error: "inpost_not_configured" }, 503);
     try {

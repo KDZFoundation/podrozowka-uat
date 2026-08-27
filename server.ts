@@ -10,6 +10,7 @@ import publicStatsHandler from "./server/routes/public/stats";
 import publicCommunityHandler from "./server/routes/public/community";
 import publicDistributionHandler from "./server/routes/public/distribution";
 import orlenWidgetConfigHandler from "./server/routes/orlen/widget-config";
+import { requireAdmin } from "./server/auth/require-admin";
 
 async function startServer() {
   const app = express();
@@ -47,6 +48,15 @@ async function startServer() {
   app.all("/api/public/community", forwardApiHandler(publicCommunityHandler));
   app.all("/api/public/distribution", forwardApiHandler(publicDistributionHandler));
   app.all("/api/orlen/widget-config", forwardApiHandler(orlenWidgetConfigHandler));
+
+  const requireLocalAdmin = async (req: express.Request, res: express.Response) => {
+    const denied = await requireAdmin(new Request(`http://localhost:${PORT}${req.originalUrl}`, {
+      headers: req.headers.authorization ? { Authorization: req.headers.authorization } : {},
+    }));
+    if (!denied) return true;
+    res.status(denied.status).send(await denied.text());
+    return false;
+  };
 
   // QR registration uses short-lived local Application Default Credentials in
   // development and Vercel Workload Identity in deployed environments.
@@ -195,6 +205,7 @@ async function startServer() {
   // Create InPost Shipment via ShipX
   app.post("/api/inpost/create-shipment", async (req, res) => {
     try {
+      if (!await requireLocalAdmin(req, res)) return;
       const cfg = getInpostConfig();
       if (!cfg.organizationId || !cfg.apiToken) {
         return res.status(400).json({
@@ -288,6 +299,7 @@ async function startServer() {
   // Buy / Dispatch InPost Shipment
   app.post("/api/inpost/buy-shipment", async (req, res) => {
     try {
+      if (!await requireLocalAdmin(req, res)) return;
       const cfg = getInpostConfig();
       if (!cfg.apiToken) {
         return res.status(400).json({ error: "Brak tokenu InPost ShipX." });
@@ -328,6 +340,7 @@ async function startServer() {
   // Download PDF Label from InPost
   app.get("/api/inpost/label/:shipmentId", async (req, res) => {
     try {
+      if (!await requireLocalAdmin(req, res)) return;
       const cfg = getInpostConfig();
       if (!cfg.apiToken) {
         return res.status(400).json({ error: "Brak tokenu InPost ShipX." });
