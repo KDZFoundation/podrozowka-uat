@@ -20,11 +20,8 @@ const toCartLanguage = (language: CartLanguageOption): CartLanguage => ({
 const CartLanguagePicker = ({ lineId, primaryValue, secondaryValue, options, onChange, compact = false }: CartLanguagePickerProps) => {
   if (options.length === 0) return null;
 
-  const selectedPrimary =
-    options.find((option) => option.code === primaryValue?.code) ||
-    options.find((option) => option.is_primary) ||
-    options[0];
-  const secondaryOptions = options.filter((option) => option.code !== selectedPrimary.code);
+  const selectedPrimary = options.find((option) => option.code === primaryValue?.code);
+  const secondaryOptions = selectedPrimary ? options.filter((option) => option.code !== selectedPrimary.code) : [];
 
   return (
     <div className={compact ? "mt-2" : "mt-3 rounded-lg border border-border/70 bg-muted/30 p-3"}>
@@ -38,7 +35,7 @@ const CartLanguagePicker = ({ lineId, primaryValue, secondaryValue, options, onC
       )}
       <select
         id={`cart-primary-language-${lineId}`}
-        value={selectedPrimary.code}
+        value={selectedPrimary?.code || ""}
         onChange={(event) => {
           const primaryLanguage = options.find((option) => option.code === event.target.value);
           if (!primaryLanguage) return;
@@ -49,6 +46,7 @@ const CartLanguagePicker = ({ lineId, primaryValue, secondaryValue, options, onC
         }}
         className="mt-2 w-full rounded-md border border-input bg-background px-2.5 py-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-primary"
       >
+        <option value="" disabled>Wybierz język</option>
         {options.map((option) => (
           <option key={option.code} value={option.code}>
             {option.name}
@@ -69,8 +67,9 @@ const CartLanguagePicker = ({ lineId, primaryValue, secondaryValue, options, onC
         value={secondaryValue?.code || ""}
         onChange={(event) => {
           const language = secondaryOptions.find((option) => option.code === event.target.value);
-          onChange(toCartLanguage(selectedPrimary), language ? toCartLanguage(language) : undefined);
+          if (selectedPrimary) onChange(toCartLanguage(selectedPrimary), language ? toCartLanguage(language) : undefined);
         }}
+        disabled={!selectedPrimary}
         className="mt-2 w-full rounded-md border border-input bg-background px-2.5 py-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-primary"
       >
         <option value="">Tylko język podstawowy</option>

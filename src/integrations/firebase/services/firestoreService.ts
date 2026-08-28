@@ -121,6 +121,23 @@ export const uniqueOrders = (orders: FirestoreOrder[]) => {
 };
 
 export const firestoreService = {
+  /**
+   * Administrative access is intentionally kept outside of a user-editable
+   * profile. The matching Firestore rule only permits existing administrators
+   * to maintain this collection.
+   */
+  async hasAdminRole(userId: string): Promise<boolean> {
+    if (!isFirebaseConfigured || !userId) return false;
+    try {
+      const roleSnapshot = await getDoc(doc(db, "admin_roles", userId));
+      const role = roleSnapshot.data();
+      return roleSnapshot.exists() && role?.role === "admin" && role?.active === true;
+    } catch (error) {
+      console.warn("Firestore admin role lookup error:", error);
+      return false;
+    }
+  },
+
   // --- Katalog i Kraje ---
   async getCountries(): Promise<FirestoreCountry[]> {
     if (!isFirebaseConfigured) return [];
@@ -401,8 +418,11 @@ export const firestoreService = {
     const userRef = doc(db, "users", userId);
     const profRef = doc(db, "profiles", userId);
     
+    // A profile is writable by its owner. Never persist the app role through
+    // this route because doing so would let a traveler grant themself admin.
+    const { role: _ignoredRole, ...safeProfileData } = profileData;
     const cleanData = {
-      ...profileData,
+      ...safeProfileData,
       updated_at: new Date().toISOString(),
     };
 
@@ -655,12 +675,9 @@ export const firestoreService = {
   ): Promise<void> {
     if (!isFirebaseConfigured) return;
     const templates = await this.getLanguageTemplatesForCountry(data.country_id);
-    const own = templates.find((template) => template.id === id);
-    // Pierwszy wariant kraju staje się podstawowy automatycznie. Późniejsze
-    // warianty są podstawowe wyłącznie po świadomym wyborze administratora.
-    // A country must always keep one default. Demoting the current default is
-    // therefore only possible by promoting another template in the same save.
-    const isPrimary = data.is_primary === true || Boolean(own?.is_primary) || (!own && !templates.some((template) => template.is_primary));
+    // Kraj może nie mieć języka podstawowego. Gdy administrator oznaczy
+    // wariant jako podstawowy, jest on jedynym domyślnym wariantem kraju.
+    const isPrimary = data.is_primary === true;
     const batch = writeBatch(db);
     const target = doc(db, "card_language_templates", id);
     if (isPrimary) {
@@ -677,13 +694,8 @@ export const firestoreService = {
     const target = await getDoc(doc(db, "card_language_templates", id));
     if (!target.exists()) return;
     const data = target.data() as FirestoreLanguageTemplate;
-    const siblings = await this.getLanguageTemplatesForCountry(data.country_id);
     const batch = writeBatch(db);
     batch.delete(target.ref);
-    if (data.is_primary) {
-      const replacement = siblings.find((template) => template.id !== id);
-      if (replacement) batch.update(doc(db, "card_language_templates", replacement.id), { is_primary: true, updated_at: new Date().toISOString() });
-    }
     await batch.commit();
   },
 

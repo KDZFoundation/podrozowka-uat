@@ -192,7 +192,7 @@ const AdminInventory = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [countryFilter, fulfillmentFilter, businessFilter, page]);
+  }, [countryFilter, fulfillmentFilter, businessFilter, page, toast]);
 
   useEffect(() => {
     fetchFilters();
@@ -331,16 +331,19 @@ const AdminInventory = () => {
     !["shipped", "issued"].includes(unit.fulfillment_status);
 
   const handleClearInventory = async () => {
-    if (!confirm("Czy na pewno chcesz usunąć wszystkie pozycje z magazynu? Operacji nie można cofnąć.")) return;
+    if (!confirm("Czy usunąć wszystkie testowe zamówienia magazynowe wraz z partiami, jednostkami i zadaniami QR? Zamówienia sklepowe/POD pozostaną bez zmian. Operacji nie można cofnąć.")) return;
 
     setIsClearingInventory(true);
     try {
-      await inventoryService.clearTestInventory();
+      const result = await inventoryService.clearTestInventory();
 
       setSelectedUnit(null);
       setUnitEvents([]);
-      toast({ title: "Magazyn został wyczyszczony" });
-      await fetchUnits();
+      toast({
+        title: "Testowe dane magazynowe zostały wyczyszczone",
+        description: `Usunięto ${result.stockOrders} zleceń, ${result.stockBatches} partii i ${result.inventoryUnits} jednostek.`,
+      });
+      await Promise.all([fetchUnits(), fetchStockOrders()]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Nie udało się wyczyścić magazynu.";
       toast({ title: "Błąd czyszczenia magazynu", description: message, variant: "destructive" });
@@ -472,7 +475,7 @@ const AdminInventory = () => {
           <p className="text-xs text-muted-foreground">Jednostki ze sklepu powstają automatycznie jako POD. Zamówienia magazynowe trafiają na stan dopiero po fizycznym odbiorze wydruku.</p>
         </div>
         <div className="flex gap-2">
-          {import.meta.env.DEV && (
+          {(import.meta.env.DEV || import.meta.env.VITE_ENABLE_TEST_DATA_CLEANUP === "true") && (
             <Button variant="destructive" onClick={handleClearInventory} size="sm" disabled={isClearingInventory} className="gap-2">
               {isClearingInventory ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
               Wyczyść dane testowe

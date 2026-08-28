@@ -138,7 +138,7 @@ export interface FirestoreOrder {
   order_number: string;
   user_id?: string;
   guest_email?: string;
-  status: "new" | "paid" | "processing" | "shipped" | "delivered" | "cancelled";
+  status: "new" | "paid" | "processing" | "shipped" | "delivered" | "cancelled" | "payment_failed";
   payment_method: "p24" | "hotpay" | "cod";
   payment_status: "pending" | "paid" | "failed" | "refunded";
   total_amount_pln: number;
@@ -157,6 +157,8 @@ export interface FirestoreOrder {
   };
   fiscal_document_status?: "pending" | "issued" | "failed";
   fiscal_document_number?: string;
+  reservation_id?: string | null;
+  reservation_expires_at?: string | null;
   created_at?: string;
 }
 

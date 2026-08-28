@@ -146,7 +146,7 @@ export const AdminCardCreator = ({
         is_primary: Boolean(template.is_primary),
       }));
       setLangTemplates(mappedTemplates);
-      const primary = mappedTemplates.find((template) => template.is_primary) || mappedTemplates[0];
+      const primary = mappedTemplates.find((template) => template.country_id === countryId && template.is_primary);
       if (primary) {
         setSelectedTemplateId(primary.id);
         setLanguageCode(primary.language_code);
@@ -168,8 +168,11 @@ export const AdminCardCreator = ({
   const availableTemplates = langTemplates.filter((t) => t.country_id === countryId);
 
   const applyPrimaryTemplate = (templates: LanguageTemplate[]) => {
-    const primary = templates.find((template) => template.is_primary) || templates[0];
-    if (!primary) return;
+    const primary = templates.find((template) => template.is_primary);
+    if (!primary) {
+      setSelectedTemplateId("");
+      return;
+    }
     setSelectedTemplateId(primary.id);
     setLanguageCode(primary.language_code);
     setThankYouText(primary.front_thank_you_text);

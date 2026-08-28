@@ -1,7 +1,10 @@
 import { json } from "../../../../api/_lib/http.js";
+import { requireAdmin } from "../../../auth/require-admin.js";
 
 export default {
   async fetch(request: Request) {
+    const forbidden = await requireAdmin(request);
+    if (forbidden) return forbidden;
     const token = process.env.INPOST_SHIPX_TOKEN || "";
     const environment = (process.env.INPOST_SHIPX_ENV || "sandbox").toLowerCase() === "production" ? "production" : "sandbox";
     if (!token) return json({ error: "inpost_not_configured" }, 503);

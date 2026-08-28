@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Plus, Pencil, Trash2, Check, X, Languages, Globe, BookOpen, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -179,9 +179,24 @@ export const AdminLanguageTemplates = () => {
     }
   };
 
-  const filteredTemplates = filterCountry === "all"
-    ? templates
-    : templates.filter((t) => t.country_id === filterCountry);
+  const sortedCountries = useMemo(
+    () => [...countries].sort((left, right) => left.name_pl.localeCompare(right.name_pl, "pl", { sensitivity: "base" })),
+    [countries],
+  );
+
+  const filteredTemplates = useMemo(() => {
+    const countryNameById = new Map(countries.map((country) => [country.id, country.name_pl]));
+
+    return templates
+      .filter((template) => filterCountry === "all" || template.country_id === filterCountry)
+      .sort((left, right) => {
+        const leftCountry = left.countries?.name_pl || countryNameById.get(left.country_id) || "";
+        const rightCountry = right.countries?.name_pl || countryNameById.get(right.country_id) || "";
+        const countryOrder = leftCountry.localeCompare(rightCountry, "pl", { sensitivity: "base" });
+
+        return countryOrder || left.language_name.localeCompare(right.language_name, "pl", { sensitivity: "base" });
+      });
+  }, [countries, filterCountry, templates]);
 
   return (
     <div className="space-y-6">
@@ -216,7 +231,7 @@ export const AdminLanguageTemplates = () => {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Wszystkie kraje</SelectItem>
-            {countries.map((c) => (
+            {sortedCountries.map((c) => (
               <SelectItem key={c.id} value={c.id}>
                 {c.name_pl} ({c.iso2})
               </SelectItem>
@@ -252,7 +267,7 @@ export const AdminLanguageTemplates = () => {
                   <SelectValue placeholder="Wybierz kraj" />
                 </SelectTrigger>
                 <SelectContent>
-                  {countries.map((c) => (
+                  {sortedCountries.map((c) => (
                     <SelectItem key={c.id} value={c.id}>
                       {c.name_pl} ({c.iso2})
                     </SelectItem>
@@ -331,7 +346,7 @@ export const AdminLanguageTemplates = () => {
 
           <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
             <input type="checkbox" checked={form.is_primary} onChange={(event) => setForm({ ...form, is_primary: event.target.checked })} className="h-4 w-4 accent-primary" />
-            <span><span className="font-semibold">Język podstawowy</span><br /><span className="text-xs text-muted-foreground">Będzie automatycznie używany w kreatorze i jako domyślny przy zakupie. W kraju może być tylko jeden.</span></span>
+            <span><span className="font-semibold">Język podstawowy</span><br /><span className="text-xs text-muted-foreground">Będzie automatycznie używany w kreatorze i jako domyślny przy zakupie. W kraju może być tylko jeden, ale może też nie być żadnego.</span></span>
           </label>
 
           <div className="flex justify-end gap-2 pt-2">
