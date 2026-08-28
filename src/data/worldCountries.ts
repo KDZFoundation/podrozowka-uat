@@ -196,6 +196,10 @@ export const WORLD_COUNTRIES: WorldCountrySeed[] = [
   { iso2: "HU", iso3: "HUN", name_pl: "Węgry", slug: "wegry", active: true },
   { iso2: "VE", iso3: "VEN", name_pl: "Wenezuela", slug: "wenezuela", active: true },
   { iso2: "GB", iso3: "GBR", name_pl: "Wielka Brytania", slug: "wielka-brytania", active: true },
+  // Kraje składowe Wielkiej Brytanii — stosujemy ich oficjalne kody ISO 3166-2,
+  // aby można było przygotować dla nich osobne wzory i warianty językowe.
+  { iso2: "GB-SCT", iso3: "GBR-SCT", name_pl: "Szkocja", slug: "szkocja", active: true },
+  { iso2: "GB-WLS", iso3: "GBR-WLS", name_pl: "Walia", slug: "walia", active: true },
   { iso2: "VN", iso3: "VNM", name_pl: "Wietnam", slug: "wietnam", active: true },
   { iso2: "IT", iso3: "ITA", name_pl: "Włochy", slug: "wlochy", active: true },
   { iso2: "CI", iso3: "CIV", name_pl: "Wybrzeże Kości Słoniowej", slug: "wybrzeze-kosci-sloniowej", active: true },

@@ -135,9 +135,25 @@ export const AdminLanguageTemplates = () => {
       return;
     }
 
+    const normalizedLanguageCode = form.language_code.trim().toLowerCase();
+    const duplicate = templates.find((template) =>
+      template.id !== editingId
+      && template.country_id === form.country_id
+      && template.language_code.trim().toLowerCase() === normalizedLanguageCode,
+    );
+
+    if (duplicate) {
+      toast({
+        title: "Ten wariant językowy już istnieje",
+        description: `Dla tego kraju dodano już język: ${duplicate.language_name} (${duplicate.language_code}).`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const payload = {
       country_id: form.country_id,
-      language_code: form.language_code,
+      language_code: normalizedLanguageCode,
       language_name: form.language_name,
       front_thank_you_text: form.front_thank_you_text,
       back_qr_label: form.back_qr_label,
@@ -145,7 +161,7 @@ export const AdminLanguageTemplates = () => {
     };
 
     try {
-      await firestoreService.upsertLanguageTemplate(editingId || crypto.randomUUID(), payload);
+      await firestoreService.upsertLanguageTemplate(editingId || `${form.country_id}-${normalizedLanguageCode}`, payload);
       toast({ title: editingId ? "Szablon językowy zaktualizowany" : "Szablon językowy dodany" });
       resetForm();
       fetchData();

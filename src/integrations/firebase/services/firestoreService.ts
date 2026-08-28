@@ -674,7 +674,15 @@ export const firestoreService = {
     data: Omit<FirestoreLanguageTemplate, "id">,
   ): Promise<void> {
     if (!isFirebaseConfigured) return;
+    const normalizedLanguageCode = data.language_code.trim().toLowerCase();
     const templates = await this.getLanguageTemplatesForCountry(data.country_id);
+    const duplicate = templates.find((template) =>
+      template.id !== id && template.language_code.trim().toLowerCase() === normalizedLanguageCode,
+    );
+
+    if (duplicate) {
+      throw new Error(`duplicate_language_template:${data.country_id}:${normalizedLanguageCode}`);
+    }
     // Kraj może nie mieć języka podstawowego. Gdy administrator oznaczy
     // wariant jako podstawowy, jest on jedynym domyślnym wariantem kraju.
     const isPrimary = data.is_primary === true;
@@ -685,7 +693,7 @@ export const firestoreService = {
         batch.update(doc(db, "card_language_templates", template.id), { is_primary: false, updated_at: new Date().toISOString() });
       });
     }
-    batch.set(target, { ...data, is_primary: isPrimary, updated_at: new Date().toISOString() }, { merge: true });
+    batch.set(target, { ...data, language_code: normalizedLanguageCode, is_primary: isPrimary, updated_at: new Date().toISOString() }, { merge: true });
     await batch.commit();
   },
 
