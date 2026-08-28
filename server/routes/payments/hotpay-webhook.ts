@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { findOrdersByNumber, fromFirestoreFields, readDocument, updateDocument } from "../../../api/_lib/gcp-firestore.js";
 import { preparePaidOrderPod } from "../../../api/_lib/pod-order.js";
+import { updateReservationStatus } from "../../../api/_lib/design-reservation.js";
 
 const safeEquals = (left: string, right: string) => left.length === right.length && crypto.timingSafeEqual(Buffer.from(left), Buffer.from(right));
 const sha256 = (value: string) => crypto.createHash("sha256").update(value, "utf8").digest("hex");
@@ -105,7 +106,21 @@ export default {
           paid_at: paidAt,
           updated_at: paidAt,
         })));
+        await updateReservationStatus(String(order.reservation_id || ""), "confirmed");
         await preparePaidOrderPod(documentPaths[0], orderNumber);
+      } else if (["FAILURE", "FAILED", "CANCEL", "CANCELED"].includes(status.toUpperCase())) {
+        const documentPaths = await findOrdersByNumber(orderNumber);
+        if (documentPaths.length) {
+          const orderId = documentPaths[0].split("/").pop() || "";
+          const orderDocument = await readDocument("orders", orderId);
+          const order = fromFirestoreFields(orderDocument.fields);
+          await Promise.all(documentPaths.map((documentPath) => updateDocument(documentPath, {
+            payment_status: "failed",
+            status: "payment_failed",
+            updated_at: new Date().toISOString(),
+          })));
+          await updateReservationStatus(String((order as Record<string, unknown>).reservation_id || ""), "released");
+        }
       }
       return new Response("OK", { status: 200 });
     } catch {

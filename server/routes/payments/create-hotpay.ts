@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { fromFirestoreFields, readDocument, writeDocument } from "../../../api/_lib/gcp-firestore.js";
 import { json, preflight } from "../../../api/_lib/http.js";
+import { releaseExpiredReservations, reserveDesignAvailability, updateReservationStatus } from "../../../api/_lib/design-reservation.js";
 
 type CheckoutItem = { card_design_id?: string; quantity?: number; primary_language_code?: string; secondary_language_code?: string };
 
@@ -14,11 +15,13 @@ export default {
     if (request.method === "OPTIONS") return preflight();
     if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
+    let reservationId: string | null = null;
     try {
       const body = await request.json() as Record<string, unknown>;
       const items = safeItems(body.items);
       const totalQuantity = items.reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item.quantity) || 0)), 0);
       if (totalQuantity < 10) return json({ error: "minimum_order_quantity_10" }, 400);
+      await releaseExpiredReservations();
 
       const orderItems = await Promise.all(items.map(async (item) => {
         if (!item.card_design_id) throw new Error("missing_card_design_id");
@@ -48,13 +51,16 @@ export default {
       const itemsTotalGrosze = orderItems.reduce((sum, item) => sum + item.total_price_grosze, 0);
       const totalGrosze = itemsTotalGrosze + shippingCostGrosze;
       const orderId = crypto.randomUUID();
+      const reservation = await reserveDesignAvailability(orderId, orderItems.map((item) => ({ card_design_id: item.card_design_id, quantity: item.quantity })));
+      reservationId = reservation?.id || null;
       const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}`;
       const origin = typeof body.origin_url === "string" ? body.origin_url : "https://podrozowka.web.app";
       const returnUrl = `${origin}/checkout/potwierdzenie?order=${encodeURIComponent(orderNumber)}&order_id=${encodeURIComponent(orderId)}`;
       const customerEmail = typeof body.customer_email === "string" ? body.customer_email : "";
       const userId = typeof body.user_id === "string" ? body.user_id : "";
 
-      await writeDocument("orders", orderId, {
+      try {
+        await writeDocument("orders", orderId, {
         id: orderId,
         order_number: orderNumber,
         user_id: userId,
@@ -75,8 +81,14 @@ export default {
         shipping_address: body.shipping_address || null,
         invoice: body.invoice || { requested: false },
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
+          updated_at: new Date().toISOString(),
+          reservation_id: reservation?.id || null,
+          reservation_expires_at: reservation?.expires_at || null,
+        });
+      } catch (error) {
+        await updateReservationStatus(reservationId, "released").catch(() => undefined);
+        throw error;
+      }
 
       if (body.payment_method === "cod") {
         return json({ ok: true, payment_method: "cod", order_id: orderId, order_number: orderNumber, redirect_url: `${returnUrl}&cod=1` });
@@ -84,7 +96,10 @@ export default {
 
       const secret = process.env.HOTPAY_SECRET;
       const password = process.env.HOTPAY_NOTIFICATION_PASSWORD;
-      if (!secret || !password) return json({ error: "hotpay_not_configured", order_number: orderNumber }, 503);
+      if (!secret || !password) {
+        await updateReservationStatus(reservationId, "released").catch(() => undefined);
+        return json({ error: "hotpay_not_configured", order_number: orderNumber }, 503);
+      }
 
       const amount = (totalGrosze / 100).toFixed(2);
       const serviceName = `Podróżówka - zamówienie ${orderNumber}`;
@@ -100,10 +115,16 @@ export default {
       });
       const response = await fetch("https://platnosc.hotpay.pl/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: form });
       const result = await response.json().catch(() => null) as { STATUS?: boolean; URL?: string; WIADOMOSC?: string } | null;
-      if (!response.ok || !result?.STATUS || !result.URL) return json({ error: result?.WIADOMOSC || "hotpay_initialization_failed", order_number: orderNumber }, 502);
+      if (!response.ok || !result?.STATUS || !result.URL) {
+        await updateReservationStatus(reservationId, "released").catch(() => undefined);
+        return json({ error: result?.WIADOMOSC || "hotpay_initialization_failed", order_number: orderNumber }, 502);
+      }
       return json({ ok: true, payment_gateway: "hotpay", order_id: orderId, order_number: orderNumber, redirect_url: result.URL });
     } catch (error) {
-      return json({ error: error instanceof Error ? error.message : "payment_initialization_failed" }, 500);
+      // A gateway/network error must not leave finite stock blocked for 15 minutes.
+      await updateReservationStatus(reservationId, "released").catch(() => undefined);
+      const message = error instanceof Error ? error.message : "payment_initialization_failed";
+      return json({ error: message }, message === "design_out_of_stock" ? 409 : 500);
     }
   },
 };

@@ -16,6 +16,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:integration": "node scripts/run-firestore-emulator-tests.mjs",
     "migrate:runtime-config": "node scripts/migrate-runtime-config-to-firestore.mjs"
   },
   "dependencies": {
