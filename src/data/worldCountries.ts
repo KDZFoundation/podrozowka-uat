@@ -50,6 +50,7 @@ export const WORLD_COUNTRIES: WorldCountrySeed[] = [
   { iso2: "DJ", iso3: "DJI", name_pl: "Dżibuti", slug: "dzibuti", active: true },
   { iso2: "EG", iso3: "EGY", name_pl: "Egipt", slug: "egipt", active: true },
   { iso2: "EC", iso3: "ECU", name_pl: "Ekwador", slug: "ekwador", active: true },
+  { iso2: "EH", iso3: "ESH", name_pl: "Sahara Zachodnia", slug: "sahara-zachodnia", active: true },
   { iso2: "ER", iso3: "ERI", name_pl: "Erytrea", slug: "erytrea", active: true },
   { iso2: "EE", iso3: "EST", name_pl: "Estonia", slug: "estonia", active: true },
   { iso2: "SZ", iso3: "SWZ", name_pl: "Eswatini", slug: "eswatini", active: true },

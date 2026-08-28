@@ -90,4 +90,10 @@ export const WORLD_LANGUAGES: LanguageOption[] = [
   { code: "kk", name_pl: "Kazachski", name_native: "Қазақша", default_front_thank_you: "САПАРЫМНЫҢ БІР БӨЛІГІ БОЛҒАНЫҢ ҮШІН РАҚМЕТ", default_back_qr_label: "ОСЫ QR КОДЫН СКАНЕРЛЕП, САПАРЛАРЫМДЫ ҚАДАҒАЛА" },
   { code: "ko", name_pl: "Koreański", name_native: "한국어", default_front_thank_you: "내 여행의 일부가 되어 주셔서 감사합니다", default_back_qr_label: "이 QR 코드를 스캔하고 내 여행을 따라오세요" },
   { code: "uz", name_pl: "Uzbecki", name_native: "Oʻzbekcha", default_front_thank_you: "SAYOHATIMNING BIR QISMI BO'LGANINGIZ UCHUN RAHMAT", default_back_qr_label: "USHBU QR KODNI SKANERLANG VA SAYOHATLARIMNI KUZATING" },
+  { code: "wo", name_pl: "Wolof", name_native: "Wolof", default_front_thank_you: "JËREJËF CI SA BOKK CI SAMA TUKKI", default_back_qr_label: "SKANNEEL KOODU QR BII TE TOPP SAMA TUKKI YI" },
+  { code: "mnk", name_pl: "Mandinka", name_native: "Mandinka", default_front_thank_you: "ABARAKA I YE N'NA TAARIKOO KAFUŊO LA", default_back_qr_label: "SCAN QR KODU NIN NAŊ N'NA TAARIKOO LU KANU" },
+  { code: "be", name_pl: "Białoruski", name_native: "Беларуская", default_front_thank_you: "ДЗЯКУЙ, ШТО ТЫ ЧАСТКА МАЁЙ ВАНДРОЎКІ", default_back_qr_label: "АДСКАНУЙЦЕ ГЭТЫ QR-КОД І САЧЫЦЕ ЗА МАІМІ ПАДАРОЖЖАМІ" },
+  { code: "qu", name_pl: "Keczua", name_native: "Runa Simi", default_front_thank_you: "SULPAYKI ÑUQAPA PURIYNIYPI PARTE KASQAYKIMANTA", default_back_qr_label: "KAY QR CODIGOTA QHAWAY HINASPA PURIYNIYKUNATA QATIPAY" },
+  { code: "fil", name_pl: "Filipiński", name_native: "Filipino", default_front_thank_you: "SALAMAT SA PAGIGING BAHAGI NG AKING PAGLALAKBAY", default_back_qr_label: "I-SCAN ANG QR CODE NA ITO AT SUNDAN ANG AKING MGA PAGLALAKBAY" },
+  { code: "ms", name_pl: "Malajski", name_native: "Bahasa Melayu", default_front_thank_you: "TERIMA KASIH KERANA MENJADI SEBAHAGIAN DARIPADA PERJALANAN SAYA", default_back_qr_label: "IMBAS KOD QR INI DAN IKUTI PERJALANAN SAYA" },
 ];
