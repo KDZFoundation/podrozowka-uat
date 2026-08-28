@@ -14,6 +14,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db, isFirebaseConfigured } from "../config";
+import { normalizeCountryCode } from "@/lib/countryCatalog";
 import type {
   FirestoreCardDesign,
   FirestoreCountry,
@@ -627,8 +628,16 @@ export const firestoreService = {
 
   async upsertCountry(id: string, data: Record<string, unknown>): Promise<void> {
     if (!isFirebaseConfigured) return;
-    await setDoc(doc(db, "countries", id), {
+    const iso2 = normalizeCountryCode(typeof data.iso2 === "string" ? data.iso2 : id);
+    const allCountries = await this.getCountries();
+    // Gdy kraj został utworzony w starszej migracji z losowym ID, aktualizujemy
+    // istniejący dokument zamiast tworzyć drugi przy imporcie słownika.
+    const existing = allCountries.find((country) => normalizeCountryCode(country.iso2 || country.id) === iso2);
+    const targetId = existing?.id || id;
+
+    await setDoc(doc(db, "countries", targetId), {
       ...data,
+      iso2,
       is_active: data.active ?? data.is_active ?? true,
       updated_at: new Date().toISOString(),
     }, { merge: true });

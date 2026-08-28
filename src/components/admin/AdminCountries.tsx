@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Plus, Pencil, Trash2, Check, X, Globe2, Sparkles, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { WORLD_COUNTRIES } from "@/data/worldCountries";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { normalizeCountryCode, sortCountriesByName, uniqueCountriesByIso } from "@/lib/countryCatalog";
 
 interface Country {
   id: string;
@@ -127,7 +128,12 @@ const AdminCountries = () => {
     }
   };
 
-  const filteredCountries = countries.filter((c) => {
+  const catalogCountries = useMemo(
+    () => sortCountriesByName(uniqueCountriesByIso(countries)),
+    [countries],
+  );
+
+  const filteredCountries = catalogCountries.filter((c) => {
     const q = searchQuery.toLowerCase().trim();
     if (!q) return true;
     return (
@@ -144,7 +150,7 @@ const AdminCountries = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4">
         <div>
           <h2 className="font-display text-xl font-bold text-foreground flex items-center gap-2">
-            <Globe2 className="w-5 h-5 text-primary" /> Słownik Kraje ({countries.length})
+            <Globe2 className="w-5 h-5 text-primary" /> Słownik Kraje ({catalogCountries.length})
           </h2>
           <p className="text-xs text-muted-foreground">
             Zarządzaj bazą wszystkich państw i terytoriów świata dostępnych w systemie.
@@ -191,12 +197,12 @@ const AdminCountries = () => {
           className="bg-card rounded-xl p-4 shadow-soft border border-border space-y-3">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className="text-xs text-muted-foreground block mb-1">Kod ISO2 *</label>
-              <Input value={form.iso2} onChange={(e) => setForm({ ...form, iso2: e.target.value.toUpperCase() })} placeholder="PL" maxLength={2} />
+              <label className="text-xs text-muted-foreground block mb-1">Kod kraju / regionu *</label>
+              <Input value={form.iso2} onChange={(e) => setForm({ ...form, iso2: normalizeCountryCode(e.target.value) })} placeholder="PL lub GB-SCT" maxLength={6} />
             </div>
             <div>
               <label className="text-xs text-muted-foreground block mb-1">Kod ISO3</label>
-              <Input value={form.iso3} onChange={(e) => setForm({ ...form, iso3: e.target.value.toUpperCase() })} placeholder="POL" maxLength={3} />
+              <Input value={form.iso3} onChange={(e) => setForm({ ...form, iso3: normalizeCountryCode(e.target.value) })} placeholder="POL lub GBR-SCT" maxLength={7} />
             </div>
             <div>
               <label className="text-xs text-muted-foreground block mb-1">Nazwa Polska *</label>

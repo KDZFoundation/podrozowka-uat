@@ -7,7 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { WORLD_LANGUAGES, LanguageOption } from "@/data/languages";
+import { WORLD_LANGUAGES } from "@/data/languages";
+import { normalizeCountryCode, sortCountriesByName, uniqueCountriesByIso } from "@/lib/countryCatalog";
 
 interface Country {
   id: string;
@@ -196,15 +197,21 @@ export const AdminLanguageTemplates = () => {
   };
 
   const sortedCountries = useMemo(
-    () => [...countries].sort((left, right) => left.name_pl.localeCompare(right.name_pl, "pl", { sensitivity: "base" })),
+    () => sortCountriesByName(uniqueCountriesByIso(countries)),
     [countries],
+  );
+
+  const sortedLanguages = useMemo(
+    () => [...WORLD_LANGUAGES].sort((left, right) => left.name_pl.localeCompare(right.name_pl, "pl", { sensitivity: "base" })),
+    [],
   );
 
   const filteredTemplates = useMemo(() => {
     const countryNameById = new Map(countries.map((country) => [country.id, country.name_pl]));
+    const countryIsoById = new Map(countries.map((country) => [country.id, normalizeCountryCode(country.iso2 || country.id)]));
 
     return templates
-      .filter((template) => filterCountry === "all" || template.country_id === filterCountry)
+      .filter((template) => filterCountry === "all" || countryIsoById.get(template.country_id) === filterCountry)
       .sort((left, right) => {
         const leftCountry = left.countries?.name_pl || countryNameById.get(left.country_id) || "";
         const rightCountry = right.countries?.name_pl || countryNameById.get(right.country_id) || "";
@@ -248,7 +255,7 @@ export const AdminLanguageTemplates = () => {
           <SelectContent>
             <SelectItem value="all">Wszystkie kraje</SelectItem>
             {sortedCountries.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
+              <SelectItem key={c.id} value={normalizeCountryCode(c.iso2 || c.id)}>
                 {c.name_pl} ({c.iso2})
               </SelectItem>
             ))}
@@ -302,7 +309,7 @@ export const AdminLanguageTemplates = () => {
                   <SelectValue placeholder="Słownik języków..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {WORLD_LANGUAGES.map((l) => (
+                  {sortedLanguages.map((l) => (
                     <SelectItem key={l.code} value={l.code}>
                       {l.name_pl} ({l.code}) — {l.name_native}
                     </SelectItem>
