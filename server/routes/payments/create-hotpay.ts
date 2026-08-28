@@ -1,11 +1,17 @@
 import crypto from "node:crypto";
-import { fromFirestoreFields, queryDocuments, readDocument, writeDocument } from "../../../api/_lib/gcp-firestore.js";
+import { fromFirestoreFields, queryDocuments, readDocument, updateDocument, writeDocument } from "../../../api/_lib/gcp-firestore.js";
 import { json, preflight } from "../../../api/_lib/http.js";
 import { releaseExpiredReservations, reserveDesignAvailability, updateReservationStatus } from "../../../api/_lib/design-reservation.js";
 
 type CheckoutItem = { card_design_id?: string; quantity?: number; primary_language_code?: string; secondary_language_code?: string };
 
 const normalizeLanguageCode = (value: unknown) => typeof value === "string" ? value.trim().toLowerCase() : "";
+const normalizeIdempotencyKey = (value: unknown) => {
+  if (typeof value !== "string") return "";
+  const key = value.trim();
+  return /^[A-Za-z0-9_-]{16,160}$/.test(key) ? key : "";
+};
+const deterministicOrderId = (value: string) => crypto.createHash("sha256").update(`order:${value}`, "utf8").digest("hex").slice(0, 32);
 
 const sha256 = (value: string) => crypto.createHash("sha256").update(value, "utf8").digest("hex");
 
@@ -20,6 +26,11 @@ export default {
     let reservationId: string | null = null;
     try {
       const body = await request.json() as Record<string, unknown>;
+      const suppliedIdempotencyKey = normalizeIdempotencyKey(request.headers.get("Idempotency-Key") || body.idempotency_key);
+      if ((request.headers.has("Idempotency-Key") || typeof body.idempotency_key === "string") && !suppliedIdempotencyKey) {
+        return json({ error: "invalid_idempotency_key" }, 400);
+      }
+      const idempotencyKey = suppliedIdempotencyKey || crypto.randomUUID();
       const items = safeItems(body.items);
       const totalQuantity = items.reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item.quantity) || 0)), 0);
       if (totalQuantity < 10) return json({ error: "minimum_order_quantity_10" }, 400);
@@ -70,14 +81,28 @@ export default {
       const shippingCostGrosze = Math.max(0, Math.floor(Number(body.shipping_cost_grosze) || 0));
       const itemsTotalGrosze = orderItems.reduce((sum, item) => sum + item.total_price_grosze, 0);
       const totalGrosze = itemsTotalGrosze + shippingCostGrosze;
-      const orderId = crypto.randomUUID();
+      const userId = typeof body.user_id === "string" ? body.user_id : "";
+      const customerEmail = typeof body.customer_email === "string" ? body.customer_email : "";
+      const orderId = suppliedIdempotencyKey
+        ? deterministicOrderId(`${userId}:${customerEmail}:${idempotencyKey}`)
+        : crypto.randomUUID();
+      const existingOrder = await readDocument("orders", orderId).catch(() => null);
+      if (existingOrder?.fields) {
+        const data = fromFirestoreFields(existingOrder.fields) as Record<string, unknown>;
+        const orderNumber = String(data.order_number || "");
+        if (data.payment_method === "cod") {
+          return json({ ok: true, payment_method: "cod", order_id: orderId, order_number: orderNumber, redirect_url: `${String(data.return_url || "")}&cod=1` });
+        }
+        if (typeof data.hotpay_redirect_url === "string" && data.hotpay_redirect_url) {
+          return json({ ok: true, payment_gateway: "hotpay", order_id: orderId, order_number: orderNumber, redirect_url: data.hotpay_redirect_url });
+        }
+        return json({ error: data.payment_status === "initialization_failed" ? "hotpay_initialization_failed" : "payment_initialization_in_progress", order_id: orderId, order_number: orderNumber }, 409);
+      }
       const reservation = await reserveDesignAvailability(orderId, orderItems.map((item) => ({ card_design_id: item.card_design_id, quantity: item.quantity })));
       reservationId = reservation?.id || null;
-      const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}`;
+      const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
       const origin = typeof body.origin_url === "string" ? body.origin_url : "https://podrozowka.web.app";
       const returnUrl = `${origin}/checkout/potwierdzenie?order=${encodeURIComponent(orderNumber)}&order_id=${encodeURIComponent(orderId)}`;
-      const customerEmail = typeof body.customer_email === "string" ? body.customer_email : "";
-      const userId = typeof body.user_id === "string" ? body.user_id : "";
 
       try {
         await writeDocument("orders", orderId, {
@@ -87,8 +112,10 @@ export default {
         guest_email: customerEmail,
         customer_email: customerEmail,
         status: "new",
-        payment_method: "hotpay",
+        payment_method: body.payment_method === "cod" ? "cod" : "hotpay",
         payment_status: "pending",
+        checkout_idempotency_key: suppliedIdempotencyKey || null,
+        return_url: returnUrl,
         total_amount_grosze: totalGrosze,
         total_amount_pln: totalGrosze / 100,
         total_amount: totalGrosze / 100,
@@ -106,6 +133,15 @@ export default {
           reservation_expires_at: reservation?.expires_at || null,
         });
       } catch (error) {
+        const duplicateOrder = await readDocument("orders", orderId).catch(() => null);
+        if (duplicateOrder?.fields) {
+          const data = fromFirestoreFields(duplicateOrder.fields) as Record<string, unknown>;
+          const duplicateOrderNumber = String(data.order_number || "");
+          if (typeof data.hotpay_redirect_url === "string" && data.hotpay_redirect_url) {
+            return json({ ok: true, payment_gateway: "hotpay", order_id: orderId, order_number: duplicateOrderNumber, redirect_url: data.hotpay_redirect_url });
+          }
+          return json({ error: "payment_initialization_in_progress", order_id: orderId, order_number: duplicateOrderNumber }, 409);
+        }
         await updateReservationStatus(reservationId, "released").catch(() => undefined);
         throw error;
       }
@@ -118,6 +154,7 @@ export default {
       const password = process.env.HOTPAY_NOTIFICATION_PASSWORD;
       if (!secret || !password) {
         await updateReservationStatus(reservationId, "released").catch(() => undefined);
+        await updateDocument(`orders/${orderId}`, { payment_status: "initialization_failed", status: "payment_initialization_failed", updated_at: new Date().toISOString() }).catch(() => undefined);
         return json({ error: "hotpay_not_configured", order_number: orderNumber }, 503);
       }
 
@@ -137,8 +174,10 @@ export default {
       const result = await response.json().catch(() => null) as { STATUS?: boolean; URL?: string; WIADOMOSC?: string } | null;
       if (!response.ok || !result?.STATUS || !result.URL) {
         await updateReservationStatus(reservationId, "released").catch(() => undefined);
+        await updateDocument(`orders/${orderId}`, { payment_status: "initialization_failed", status: "payment_initialization_failed", updated_at: new Date().toISOString() }).catch(() => undefined);
         return json({ error: result?.WIADOMOSC || "hotpay_initialization_failed", order_number: orderNumber }, 502);
       }
+      await updateDocument(`orders/${orderId}`, { hotpay_redirect_url: result.URL, updated_at: new Date().toISOString() });
       return json({ ok: true, payment_gateway: "hotpay", order_id: orderId, order_number: orderNumber, redirect_url: result.URL });
     } catch (error) {
       // A gateway/network error must not leave finite stock blocked for 15 minutes.

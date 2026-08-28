@@ -132,6 +132,28 @@ export const writeDocument = async (collection: string, id: string, data: Record
     body: JSON.stringify({ fields: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, toFirestoreValue(value)])) }),
   });
 
+export const firestoreDocumentName = (documentPath: string) => {
+  const settings = config();
+  return `projects/${settings.projectId}/databases/${settings.databaseId}/documents/${documentPath}`;
+};
+
+export const createDocumentWrite = (documentPath: string, data: Record<string, unknown>) => ({
+  update: {
+    name: firestoreDocumentName(documentPath),
+    fields: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, toFirestoreValue(value)])),
+  },
+  currentDocument: { exists: false },
+});
+
+export const updateDocumentWrite = (documentPath: string, data: Record<string, unknown>, updateTime?: string) => ({
+  update: {
+    name: firestoreDocumentName(documentPath),
+    fields: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, toFirestoreValue(value)])),
+  },
+  updateMask: { fieldPaths: Object.keys(data) },
+  ...(updateTime ? { currentDocument: { updateTime } } : {}),
+});
+
 export const updateDocument = async (documentPath: string, data: Record<string, unknown>) => {
   const masks = Object.keys(data).map((key) => `updateMask.fieldPaths=${encodeURIComponent(key)}`).join("&");
   return firestoreApi(`/${documentPath}?${masks}`, {
@@ -158,6 +180,10 @@ export const commitWrites = async (writes: unknown[]) =>
     method: "POST",
     body: JSON.stringify({ writes }),
   });
+
+/** Atomically update a document only if it has not changed since it was read. */
+export const updateDocumentIfCurrent = async (documentPath: string, data: Record<string, unknown>, updateTime: string) =>
+  commitWrites([updateDocumentWrite(documentPath, data, updateTime)]);
 
 export const queryDocuments = async (collectionId: string, fieldPath: string, value: FirestoreValue, queryLimit = 500) => {
   const results = await firestoreApi(":runQuery", {

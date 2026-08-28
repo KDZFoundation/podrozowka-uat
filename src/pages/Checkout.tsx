@@ -61,6 +61,7 @@ const Checkout = () => {
   const [shippingMethod, setShippingMethod] = useState<ShippingMethod>("inpost_locker");
   const [courierAddress, setCourierAddress] = useState<CourierAddress>(emptyCourierAddress);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [paymentAttemptKey, setPaymentAttemptKey] = useState(() => crypto.randomUUID());
   const [invoiceRequested, setInvoiceRequested] = useState(false);
   const [companyName, setCompanyName] = useState("");
   const [companyNip, setCompanyNip] = useState("");
@@ -196,6 +197,7 @@ const Checkout = () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            "Idempotency-Key": paymentAttemptKey,
           },
           body: JSON.stringify({
             ...payload,
@@ -221,16 +223,19 @@ const Checkout = () => {
           description: "Ktoś Cię wyprzedził. Wróć do koszyka i zaktualizuj ilość.",
         });
         setIsSubmitting(false);
+        setPaymentAttemptKey(crypto.randomUUID());
         return;
       }
       if (errCode === "invoice_nip_invalid") {
         toast.error("Nieprawidłowy NIP", { description: "Sprawdź numer i spróbuj ponownie." });
         setIsSubmitting(false);
+        setPaymentAttemptKey(crypto.randomUUID());
         return;
       }
       if (errCode) {
         toast.error("Nie udało się rozpocząć płatności", { description: errCode });
         setIsSubmitting(false);
+        if (errCode !== "payment_initialization_in_progress") setPaymentAttemptKey(crypto.randomUUID());
         return;
       }
 
@@ -245,6 +250,7 @@ const Checkout = () => {
       if (!url) {
         toast.error("Nie udało się rozpocząć płatności");
         setIsSubmitting(false);
+        setPaymentAttemptKey(crypto.randomUUID());
         return;
       }
       // Clear the cart only after the gateway supplied a valid redirect.
@@ -260,6 +266,7 @@ const Checkout = () => {
           : String(e);
       toast.error("Nie udało się rozpocząć płatności", { description: errMsg });
       setIsSubmitting(false);
+      setPaymentAttemptKey(crypto.randomUUID());
     }
   };
 

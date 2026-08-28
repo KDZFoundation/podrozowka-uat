@@ -5,7 +5,7 @@ const firestore = vi.hoisted(() => ({
   findOrdersByNumber: vi.fn(),
   fromFirestoreFields: vi.fn(),
   readDocument: vi.fn(),
-  updateDocument: vi.fn(),
+  updateDocumentIfCurrent: vi.fn(),
 }));
 const pod = vi.hoisted(() => ({ preparePaidOrderPod: vi.fn() }));
 const reservations = vi.hoisted(() => ({ updateReservationStatus: vi.fn() }));
@@ -39,13 +39,13 @@ describe("HotPay webhook HTTP integration", () => {
     process.env.HOTPAY_NOTIFICATION_PASSWORD = "notification-password";
     process.env.HOTPAY_CURRENCY = "PLN";
     firestore.findOrdersByNumber.mockResolvedValue(["orders/order-1"]);
-    firestore.readDocument.mockResolvedValue({ fields: { mocked: true } });
+    firestore.readDocument.mockResolvedValue({ fields: { mocked: true }, updateTime: "2026-08-28T12:00:00.000000Z" });
     firestore.fromFirestoreFields.mockReturnValue({
       total_amount_grosze: 6389,
       currency: "PLN",
       reservation_id: "reservation-1",
     });
-    firestore.updateDocument.mockResolvedValue({});
+    firestore.updateDocumentIfCurrent.mockResolvedValue({});
     pod.preparePaidOrderPod.mockResolvedValue(undefined);
     reservations.updateReservationStatus.mockResolvedValue(undefined);
   });
@@ -59,11 +59,11 @@ describe("HotPay webhook HTTP integration", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("OK");
-    expect(firestore.updateDocument).toHaveBeenCalledWith("orders/order-1", expect.objectContaining({
+    expect(firestore.updateDocumentIfCurrent).toHaveBeenCalledWith("orders/order-1", expect.objectContaining({
       payment_status: "paid",
       status: "paid",
       hotpay_payment_id: "HP-123",
-    }));
+    }), "2026-08-28T12:00:00.000000Z");
     expect(reservations.updateReservationStatus).toHaveBeenCalledWith("reservation-1", "confirmed");
     expect(pod.preparePaidOrderPod).toHaveBeenCalledWith("orders/order-1", "ORD-TEST-1");
   });
@@ -77,7 +77,7 @@ describe("HotPay webhook HTTP integration", () => {
 
     expect(response.status).toBe(400);
     expect(await response.text()).toBe("payment amount or currency mismatch");
-    expect(firestore.updateDocument).not.toHaveBeenCalled();
+    expect(firestore.updateDocumentIfCurrent).not.toHaveBeenCalled();
     expect(reservations.updateReservationStatus).not.toHaveBeenCalled();
     expect(pod.preparePaidOrderPod).not.toHaveBeenCalled();
   });
@@ -90,11 +90,53 @@ describe("HotPay webhook HTTP integration", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(firestore.updateDocument).toHaveBeenCalledWith("orders/order-1", expect.objectContaining({
+    expect(firestore.updateDocumentIfCurrent).toHaveBeenCalledWith("orders/order-1", expect.objectContaining({
       payment_status: "failed",
       status: "payment_failed",
-    }));
+    }), "2026-08-28T12:00:00.000000Z");
     expect(reservations.updateReservationStatus).toHaveBeenCalledWith("reservation-1", "released");
+    expect(pod.preparePaidOrderPod).not.toHaveBeenCalled();
+  });
+
+  it("does not downgrade a paid order when a late FAILURE callback arrives", async () => {
+    firestore.fromFirestoreFields.mockReturnValue({
+      total_amount_grosze: 6389,
+      currency: "PLN",
+      reservation_id: "reservation-1",
+      payment_status: "paid",
+    });
+
+    const response = await hotpayWebhook.fetch(new Request("https://example.test/api/payments/hotpay-webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: notification({ STATUS: "FAILURE" }).toString(),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(firestore.updateDocumentIfCurrent).not.toHaveBeenCalled();
+    expect(reservations.updateReservationStatus).not.toHaveBeenCalled();
+  });
+
+  it("marks a late SUCCESS after FAILURE for manual review without POD generation", async () => {
+    firestore.fromFirestoreFields.mockReturnValue({
+      total_amount_grosze: 6389,
+      currency: "PLN",
+      reservation_id: "reservation-1",
+      payment_status: "failed",
+    });
+
+    const response = await hotpayWebhook.fetch(new Request("https://example.test/api/payments/hotpay-webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: notification().toString(),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(firestore.updateDocumentIfCurrent).toHaveBeenCalledWith("orders/order-1", expect.objectContaining({
+      payment_status: "payment_review_required",
+      payment_review_reason: "success_after_released_reservation",
+    }), "2026-08-28T12:00:00.000000Z");
+    expect(reservations.updateReservationStatus).not.toHaveBeenCalled();
     expect(pod.preparePaidOrderPod).not.toHaveBeenCalled();
   });
 });
