@@ -54,7 +54,7 @@ describe("HotPay webhook HTTP integration", () => {
     const response = await hotpayWebhook.fetch(new Request("https://example.test/api/payments/hotpay-webhook", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: notification(),
+      body: notification().toString(),
     }));
 
     expect(response.status).toBe(200);
@@ -72,7 +72,7 @@ describe("HotPay webhook HTTP integration", () => {
     const response = await hotpayWebhook.fetch(new Request("https://example.test/api/payments/hotpay-webhook", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: notification({ KWOTA: "62.89" }),
+      body: notification({ KWOTA: "62.89" }).toString(),
     }));
 
     expect(response.status).toBe(400);
@@ -86,7 +86,7 @@ describe("HotPay webhook HTTP integration", () => {
     const response = await hotpayWebhook.fetch(new Request("https://example.test/api/payments/hotpay-webhook", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: notification({ STATUS: "FAILURE" }),
+      body: notification({ STATUS: "FAILURE" }).toString(),
     }));
 
     expect(response.status).toBe(200);
