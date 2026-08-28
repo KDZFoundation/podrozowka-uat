@@ -192,7 +192,15 @@ export const AdminLanguageTemplates = () => {
       toast({ title: "Szablon usunięty" });
       fetchData();
     } catch (error) {
-      toast({ title: "Błąd usuwania", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      const message = error instanceof Error ? error.message : String(error);
+      const isInUse = message.startsWith("language_template_in_use:");
+      toast({
+        title: isInUse ? "Nie można usunąć używanego szablonu" : "Błąd usuwania",
+        description: isInUse
+          ? "Szablon jest użyty przez wzór, zamówienie albo jednostkę magazynową. Zachowaj go, aby historyczne wydruki pozostały poprawne."
+          : message,
+        variant: "destructive",
+      });
     }
   };
 

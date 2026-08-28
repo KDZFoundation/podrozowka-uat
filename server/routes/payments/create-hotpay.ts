@@ -1,9 +1,11 @@
 import crypto from "node:crypto";
-import { fromFirestoreFields, readDocument, writeDocument } from "../../../api/_lib/gcp-firestore.js";
+import { fromFirestoreFields, queryDocuments, readDocument, writeDocument } from "../../../api/_lib/gcp-firestore.js";
 import { json, preflight } from "../../../api/_lib/http.js";
 import { releaseExpiredReservations, reserveDesignAvailability, updateReservationStatus } from "../../../api/_lib/design-reservation.js";
 
 type CheckoutItem = { card_design_id?: string; quantity?: number; primary_language_code?: string; secondary_language_code?: string };
+
+const normalizeLanguageCode = (value: unknown) => typeof value === "string" ? value.trim().toLowerCase() : "";
 
 const sha256 = (value: string) => crypto.createHash("sha256").update(value, "utf8").digest("hex");
 
@@ -29,9 +31,27 @@ export default {
         const design = fromFirestoreFields(document.fields);
         const data = design as Record<string, unknown>;
         if (data.active === false) throw new Error("card_design_unavailable");
+        const countryId = typeof data.country_id === "string" ? data.country_id : "";
+        if (!countryId) throw new Error("card_design_missing_country");
         const quantity = Math.floor(Number(item.quantity) || 0);
         const priceGrosze = Number(data.price_grosze || 0);
         if (quantity < 1 || priceGrosze < 1) throw new Error("invalid_order_item");
+        const templates = await queryDocuments("card_language_templates", "country_id", { stringValue: countryId });
+        const allowedLanguages = new Set(
+          templates
+            .map((template) => normalizeLanguageCode(template.data.language_code))
+            .filter(Boolean),
+        );
+        const primaryLanguageCode = normalizeLanguageCode(item.primary_language_code);
+        const secondaryLanguageCode = normalizeLanguageCode(item.secondary_language_code);
+        if (!primaryLanguageCode) throw new Error("missing_primary_language");
+        if (!allowedLanguages.has(primaryLanguageCode)) throw new Error("invalid_primary_language_for_country");
+        if (secondaryLanguageCode && !allowedLanguages.has(secondaryLanguageCode)) {
+          throw new Error("invalid_secondary_language_for_country");
+        }
+        if (secondaryLanguageCode && secondaryLanguageCode === primaryLanguageCode) {
+          throw new Error("secondary_language_must_differ");
+        }
         return {
           card_design_id: item.card_design_id,
           title: String(data.title || "Podróżówka"),
@@ -40,10 +60,10 @@ export default {
           total_price_grosze: priceGrosze * quantity,
           unit_price_pln: priceGrosze / 100,
           total_price_pln: (priceGrosze * quantity) / 100,
-          language_code: String(data.language_code || "pl"),
+          language_code: primaryLanguageCode,
           product_code: String(data.product_code || ""),
-          secondary_language_code: item.secondary_language_code || null,
-          primary_language_code: item.primary_language_code || String(data.language_code || "pl"),
+          secondary_language_code: secondaryLanguageCode || null,
+          primary_language_code: primaryLanguageCode,
         };
       }));
 
@@ -124,7 +144,16 @@ export default {
       // A gateway/network error must not leave finite stock blocked for 15 minutes.
       await updateReservationStatus(reservationId, "released").catch(() => undefined);
       const message = error instanceof Error ? error.message : "payment_initialization_failed";
-      return json({ error: message }, message === "design_out_of_stock" ? 409 : 500);
+      const invalidCheckoutInput = new Set([
+        "missing_card_design_id",
+        "card_design_missing_country",
+        "invalid_order_item",
+        "missing_primary_language",
+        "invalid_primary_language_for_country",
+        "invalid_secondary_language_for_country",
+        "secondary_language_must_differ",
+      ]);
+      return json({ error: message }, message === "design_out_of_stock" ? 409 : invalidCheckoutInput.has(message) ? 400 : 500);
     }
   },
 };

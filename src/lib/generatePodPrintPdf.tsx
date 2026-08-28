@@ -23,6 +23,9 @@ const RENDER_HEIGHT_PX = 375;
 // 520 CSS pixels * 3.5 / 154 mm = 300 dpi on the imposed bleed area.
 const RENDER_SCALE = 3.5;
 const PUBLIC_APP_URL = import.meta.env.VITE_PUBLIC_APP_URL?.trim() || window.location.origin;
+const normalizeLanguageCode = (value?: string | null) => value?.trim().toLowerCase() || "";
+export const podLanguageTemplateKey = (countryId: string, languageCode?: string | null) =>
+  `${countryId}:${normalizeLanguageCode(languageCode)}`;
 
 interface CardDesignData {
   id: string;
@@ -303,7 +306,7 @@ const generatePodPrintPdfForJobs = async (
     const snapshot = await getDocs(query(collection(db, "card_language_templates"), where("country_id", "==", countryId)));
     return snapshot.docs.map((item) => item.data() as LanguageTemplateData);
   }))).flat();
-  const templateByCountryAndCode = new Map(templatesData.map((template) => [`${template.country_id}:${template.language_code}`, template]));
+  const templateByCountryAndCode = new Map(templatesData.map((template) => [podLanguageTemplateKey(template.country_id, template.language_code), template]));
 
   const QRCode = await import("qrcode");
   const renderedFronts = new Map<string, string>();
@@ -350,8 +353,8 @@ const generatePodPrintPdfForJobs = async (
         margin: 3,
         errorCorrectionLevel: "M",
       });
-      const primary = templateByCountryAndCode.get(`${design.country_id}:${unit?.primary_language_code || ""}`);
-      const secondary = unit?.secondary_language_code ? templateByCountryAndCode.get(`${design.country_id}:${unit.secondary_language_code}`) : undefined;
+      const primary = templateByCountryAndCode.get(podLanguageTemplateKey(design.country_id, unit?.primary_language_code));
+      const secondary = unit?.secondary_language_code ? templateByCountryAndCode.get(podLanguageTemplateKey(design.country_id, unit.secondary_language_code)) : undefined;
       const combined = (base: string | null, primaryText?: string, secondaryText?: string) =>
         [primaryText || base || "", secondaryText || ""].filter((value, index, values) => value && values.indexOf(value) === index).join(" / ");
       const printDesign: CardDesignData = {

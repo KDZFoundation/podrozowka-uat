@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { fromFirestoreFields, queryDocuments, readDocument, setDocument, updateDocument } from "./gcp-firestore.js";
 
 const MAX_POD_UNITS_PER_ORDER = 500;
+const normalizeLanguageCode = (value: unknown) => typeof value === "string" ? value.trim().toLowerCase() : "";
 
 const deterministicId = (value: string) => {
   const hex = crypto.createHash("sha256").update(value, "utf8").digest("hex");
@@ -19,6 +20,37 @@ type PodOrderItem = {
   product_code?: string;
   primary_language_code?: string;
   secondary_language_code?: string;
+};
+
+type LanguageTemplate = { language_code?: unknown; is_primary?: unknown };
+
+export const resolvePodLanguages = (
+  item: PodOrderItem,
+  design: Record<string, unknown>,
+  templates: LanguageTemplate[],
+) => {
+  const templateCodes = new Set(
+    templates.map((template) => normalizeLanguageCode(template.language_code)).filter(Boolean),
+  );
+  const fallbackCode = normalizeLanguageCode(design.language_code);
+  const countryPrimaryCode = normalizeLanguageCode(templates.find((template) => template.is_primary === true)?.language_code);
+  const firstAvailableCode = normalizeLanguageCode(templates[0]?.language_code);
+  const requestedPrimaryCode = normalizeLanguageCode(item.primary_language_code);
+  const primaryLanguageCode = templateCodes.has(requestedPrimaryCode)
+    ? requestedPrimaryCode
+    : templateCodes.has(fallbackCode)
+      ? fallbackCode
+      : templateCodes.has(countryPrimaryCode)
+        ? countryPrimaryCode
+        : firstAvailableCode;
+  if (!primaryLanguageCode) throw new Error("missing_language_template_for_design");
+
+  const requestedSecondaryCode = normalizeLanguageCode(item.secondary_language_code);
+  const secondaryLanguageCode = requestedSecondaryCode && requestedSecondaryCode !== primaryLanguageCode && templateCodes.has(requestedSecondaryCode)
+    ? requestedSecondaryCode
+    : null;
+
+  return { primaryLanguageCode, secondaryLanguageCode };
 };
 
 export const preparePaidOrderPod = async (orderPath: string, orderNumber: string) => {
@@ -61,6 +93,14 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
     const design = designDocument.fields
       ? fromFirestoreFields(designDocument.fields) as Record<string, unknown>
       : {};
+    const countryId = typeof design.country_id === "string" ? design.country_id : "";
+    if (!countryId) throw new Error("card_design_missing_country");
+    const languageTemplates = await queryDocuments("card_language_templates", "country_id", { stringValue: countryId });
+    const { primaryLanguageCode, secondaryLanguageCode } = resolvePodLanguages(
+      item,
+      design,
+      languageTemplates.map((template) => template.data),
+    );
     const productCode = String(item.product_code || design.product_code || `PDZ-${designId.slice(0, 8).toUpperCase()}`);
     const existingUnits = await queryDocuments("inventory_units", "card_design_id", { stringValue: designId });
     const existingOrderUnits = existingUnits.filter((unit) => unit.data.order_id === orderId);
@@ -101,8 +141,8 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
         order_id: orderId,
         order_number: orderNumber,
         order_item_id: `${orderId}-${itemIndex}`,
-        primary_language_code: String(item.primary_language_code || design.language_code || "pl"),
-        secondary_language_code: item.secondary_language_code ? String(item.secondary_language_code) : null,
+        primary_language_code: primaryLanguageCode,
+        secondary_language_code: secondaryLanguageCode,
         public_claim_code: claimCode,
         public_claim_token_hash: crypto.createHash("sha256").update(token, "utf8").digest("hex"),
         qr_generated_at: now,

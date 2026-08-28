@@ -711,6 +711,36 @@ export const firestoreService = {
     const target = await getDoc(doc(db, "card_language_templates", id));
     if (!target.exists()) return;
     const data = target.data() as FirestoreLanguageTemplate;
+    const languageCode = data.language_code.trim().toLowerCase();
+    const [designsSnapshot, unitsSnapshot, ordersSnapshot] = await Promise.all([
+      getDocs(collection(db, "card_designs")),
+      getDocs(collection(db, "inventory_units")),
+      getDocs(collection(db, "orders")),
+    ]);
+    const designsById = new Map(designsSnapshot.docs.map((design) => [design.id, design.data() as FirestoreCardDesign]));
+    const hasReferencedLanguage = (designId: unknown, primaryLanguage: unknown, secondaryLanguage: unknown) => {
+      const design = typeof designId === "string" ? designsById.get(designId) : undefined;
+      if (!design || design.country_id !== data.country_id) return false;
+      return [primaryLanguage, secondaryLanguage]
+        .some((language) => typeof language === "string" && language.trim().toLowerCase() === languageCode);
+    };
+    const usedByDesign = [...designsById.values()].some((design) =>
+      design.country_id === data.country_id && design.language_code.trim().toLowerCase() === languageCode,
+    );
+    const usedByUnit = unitsSnapshot.docs.some((unit) => {
+      const value = unit.data() as Record<string, unknown>;
+      return hasReferencedLanguage(value.card_design_id, value.primary_language_code, value.secondary_language_code);
+    });
+    const usedByOrder = ordersSnapshot.docs.some((order) => {
+      const items = (order.data() as { items?: unknown }).items;
+      return Array.isArray(items) && items.some((item) => {
+        const value = item as Record<string, unknown>;
+        return hasReferencedLanguage(value.card_design_id, value.primary_language_code, value.secondary_language_code);
+      });
+    });
+    if (usedByDesign || usedByUnit || usedByOrder) {
+      throw new Error(`language_template_in_use:${data.country_id}:${languageCode}`);
+    }
     const batch = writeBatch(db);
     batch.delete(target.ref);
     await batch.commit();

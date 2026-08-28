@@ -97,7 +97,7 @@ export const AdminCardCreator = ({
   const [countryId, setCountryId] = useState(initialDesign?.country_id || "");
   const [categoryId, setCategoryId] = useState<string>(initialDesign?.category_id || "");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
-  const [languageCode, setLanguageCode] = useState(initialDesign?.language_code || "pl");
+  const [languageCode, setLanguageCode] = useState(initialDesign?.language_code || "");
   const [viewNo, setViewNo] = useState(initialDesign?.view_no || 1);
   const [thankYouText, setThankYouText] = useState(
     initialDesign?.thank_you_text || "miejsce do wpisania treści podziękowania (w danym języku)"
@@ -151,19 +151,26 @@ export const AdminCardCreator = ({
         is_primary: Boolean(template.is_primary),
       }));
       setLangTemplates(mappedTemplates);
-      const primary = mappedTemplates.find((template) => template.country_id === countryId && template.is_primary);
-      if (primary) {
-        setSelectedTemplateId(primary.id);
-        setLanguageCode(primary.language_code);
-        setThankYouText(primary.front_thank_you_text);
-        setBackQrLabel(primary.back_qr_label);
+      const templatesForCountry = mappedTemplates.filter((template) => template.country_id === countryId);
+      const initialTemplate = initialDesign?.language_code
+        ? templatesForCountry.find((template) => template.language_code === initialDesign.language_code)
+        : undefined;
+      const selectedTemplate = initialTemplate || templatesForCountry.find((template) => template.is_primary);
+      if (selectedTemplate) {
+        setSelectedTemplateId(selectedTemplate.id);
+        setLanguageCode(selectedTemplate.language_code);
+        setThankYouText(selectedTemplate.front_thank_you_text);
+        setBackQrLabel(selectedTemplate.back_qr_label);
+      } else {
+        setSelectedTemplateId("");
+        setLanguageCode("");
       }
       setCategories(fireCategories.map((category) => ({ id: category.id, name: category.name_pl || category.name || category.slug, slug: category.slug })));
       setAuthors(fireAuthors.map((author) => ({ id: author.id, display_name: author.name, agreement_status: "zaakceptowana", active: author.is_active })));
     } catch (error) {
       toast({ title: "Nie udało się wczytać danych kreatora", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     }
-  }, [countryId, toast]);
+  }, [countryId, initialDesign?.language_code, toast]);
 
   useEffect(() => {
     loadData();
@@ -172,17 +179,19 @@ export const AdminCardCreator = ({
   // When Country or Language Template changes
   const availableTemplates = langTemplates.filter((t) => t.country_id === countryId);
 
-  const applyPrimaryTemplate = (templates: LanguageTemplate[]) => {
-    const primary = templates.find((template) => template.is_primary);
-    if (!primary) {
+  const applyTemplate = (template?: LanguageTemplate) => {
+    if (!template) {
       setSelectedTemplateId("");
+      setLanguageCode("");
       return;
     }
-    setSelectedTemplateId(primary.id);
-    setLanguageCode(primary.language_code);
-    setThankYouText(primary.front_thank_you_text);
-    setBackQrLabel(primary.back_qr_label);
+    setSelectedTemplateId(template.id);
+    setLanguageCode(template.language_code);
+    setThankYouText(template.front_thank_you_text);
+    setBackQrLabel(template.back_qr_label);
   };
+
+  const applyPrimaryTemplate = (templates: LanguageTemplate[]) => applyTemplate(templates.find((template) => template.is_primary));
 
   const handleCountrySelect = async (cId: string) => {
     setCountryId(cId);
@@ -239,6 +248,11 @@ export const AdminCardCreator = ({
       toast({ title: "Wybierz kategorię", variant: "destructive" });
       return;
     }
+    const selectedTemplate = availableTemplates.find((template) => template.id === selectedTemplateId);
+    if (!selectedTemplate || !languageCode) {
+      toast({ title: "Wybierz szablon językowy", description: "Wzór kartki musi mieć jeden język z listy dostępnej dla kraju.", variant: "destructive" });
+      return;
+    }
     if (!Number.isInteger(viewNo) || viewNo < 1 || viewNo > 9999) {
       toast({ title: "Numer widoku musi mieścić się w zakresie 1–9999", variant: "destructive" });
       return;
@@ -257,7 +271,7 @@ export const AdminCardCreator = ({
       country_id: countryId,
       category_id: categoryId || null,
       author_id: authorId === "none" ? null : authorId,
-      language_code: languageCode || "pl",
+      language_code: selectedTemplate.language_code,
       view_no: viewNo,
       title: null,
       thank_you_text: thankYouText.trim() || null,
@@ -402,14 +416,14 @@ export const AdminCardCreator = ({
                 <label className="text-xs font-medium text-muted-foreground block mb-1">
                   Szablon językowy (z bazy)
                 </label>
-                <Select value={selectedTemplateId} disabled>
+                <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
                   <SelectTrigger>
                     <SelectValue placeholder="Wybierz wariant językowy..." />
                   </SelectTrigger>
                   <SelectContent>
                     {availableTemplates.length === 0 ? (
                       <SelectItem value="none" disabled>
-                        Brak szablonów dla tego kraju (użyj Domyślny)
+                        Brak szablonów dla tego kraju
                       </SelectItem>
                     ) : (
                       availableTemplates.map((t) => (
