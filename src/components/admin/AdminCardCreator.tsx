@@ -25,6 +25,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import type { FirestoreCardDesign } from "@/integrations/firebase/types";
+import { sortCountriesByName, uniqueCountriesByIso } from "@/lib/countryCatalog";
 
 interface Country {
   id: string;
@@ -125,17 +126,21 @@ export const AdminCardCreator = ({
     try {
       const [fireCountries, fireTemplates, fireCategories, fireAuthors] = await Promise.all([
         firestoreService.getCountries(),
-        // Templates are filtered after country selection, but load all once for the local creator.
-        firestoreService.getLanguageTemplatesForCountry(countryId),
+        firestoreService.getLanguageTemplates(),
         firestoreService.getCategories(),
         firestoreService.getAuthors(),
       ]);
-      setCountries(fireCountries.map((country) => ({
-        id: country.id,
-        iso2: country.iso2 || "",
-        name_pl: country.name_pl || country.name,
-        flag_url: country.flag_url || null,
-      })));
+      const templateCountryIds = new Set(fireTemplates.map((template) => template.country_id));
+      setCountries(sortCountriesByName(uniqueCountriesByIso(
+        fireCountries
+          .filter((country) => templateCountryIds.has(country.id))
+          .map((country) => ({
+            id: country.id,
+            iso2: country.iso2 || "",
+            name_pl: country.name_pl || country.name,
+            flag_url: country.flag_url || null,
+          })),
+      )));
       const mappedTemplates = fireTemplates.map((template) => ({
         id: template.id,
         country_id: template.country_id,

@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Plus, Pencil, Trash2, Image as ImageIcon, Sparkles, Languages, ListFilter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { sortCountriesByName, uniqueCountriesByIso } from "@/lib/countryCatalog";
 import { AdminCardCreator } from "./AdminCardCreator";
 import { AdminLanguageTemplates } from "./AdminLanguageTemplates";
 
@@ -43,10 +44,11 @@ const AdminCardDesigns = () => {
   const fetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [firestoreDesigns, firestoreCountries, firestoreCategories] = await Promise.all([
+      const [firestoreDesigns, firestoreCountries, firestoreCategories, firestoreLanguageTemplates] = await Promise.all([
         firestoreService.getCardDesigns({ includeInactive: true }),
         firestoreService.getCountries(),
         firestoreService.getCategories(),
+        firestoreService.getLanguageTemplates(),
       ]);
       const countriesById = new Map(firestoreCountries.map((country) => [country.id, country]));
       const categoriesById = new Map(firestoreCategories.map((category) => [category.id, category]));
@@ -67,11 +69,16 @@ const AdminCardDesigns = () => {
         country_name: countriesById.get(design.country_id || "")?.name_pl || countriesById.get(design.country_id || "")?.name,
         category_name: categoriesById.get(design.category_id || "")?.name_pl || categoriesById.get(design.category_id || "")?.name,
       })));
-      setCountries(firestoreCountries.map((country) => ({
-        id: country.id,
-        iso2: country.iso2 || "",
-        name_pl: country.name_pl || country.name,
-      })));
+      const templateCountryIds = new Set(firestoreLanguageTemplates.map((template) => template.country_id));
+      setCountries(sortCountriesByName(uniqueCountriesByIso(
+        firestoreCountries
+          .filter((country) => templateCountryIds.has(country.id))
+          .map((country) => ({
+            id: country.id,
+            iso2: country.iso2 || "",
+            name_pl: country.name_pl || country.name,
+          })),
+      )));
     } catch (error) {
       toast({
         title: "Nie udało się wczytać wzorów",
@@ -117,9 +124,20 @@ const AdminCardDesigns = () => {
     setActiveTab("creator");
   };
 
-  const filtered = filterCountry === "all"
-    ? designs
-    : designs.filter((d) => d.country_id === filterCountry);
+  useEffect(() => {
+    if (filterCountry !== "all" && !countries.some((country) => country.id === filterCountry)) {
+      setFilterCountry("all");
+    }
+  }, [countries, filterCountry]);
+
+  const filtered = useMemo(() => designs
+    .filter((design) => filterCountry === "all" || design.country_id === filterCountry)
+    .sort((left, right) =>
+      (left.country_name || "").localeCompare(right.country_name || "", "pl", { sensitivity: "base" }) ||
+      (left.category_name || "").localeCompare(right.category_name || "", "pl", { sensitivity: "base" }) ||
+      left.view_no - right.view_no ||
+      (left.title || "").localeCompare(right.title || "", "pl", { sensitivity: "base" }),
+    ), [designs, filterCountry]);
 
   return (
     <div className="space-y-6">
