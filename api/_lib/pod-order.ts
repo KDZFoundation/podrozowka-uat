@@ -7,10 +7,12 @@ import {
   readDocument,
   setDocument,
   updateDocument,
+  updateDocumentIfCurrent,
   updateDocumentWrite,
 } from "./gcp-firestore.js";
 
 const MAX_POD_UNITS_PER_ORDER = 500;
+const POD_JOB_STALE_AFTER_MS = 5 * 60 * 1000;
 const normalizeLanguageCode = (value: unknown) => typeof value === "string" ? value.trim().toLowerCase() : "";
 
 const deterministicId = (value: string) => {
@@ -22,9 +24,10 @@ const numericSuffix = (code: unknown) => {
   return match ? Number(match[1]) : 0;
 };
 
-const MAX_SERIAL_RETRIES = 3;
+// Allow a burst of concurrent checkouts to converge on the sequence CAS.
+const MAX_SERIAL_RETRIES = 12;
 
-const reserveSerialRange = async (designId: string, quantity: number) => {
+export const reserveSerialRange = async (designId: string, quantity: number) => {
   const sequenceId = deterministicId(`inventory-sequence:${designId}`);
   for (let attempt = 0; attempt < MAX_SERIAL_RETRIES; attempt += 1) {
     const sequenceDocument = await readDocument("inventory_serial_sequences", sequenceId).catch(() => null);
@@ -189,10 +192,24 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
 
   const jobId = deterministicId(`pod-job:${orderId}`);
   const existingJob = await readDocument("qr_print_jobs", jobId).catch(() => null);
+  let resumeExistingJob = false;
   if (existingJob?.fields) {
     const existingData = fromFirestoreFields(existingJob.fields) as Record<string, unknown>;
     if (existingData.status === "ready") await awardPurchaseGamification(orderPath, orderId, totalUnits);
-    return jobId;
+    if (existingData.status !== "generating") return jobId;
+    const updatedAt = Date.parse(String(existingData.updated_at || ""));
+    if (!Number.isFinite(updatedAt) || Date.now() - updatedAt < POD_JOB_STALE_AFTER_MS) return jobId;
+    try {
+      await updateDocumentIfCurrent(`qr_print_jobs/${jobId}`, {
+        status: "generating",
+        recovery_started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, String(existingJob.updateTime || ""));
+      resumeExistingJob = true;
+    } catch {
+      // Another worker won the recovery lease, so it owns the in-progress job.
+      return jobId;
+    }
   }
   const now = new Date().toISOString();
   const job = {
@@ -219,7 +236,11 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
     throw error;
   }
 
-  let generated = 0;
+  const existingItems = resumeExistingJob
+    ? await queryDocuments("qr_print_job_items", "print_job_id", { stringValue: jobId }).catch(() => [])
+    : [];
+  const existingItemIds = new Set(existingItems.map((item) => item.id));
+  let generated = existingItems.length;
   for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
     const item = items[itemIndex];
     const designId = String(item.card_design_id || "");
@@ -238,7 +259,9 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
       languageTemplates.map((template) => template.data),
     );
     const productCode = String(item.product_code || design.product_code || `PDZ-${designId.slice(0, 8).toUpperCase()}`);
-    const firstSerial = await reserveSerialRange(designId, quantity);
+    const missingCopies = Array.from({ length: quantity }, (_, copyIndex) => copyIndex)
+      .filter((copyIndex) => !existingItemIds.has(deterministicId(`pod-job-item:${orderId}:${itemIndex}:${copyIndex}`)));
+    const firstSerial = missingCopies.length > 0 ? await reserveSerialRange(designId, missingCopies.length) : 0;
     const batchId = deterministicId(`pod-batch:${orderId}:${itemIndex}`);
     await setDocument("stock_batches", batchId, {
       id: batchId,
@@ -256,11 +279,12 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
       schema_version: 1,
     });
 
-    for (let copyIndex = 0; copyIndex < quantity; copyIndex += 1) {
+    for (let copyPosition = 0; copyPosition < missingCopies.length; copyPosition += 1) {
+      const copyIndex = missingCopies[copyPosition];
       const unitId = deterministicId(`pod-unit:${orderId}:${itemIndex}:${copyIndex}`);
       const itemId = deterministicId(`pod-job-item:${orderId}:${itemIndex}:${copyIndex}`);
       const token = crypto.createHash("sha256").update(`pod-claim:${orderId}:${itemIndex}:${copyIndex}:${process.env.HOTPAY_SECRET || "uat"}`, "utf8").digest("hex");
-      const sequence = String(firstSerial + copyIndex).padStart(8, "0");
+      const sequence = String(firstSerial + copyPosition).padStart(8, "0");
       const internalCode = `${productCode}-${sequence}`;
       const claimCode = `QR-${internalCode}`;
       await setDocument("inventory_units", unitId, {
@@ -294,6 +318,12 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
         schema_version: 1,
       });
       generated += 1;
+      await setDocument("qr_print_jobs", jobId, {
+        ...job,
+        status: "generating",
+        generated_items: generated,
+        updated_at: new Date().toISOString(),
+      });
     }
   }
 
