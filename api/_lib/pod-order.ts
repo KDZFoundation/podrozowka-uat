@@ -1,5 +1,14 @@
 import crypto from "node:crypto";
-import { fromFirestoreFields, queryDocuments, readDocument, setDocument, updateDocument } from "./gcp-firestore.js";
+import {
+  commitWrites,
+  createDocumentWrite,
+  fromFirestoreFields,
+  queryDocuments,
+  readDocument,
+  setDocument,
+  updateDocument,
+  updateDocumentWrite,
+} from "./gcp-firestore.js";
 
 const MAX_POD_UNITS_PER_ORDER = 500;
 const normalizeLanguageCode = (value: unknown) => typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -11,6 +20,40 @@ const deterministicId = (value: string) => {
 const numericSuffix = (code: unknown) => {
   const match = String(code || "").match(/-(\d{8})$/);
   return match ? Number(match[1]) : 0;
+};
+
+const MAX_SERIAL_RETRIES = 3;
+
+const reserveSerialRange = async (designId: string, quantity: number) => {
+  const sequenceId = deterministicId(`inventory-sequence:${designId}`);
+  for (let attempt = 0; attempt < MAX_SERIAL_RETRIES; attempt += 1) {
+    const sequenceDocument = await readDocument("inventory_serial_sequences", sequenceId).catch(() => null);
+    const sequenceData = sequenceDocument?.fields
+      ? fromFirestoreFields(sequenceDocument.fields) as Record<string, unknown>
+      : null;
+    let start = Number(sequenceData?.next_serial || 0);
+    if (!Number.isInteger(start) || start < 1) {
+      const existingUnits = await queryDocuments("inventory_units", "card_design_id", { stringValue: designId });
+      start = Math.max(0, ...existingUnits.map((unit) => numericSuffix(unit.data.internal_inventory_code))) + 1;
+    }
+    const now = new Date().toISOString();
+    const data = {
+      id: sequenceId,
+      card_design_id: designId,
+      next_serial: start + quantity,
+      updated_at: now,
+      schema_version: 1,
+    };
+    try {
+      await commitWrites([sequenceDocument?.fields
+        ? updateDocumentWrite(`inventory_serial_sequences/${sequenceId}`, data, sequenceDocument.updateTime)
+        : createDocumentWrite(`inventory_serial_sequences/${sequenceId}`, { ...data, created_at: now })]);
+      return start;
+    } catch (error) {
+      if (attempt === MAX_SERIAL_RETRIES - 1) throw error;
+    }
+  }
+  throw new Error("inventory_serial_allocation_failed");
 };
 
 type PodOrderItem = {
@@ -53,11 +96,88 @@ export const resolvePodLanguages = (
   return { primaryLanguageCode, secondaryLanguageCode };
 };
 
+const awardPurchaseGamification = async (
+  orderPath: string,
+  orderId: string,
+  totalUnits: number,
+) => {
+  for (let attempt = 0; attempt < MAX_SERIAL_RETRIES; attempt += 1) {
+    const orderDocument = await readDocument("orders", orderId);
+    const order = orderDocument.fields
+      ? fromFirestoreFields(orderDocument.fields) as Record<string, unknown>
+      : {};
+    const userId = typeof order.user_id === "string" ? order.user_id : "";
+    if (!userId || order.gamification_awarded_at) return;
+    if (!orderDocument.updateTime) throw new Error("order_version_missing");
+
+    const userDoc = await readDocument("users", userId).catch(() => null);
+    if (!userDoc?.fields || !userDoc.updateTime) return;
+    const userData = fromFirestoreFields(userDoc.fields) as Record<string, unknown>;
+    const currentPoints = Number(userData.gamification_points || userData.total_points || 0);
+    const currentPurchased = Number(userData.postcards_purchased || userData.postcards_sent_count || 0);
+    const addedPoints = totalUnits * 10;
+    const newPoints = currentPoints + addedPoints;
+    const newPurchased = currentPurchased + totalUnits;
+    const calculateRank = (points: number) => {
+      if (points >= 7500) return "Legenda Podróżówki";
+      if (points >= 3000) return "Misjonarz Kultury";
+      if (points >= 1500) return "Ambasador";
+      if (points >= 500) return "Odkrywca";
+      return "Zwiadowca";
+    };
+    const rank = calculateRank(newPoints);
+    const previousRank = String(userData.current_rank || userData.current_tier || "Zwiadowca");
+    const now = new Date().toISOString();
+    const userUpdate = {
+      gamification_points: newPoints,
+      total_points: newPoints,
+      postcards_purchased: newPurchased,
+      postcards_sent_count: newPurchased,
+      current_rank: rank,
+      current_tier: rank,
+      updated_at: now,
+    };
+    try {
+      await commitWrites([
+        updateDocumentWrite(orderPath, { gamification_awarded_at: now, updated_at: now }, orderDocument.updateTime),
+        updateDocumentWrite(`users/${userId}`, userUpdate, userDoc.updateTime),
+      ]);
+    } catch (error) {
+      if (attempt === MAX_SERIAL_RETRIES - 1) throw error;
+      continue;
+    }
+
+    await updateDocument(`profiles/${userId}`, userUpdate).catch(() => undefined);
+    await setDocument("notifications", `order-${orderId}-purchase`, {
+      id: `order-${orderId}-purchase`,
+      user_id: userId,
+      type: "purchase_points",
+      title: "Punkty za zakup",
+      message: `Za zakup ${totalUnits} ${totalUnits === 1 ? "Podróżówki" : "Podróżówek"} otrzymujesz +${addedPoints} pkt.`,
+      is_read: false,
+      created_at: now,
+      order_id: orderId,
+      schema_version: 1,
+    });
+    if (previousRank !== rank) {
+      await setDocument("notifications", `order-${orderId}-rank-${rank}`, {
+        id: `order-${orderId}-rank-${rank}`,
+        user_id: userId,
+        type: "rank_up",
+        title: "Nowa ranga Podróżnika",
+        message: `Awansujesz z rangi ${previousRank} do rangi ${rank}.`,
+        is_read: false,
+        created_at: now,
+        order_id: orderId,
+        schema_version: 1,
+      });
+    }
+    return;
+  }
+};
+
 export const preparePaidOrderPod = async (orderPath: string, orderNumber: string) => {
   const orderId = orderPath.split("/").pop() || "";
-  const existingJobs = await queryDocuments("qr_print_jobs", "order_number", { stringValue: orderNumber }, 2);
-  if (existingJobs.some((job) => job.data.status === "ready")) return existingJobs[0].id;
-
   const orderDocument = await readDocument("orders", orderId);
   const order = orderDocument.fields
     ? fromFirestoreFields(orderDocument.fields) as Record<string, unknown>
@@ -68,8 +188,14 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
   if (totalUnits > MAX_POD_UNITS_PER_ORDER) throw new Error("order_exceeds_pod_unit_limit");
 
   const jobId = deterministicId(`pod-job:${orderId}`);
+  const existingJob = await readDocument("qr_print_jobs", jobId).catch(() => null);
+  if (existingJob?.fields) {
+    const existingData = fromFirestoreFields(existingJob.fields) as Record<string, unknown>;
+    if (existingData.status === "ready") await awardPurchaseGamification(orderPath, orderId, totalUnits);
+    return jobId;
+  }
   const now = new Date().toISOString();
-  await setDocument("qr_print_jobs", jobId, {
+  const job = {
     id: jobId,
     name: `POD — zamówienie ${orderNumber}`,
     order_id: orderId,
@@ -81,7 +207,17 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
     created_at: now,
     updated_at: now,
     schema_version: 1,
-  });
+  };
+  try {
+    // Firestore's create precondition makes this a per-order generation lock.
+    // A repeated HotPay callback observes the existing job instead of running
+    // POD creation and gamification a second time.
+    await commitWrites([createDocumentWrite(`qr_print_jobs/${jobId}`, job)]);
+  } catch (error) {
+    const concurrentJob = await readDocument("qr_print_jobs", jobId).catch(() => null);
+    if (concurrentJob?.fields) return jobId;
+    throw error;
+  }
 
   let generated = 0;
   for (let itemIndex = 0; itemIndex < items.length; itemIndex += 1) {
@@ -102,9 +238,7 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
       languageTemplates.map((template) => template.data),
     );
     const productCode = String(item.product_code || design.product_code || `PDZ-${designId.slice(0, 8).toUpperCase()}`);
-    const existingUnits = await queryDocuments("inventory_units", "card_design_id", { stringValue: designId });
-    const existingOrderUnits = existingUnits.filter((unit) => unit.data.order_id === orderId);
-    const maxSerial = Math.max(0, ...existingUnits.map((unit) => numericSuffix(unit.data.internal_inventory_code)));
+    const firstSerial = await reserveSerialRange(designId, quantity);
     const batchId = deterministicId(`pod-batch:${orderId}:${itemIndex}`);
     await setDocument("stock_batches", batchId, {
       id: batchId,
@@ -126,7 +260,7 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
       const unitId = deterministicId(`pod-unit:${orderId}:${itemIndex}:${copyIndex}`);
       const itemId = deterministicId(`pod-job-item:${orderId}:${itemIndex}:${copyIndex}`);
       const token = crypto.createHash("sha256").update(`pod-claim:${orderId}:${itemIndex}:${copyIndex}:${process.env.HOTPAY_SECRET || "uat"}`, "utf8").digest("hex");
-      const sequence = String(existingOrderUnits.find((unit) => unit.id === unitId)?.data.inventory_serial_no || maxSerial + copyIndex + 1).padStart(8, "0");
+      const sequence = String(firstSerial + copyIndex).padStart(8, "0");
       const internalCode = `${productCode}-${sequence}`;
       const claimCode = `QR-${internalCode}`;
       await setDocument("inventory_units", unitId, {
@@ -178,70 +312,12 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
   });
   await updateDocument(orderPath, { qr_print_job_id: jobId, pod_status: "ready", updated_at: new Date().toISOString() });
 
-  // Award traveler gamification points for purchased postcards
-  if (order.user_id) {
-    try {
-      const userDoc = await readDocument("users", String(order.user_id));
-      const userData = userDoc.fields ? fromFirestoreFields(userDoc.fields) as Record<string, unknown> : {};
-      const currentPoints = Number(userData.gamification_points || userData.total_points || 0);
-      const currentPurchased = Number(userData.postcards_purchased || userData.postcards_sent_count || 0);
-      const addedPoints = totalUnits * 10;
-      const newPoints = currentPoints + addedPoints;
-      const newPurchased = currentPurchased + totalUnits;
-      const calculateRank = (pts: number) => {
-        if (pts >= 7500) return "Legenda Podróżówki";
-        if (pts >= 3000) return "Misjonarz Kultury";
-        if (pts >= 1500) return "Ambasador";
-        if (pts >= 500) return "Odkrywca";
-        return "Zwiadowca";
-      };
-      const rank = calculateRank(newPoints);
-      const previousRank = String(userData.current_rank || userData.current_tier || "Zwiadowca");
-      const userUpdate = {
-        gamification_points: newPoints,
-        total_points: newPoints,
-        postcards_purchased: newPurchased,
-        postcards_sent_count: newPurchased,
-        current_rank: rank,
-        current_tier: rank,
-        updated_at: now,
-      };
-      await updateDocument(`users/${order.user_id}`, userUpdate);
-      try {
-        await updateDocument(`profiles/${order.user_id}`, userUpdate);
-      } catch {
-        // A missing legacy profile must not block completing a paid order.
-      }
-
-      // Keep the notification deterministic: retrying the payment/POD flow
-      // updates the same document instead of creating duplicate bell entries.
-      await setDocument("notifications", `order-${orderId}-purchase`, {
-        id: `order-${orderId}-purchase`,
-        user_id: String(order.user_id),
-        type: "purchase_points",
-        title: "Punkty za zakup",
-        message: `Za zakup ${totalUnits} ${totalUnits === 1 ? "Podróżówki" : "Podróżówek"} otrzymujesz +${addedPoints} pkt.`,
-        is_read: false,
-        created_at: now,
-        order_id: orderId,
-        schema_version: 1,
-      });
-      if (previousRank !== rank) {
-        await setDocument("notifications", `order-${orderId}-rank-${rank}`, {
-          id: `order-${orderId}-rank-${rank}`,
-          user_id: String(order.user_id),
-          type: "rank_up",
-          title: "Nowa ranga Podróżnika",
-          message: `Awansujesz z rangi ${previousRank} do rangi ${rank}.`,
-          is_read: false,
-          created_at: now,
-          order_id: orderId,
-          schema_version: 1,
-        });
-      }
-    } catch (e) {
-      console.warn("[pod-order] User points update warning:", e);
-    }
+  try {
+    await awardPurchaseGamification(orderPath, orderId, totalUnits);
+  } catch (error) {
+    // The order is already paid and POD is ready. A later duplicate callback
+    // can safely retry this idempotent award using the order marker.
+    console.warn("[pod-order] User points update warning:", error);
   }
 
   return jobId;

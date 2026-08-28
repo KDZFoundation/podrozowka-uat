@@ -107,6 +107,8 @@ const PAYMENT_LABELS: Record<string, string> = {
   paid: "Opłacone",
   refunded: "Zwrócone",
   failed: "Nieudane",
+  initialization_failed: "Nie rozpoczęto płatności",
+  payment_review_required: "Wymaga ręcznej weryfikacji",
 };
 
 const PAGE_SIZE = 50;

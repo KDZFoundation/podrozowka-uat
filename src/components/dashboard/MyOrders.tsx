@@ -136,6 +136,8 @@ const PAYMENT_LABELS: Record<string, string> = {
   paid: "Opłacone",
   refunded: "Zwrócone",
   failed: "Nieudane",
+  initialization_failed: "Nie rozpoczęto płatności",
+  payment_review_required: "Płatność wymaga weryfikacji",
 };
 
 const formatPln = (grosze: number) =>
@@ -347,7 +349,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
       };
       const response = await fetch(backendApiUrl("/api/payments/create-hotpay"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({
           ...payload,
           user_id: userId,
