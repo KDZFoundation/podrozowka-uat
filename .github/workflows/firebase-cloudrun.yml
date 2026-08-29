@@ -28,7 +28,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.2.14
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -49,6 +49,9 @@ jobs:
       - name: Tests
         run: bun run test
 
+      - name: Firestore emulator integration tests
+        run: bun run test:integration
+
       - name: Build UAT frontend
         run: bun run build
 
@@ -65,7 +68,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.2.14
 
       - name: Authenticate to Google Cloud with Workload Identity
         uses: google-github-actions/auth@v2
@@ -85,7 +88,7 @@ jobs:
 
       - name: Deploy Firebase Hosting
         run: |
-          npx --yes firebase-tools@latest deploy \
+          npx --yes firebase-tools@15.28.1 deploy \
             --project "$FIREBASE_PROJECT_ID" \
             --only hosting,firestore:rules,firestore:indexes \
             --non-interactive
