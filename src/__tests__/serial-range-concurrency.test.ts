@@ -47,5 +47,12 @@ describe("serial range allocation concurrency", () => {
 
     expect(new Set(starts).size).toBe(10);
     expect([...starts].sort((a, b) => a - b)).toEqual(Array.from({ length: 10 }, (_, index) => index + 1));
+    expect(firestore.queryDocuments).toHaveBeenCalledWith(
+      "inventory_units",
+      "card_design_id",
+      { stringValue: "design-1" },
+      1,
+      { fieldPath: "inventory_serial_no", direction: "DESCENDING" },
+    );
   });
 });

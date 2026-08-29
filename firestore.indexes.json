@@ -1,0 +1,19 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "inventory_units",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "card_design_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "inventory_serial_no",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

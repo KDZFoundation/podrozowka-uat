@@ -185,13 +185,25 @@ export const commitWrites = async (writes: unknown[]) =>
 export const updateDocumentIfCurrent = async (documentPath: string, data: Record<string, unknown>, updateTime: string) =>
   commitWrites([updateDocumentWrite(documentPath, data, updateTime)]);
 
-export const queryDocuments = async (collectionId: string, fieldPath: string, value: FirestoreValue, queryLimit = 500) => {
+type QueryOrder = {
+  fieldPath: string;
+  direction?: "ASCENDING" | "DESCENDING";
+};
+
+export const queryDocuments = async (
+  collectionId: string,
+  fieldPath: string,
+  value: FirestoreValue,
+  queryLimit = 500,
+  order?: QueryOrder,
+) => {
   const results = await firestoreApi(":runQuery", {
     method: "POST",
     body: JSON.stringify({
       structuredQuery: {
         from: [{ collectionId }],
         where: { fieldFilter: { field: { fieldPath }, op: "EQUAL", value } },
+        ...(order ? { orderBy: [{ field: { fieldPath: order.fieldPath }, direction: order.direction || "ASCENDING" }] } : {}),
         limit: queryLimit,
       },
     }),

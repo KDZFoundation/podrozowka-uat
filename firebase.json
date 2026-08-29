@@ -1,7 +1,8 @@
 {
   "firestore": {
     "database": "ai-studio-podrozowkauat-e1d9b39b-c759-477c-98ea-34396a1afd2f",
-    "rules": "firestore.rules"
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   },
   "hosting": {
     "site": "podrozowka",

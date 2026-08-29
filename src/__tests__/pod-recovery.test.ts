@@ -106,7 +106,7 @@ describe("POD recovery", () => {
     );
   });
 
-  it("keeps an already-created inventory unit and only recreates its missing print item", async () => {
+  it("atomically adds a token and missing print item to an unprinted legacy unit", async () => {
     let jobReads = 0;
     firestore.readDocument.mockImplementation(async (collection: string) => {
       if (collection === "orders") return { fields: { items: [{ card_design_id: "design-1", quantity: 1 }], user_id: null } };
@@ -115,7 +115,10 @@ describe("POD recovery", () => {
         return jobReads === 1 ? staleJob : { fields: { ...staleJob.fields, recovery_lease_id: "lease-test" }, updateTime: "job-v2" };
       }
       if (collection === "card_designs") return { fields: { country_id: "country-1", language_code: "pl" } };
-      if (collection === "inventory_units") return { fields: { public_claim_code: "QR-EXISTING-00000001" } };
+      if (collection === "inventory_units") return {
+        fields: { public_claim_code: "QR-EXISTING-00000001" },
+        updateTime: "unit-v1",
+      };
       throw new Error(`unexpected ${collection}`);
     });
 
@@ -129,9 +132,43 @@ describe("POD recovery", () => {
       expect.stringMatching(/^qr_print_job_items\//),
       expect.objectContaining({ public_claim_code: "QR-EXISTING-00000001" }),
     );
-    expect(firestore.updateDocument).toHaveBeenCalledWith(
+    expect(firestore.updateDocumentWrite).toHaveBeenCalledWith(
       expect.stringMatching(/^inventory_units\//),
       expect.objectContaining({ public_claim_token: expect.any(String), public_claim_token_hash: expect.any(String) }),
+      "unit-v1",
+    );
+    expect(firestore.commitWrites).toHaveBeenCalledWith(expect.arrayContaining([
+      expect.objectContaining({ update: expect.stringMatching(/^qr_print_jobs\//) }),
+      expect.objectContaining({ update: expect.stringMatching(/^inventory_units\//) }),
+      expect.objectContaining({ create: expect.stringMatching(/^qr_print_job_items\//) }),
+    ]));
+  });
+
+  it("never replaces a legacy claim hash when the printable token cannot be proven", async () => {
+    let jobReads = 0;
+    firestore.readDocument.mockImplementation(async (collection: string) => {
+      if (collection === "orders") return { fields: { items: [{ card_design_id: "design-1", quantity: 1 }], user_id: null } };
+      if (collection === "qr_print_jobs") {
+        jobReads += 1;
+        return jobReads === 1 ? staleJob : { fields: { ...staleJob.fields, recovery_lease_id: "lease-test" }, updateTime: "job-v2" };
+      }
+      if (collection === "card_designs") return { fields: { country_id: "country-1", language_code: "pl" } };
+      if (collection === "inventory_units") return {
+        fields: {
+          public_claim_code: "QR-EXISTING-00000001",
+          public_claim_token_hash: "existing-hash-without-source-token",
+        },
+        updateTime: "unit-v1",
+      };
+      throw new Error(`unexpected ${collection}`);
+    });
+
+    await expect(preparePaidOrderPod("orders/order-1", "ORD-1")).rejects.toThrow("pod_inventory_unit_claim_token_unrecoverable");
+
+    expect(firestore.updateDocumentWrite).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^inventory_units\//),
+      expect.objectContaining({ public_claim_token_hash: expect.any(String) }),
+      expect.anything(),
     );
   });
 
@@ -147,15 +184,46 @@ describe("POD recovery", () => {
 
     await awardPurchaseGamification("orders/order-1", "order-1", 2);
 
-    expect(firestore.setDocument).toHaveBeenCalledWith(
-      "notifications",
-      "order-order-1-purchase",
+    expect(firestore.createDocumentWrite).toHaveBeenCalledWith(
+      "notifications/order-order-1-purchase",
       expect.objectContaining({ user_id: "user-1" }),
     );
-    expect(firestore.setDocument).toHaveBeenCalledWith(
-      "notifications",
-      "order-order-1-rank-Odkrywca",
+    expect(firestore.createDocumentWrite).toHaveBeenCalledWith(
+      "notifications/order-order-1-rank-Odkrywca",
       expect.objectContaining({ type: "rank_up" }),
     );
+  });
+
+  it("does not overwrite an already-read notification while recovering gamification", async () => {
+    let notificationCreateAttempted = false;
+    firestore.readDocument.mockImplementation(async (collection: string) => {
+      if (collection === "orders") {
+        return {
+          fields: {
+            user_id: "user-1",
+            gamification_awarded_at: "2026-01-01T00:00:00.000Z",
+            gamification_rank_awarded: "Odkrywca",
+            gamification_previous_rank: "Zwiadowca",
+          },
+        };
+      }
+      if (collection === "notifications") return { fields: { is_read: true } };
+      throw new Error(`unexpected ${collection}`);
+    });
+    firestore.commitWrites.mockImplementation(async (writes: Array<{ create?: string }>) => {
+      if (writes.some((write) => write.create === "notifications/order-order-1-purchase") && !notificationCreateAttempted) {
+        notificationCreateAttempted = true;
+        throw new Error("already_exists");
+      }
+      return {};
+    });
+
+    await awardPurchaseGamification("orders/order-1", "order-1", 2);
+
+    expect(firestore.updateDocument).not.toHaveBeenCalledWith(
+      "notifications/order-order-1-purchase",
+      expect.anything(),
+    );
+    expect(firestore.setDocument).not.toHaveBeenCalled();
   });
 });

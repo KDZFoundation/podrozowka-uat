@@ -5,7 +5,6 @@ import {
   fromFirestoreFields,
   queryDocuments,
   readDocument,
-  setDocument,
   updateDocument,
   updateDocumentIfCurrent,
   updateDocumentWrite,
@@ -42,16 +41,57 @@ const createIfMissing = async (documentPath: string, data: Record<string, unknow
   }
 };
 
-const renewPodJobLease = async (jobId: string, leaseId: string, data: Record<string, unknown>) => {
+const readPodJobLease = async (jobId: string, leaseId: string) => {
   const jobDocument = await readDocument("qr_print_jobs", jobId);
   const job = jobDocument.fields ? fromFirestoreFields(jobDocument.fields) as Record<string, unknown> : {};
   if (!jobDocument.updateTime || job.status !== "generating" || job.recovery_lease_id !== leaseId) {
     throw new Error("pod_job_lease_lost");
   }
-  await updateDocumentIfCurrent(`qr_print_jobs/${jobId}`, {
-    ...data,
-    updated_at: new Date().toISOString(),
-  }, jobDocument.updateTime);
+  return jobDocument.updateTime;
+};
+
+const commitWithPodJobLease = async (
+  jobId: string,
+  leaseId: string,
+  data: Record<string, unknown>,
+  writes: unknown[] = [],
+) => {
+  const jobUpdateTime = await readPodJobLease(jobId, leaseId);
+  await commitWrites([
+    updateDocumentWrite(`qr_print_jobs/${jobId}`, {
+      status: "generating",
+      recovery_lease_id: leaseId,
+      ...data,
+      updated_at: new Date().toISOString(),
+    }, jobUpdateTime),
+    ...writes,
+  ]);
+};
+
+const createIfMissingWithPodJobLease = async (
+  jobId: string,
+  leaseId: string,
+  jobData: Record<string, unknown>,
+  documentPath: string,
+  data: Record<string, unknown>,
+) => {
+  try {
+    await commitWithPodJobLease(jobId, leaseId, jobData, [createDocumentWrite(documentPath, data)]);
+    return true;
+  } catch (error) {
+    const [collection, id] = documentPath.split("/");
+    const existing = await readDocument(collection, id).catch(() => null);
+    if (!existing?.fields) throw error;
+    // A concurrent worker may already have created this deterministic document.
+    // Renewing in a separate guarded commit proves that this worker still owns
+    // the job before it continues with the existing data.
+    await commitWithPodJobLease(jobId, leaseId, jobData);
+    return false;
+  }
+};
+
+const renewPodJobLease = async (jobId: string, leaseId: string, data: Record<string, unknown>) => {
+  await commitWithPodJobLease(jobId, leaseId, data);
 };
 
 export const reserveSerialRange = async (designId: string, quantity: number) => {
@@ -63,7 +103,13 @@ export const reserveSerialRange = async (designId: string, quantity: number) => 
       : null;
     let start = Number(sequenceData?.next_serial || 0);
     if (!Number.isInteger(start) || start < 1) {
-      const existingUnits = await queryDocuments("inventory_units", "card_design_id", { stringValue: designId });
+      const existingUnits = await queryDocuments(
+        "inventory_units",
+        "card_design_id",
+        { stringValue: designId },
+        1,
+        { fieldPath: "inventory_serial_no", direction: "DESCENDING" },
+      );
       start = Math.max(0, ...existingUnits.map((unit) => numericSuffix(unit.data.internal_inventory_code))) + 1;
     }
     const now = new Date().toISOString();
@@ -135,7 +181,7 @@ const ensurePurchaseNotifications = async (
   createdAt: string,
 ) => {
   const addedPoints = totalUnits * 10;
-  await setDocument("notifications", `order-${orderId}-purchase`, {
+  await createIfMissing(`notifications/order-${orderId}-purchase`, {
     id: `order-${orderId}-purchase`,
     user_id: userId,
     type: "purchase_points",
@@ -147,7 +193,7 @@ const ensurePurchaseNotifications = async (
     schema_version: 1,
   });
   if (previousRank && previousRank !== rank) {
-    await setDocument("notifications", `order-${orderId}-rank-${rank}`, {
+    await createIfMissing(`notifications/order-${orderId}-rank-${rank}`, {
       id: `order-${orderId}-rank-${rank}`,
       user_id: userId,
       type: "rank_up",
@@ -232,6 +278,119 @@ export const awardPurchaseGamification = async (
     await ensurePurchaseNotifications(userId, orderId, totalUnits, rank, previousRank, now);
     return;
   }
+};
+
+type NewPodUnitInput = {
+  jobId: string;
+  leaseId: string;
+  generatedItems: number;
+  designId: string;
+  unitId: string;
+  itemId: string;
+  batchId: string;
+  productCode: string;
+  orderId: string;
+  orderNumber: string;
+  orderUserId: unknown;
+  itemIndex: number;
+  primaryLanguageCode: string;
+  secondaryLanguageCode: string | null;
+};
+
+/**
+ * Allocate the serial number and create both the inventory unit and printable
+ * QR item in the same Firestore commit as the lease heartbeat. A process that
+ * loses the lease cannot consume a serial or write a partial unit afterwards.
+ */
+const createNewPodUnitWithLease = async (input: NewPodUnitInput) => {
+  const sequenceId = deterministicId(`inventory-sequence:${input.designId}`);
+  for (let attempt = 0; attempt < MAX_SERIAL_RETRIES; attempt += 1) {
+    const jobUpdateTime = await readPodJobLease(input.jobId, input.leaseId);
+    const sequenceDocument = await readDocument("inventory_serial_sequences", sequenceId).catch(() => null);
+    const sequenceData = sequenceDocument?.fields
+      ? fromFirestoreFields(sequenceDocument.fields) as Record<string, unknown>
+      : null;
+    let serial = Number(sequenceData?.next_serial || 0);
+    if (!Number.isInteger(serial) || serial < 1) {
+      const existingUnits = await queryDocuments(
+        "inventory_units",
+        "card_design_id",
+        { stringValue: input.designId },
+        1,
+        { fieldPath: "inventory_serial_no", direction: "DESCENDING" },
+      );
+      serial = Math.max(0, ...existingUnits.map((unit) => Number(unit.data.inventory_serial_no || 0))) + 1;
+    }
+    const now = new Date().toISOString();
+    const token = claimToken();
+    const sequence = String(serial).padStart(8, "0");
+    const internalCode = `${input.productCode}-${sequence}`;
+    const claimCode = `QR-${internalCode}`;
+    const sequenceDataForWrite = {
+      id: sequenceId,
+      card_design_id: input.designId,
+      next_serial: serial + 1,
+      updated_at: now,
+      schema_version: 1,
+    };
+
+    try {
+      await commitWrites([
+        updateDocumentWrite(`qr_print_jobs/${input.jobId}`, {
+          status: "generating",
+          recovery_lease_id: input.leaseId,
+          generated_items: input.generatedItems + 1,
+          updated_at: now,
+        }, jobUpdateTime),
+        sequenceDocument?.fields
+          ? updateDocumentWrite(`inventory_serial_sequences/${sequenceId}`, sequenceDataForWrite, sequenceDocument.updateTime)
+          : createDocumentWrite(`inventory_serial_sequences/${sequenceId}`, { ...sequenceDataForWrite, created_at: now }),
+        createDocumentWrite(`inventory_units/${input.unitId}`, {
+          id: input.unitId,
+          stock_batch_id: input.batchId,
+          card_design_id: input.designId,
+          inventory_serial_no: serial,
+          internal_inventory_code: internalCode,
+          business_status: "purchased",
+          fulfillment_status: "qr_generated",
+          traveler_user_id: input.orderUserId || null,
+          order_id: input.orderId,
+          order_number: input.orderNumber,
+          order_item_id: `${input.orderId}-${input.itemIndex}`,
+          primary_language_code: input.primaryLanguageCode,
+          secondary_language_code: input.secondaryLanguageCode,
+          public_claim_code: claimCode,
+          public_claim_token: token,
+          public_claim_token_hash: claimTokenHash(token),
+          qr_generated_at: now,
+          created_at: now,
+          updated_at: now,
+          schema_version: 1,
+        }),
+        createDocumentWrite(`qr_print_job_items/${input.itemId}`, {
+          id: input.itemId,
+          print_job_id: input.jobId,
+          inventory_unit_id: input.unitId,
+          public_claim_code: claimCode,
+          qr_url: `/r/${token}`,
+          generated_at: now,
+          schema_version: 1,
+        }),
+      ]);
+      return;
+    } catch (error) {
+      const existingItem = await readDocument("qr_print_job_items", input.itemId).catch(() => null);
+      if (existingItem?.fields) {
+        await renewPodJobLease(input.jobId, input.leaseId, {
+          status: "generating",
+          generated_items: input.generatedItems + 1,
+        });
+        return;
+      }
+      if (attempt === MAX_SERIAL_RETRIES - 1) throw error;
+    }
+  }
+  throw new Error("pod_inventory_unit_creation_failed");
 };
 
 export const preparePaidOrderPod = async (orderPath: string, orderNumber: string) => {
@@ -326,17 +485,8 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
     const productCode = String(item.product_code || design.product_code || `PDZ-${designId.slice(0, 8).toUpperCase()}`);
     const incompleteCopies = Array.from({ length: quantity }, (_, copyIndex) => copyIndex)
       .filter((copyIndex) => !existingItemIds.has(deterministicId(`pod-job-item:${orderId}:${itemIndex}:${copyIndex}`)));
-    const existingUnits = new Map<number, Record<string, unknown>>();
-    for (const copyIndex of incompleteCopies) {
-      const unitId = deterministicId(`pod-unit:${orderId}:${itemIndex}:${copyIndex}`);
-      const unitDocument = await readDocument("inventory_units", unitId).catch(() => null);
-      if (unitDocument?.fields) existingUnits.set(copyIndex, fromFirestoreFields(unitDocument.fields) as Record<string, unknown>);
-    }
-    const copiesNeedingUnits = incompleteCopies.filter((copyIndex) => !existingUnits.has(copyIndex));
-    const firstSerial = copiesNeedingUnits.length > 0 ? await reserveSerialRange(designId, copiesNeedingUnits.length) : 0;
     const batchId = deterministicId(`pod-batch:${orderId}:${itemIndex}`);
-    await renewPodJobLease(jobId, leaseId, { status: "generating", generated_items: generated });
-    await createIfMissing(`stock_batches/${batchId}`, {
+    await createIfMissingWithPodJobLease(jobId, leaseId, { status: "generating", generated_items: generated }, `stock_batches/${batchId}`, {
       id: batchId,
       name: `POD ${orderNumber}`,
       description: "Sztuki utworzone automatycznie po opłaceniu zamówienia.",
@@ -352,70 +502,84 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
       schema_version: 1,
     });
 
-    let nextNewUnit = 0;
     for (const copyIndex of incompleteCopies) {
-      await renewPodJobLease(jobId, leaseId, { status: "generating", generated_items: generated });
       const unitId = deterministicId(`pod-unit:${orderId}:${itemIndex}:${copyIndex}`);
       const itemId = deterministicId(`pod-job-item:${orderId}:${itemIndex}:${copyIndex}`);
-      let unitData = existingUnits.get(copyIndex);
-      if (!unitData) {
-        const sequence = String(firstSerial + nextNewUnit).padStart(8, "0");
-        nextNewUnit += 1;
-        const internalCode = `${productCode}-${sequence}`;
-        const token = claimToken();
-        const claimCode = `QR-${internalCode}`;
-        const created = await createIfMissing(`inventory_units/${unitId}`, {
-          id: unitId,
-          stock_batch_id: batchId,
-          card_design_id: designId,
-          inventory_serial_no: Number(sequence),
-          internal_inventory_code: internalCode,
-          business_status: "purchased",
-          fulfillment_status: "qr_generated",
-          traveler_user_id: order.user_id || null,
-          order_id: orderId,
-          order_number: orderNumber,
-          order_item_id: `${orderId}-${itemIndex}`,
-          primary_language_code: primaryLanguageCode,
-          secondary_language_code: secondaryLanguageCode,
-          public_claim_code: claimCode,
-          public_claim_token: token,
-          public_claim_token_hash: claimTokenHash(token),
-          qr_generated_at: now,
-          created_at: now,
-          updated_at: now,
-          schema_version: 1,
-        });
-        if (created) {
-          unitData = { public_claim_code: claimCode, public_claim_token: token };
-        } else {
-          const unitDocument = await readDocument("inventory_units", unitId);
-          unitData = unitDocument.fields ? fromFirestoreFields(unitDocument.fields) as Record<string, unknown> : undefined;
-        }
+      const existingItem = await readDocument("qr_print_job_items", itemId).catch(() => null);
+      if (existingItem?.fields) {
+        await renewPodJobLease(jobId, leaseId, { status: "generating", generated_items: generated + 1 });
+        generated += 1;
+        continue;
       }
-      if (!unitData) throw new Error("pod_inventory_unit_missing_after_create");
-      let token = String(unitData.public_claim_token || "");
-      if (!token) {
-        token = claimToken();
-        await updateDocument(`inventory_units/${unitId}`, {
-          public_claim_token: token,
-          public_claim_token_hash: claimTokenHash(token),
-          updated_at: new Date().toISOString(),
+
+      const unitDocument = await readDocument("inventory_units", unitId).catch(() => null);
+      if (!unitDocument?.fields) {
+        await createNewPodUnitWithLease({
+          jobId,
+          leaseId,
+          generatedItems: generated,
+          designId,
+          unitId,
+          itemId,
+          batchId,
+          productCode,
+          orderId,
+          orderNumber,
+          orderUserId: order.user_id,
+          itemIndex,
+          primaryLanguageCode,
+          secondaryLanguageCode,
         });
+        generated += 1;
+        continue;
       }
+
+      const unitData = fromFirestoreFields(unitDocument.fields) as Record<string, unknown>;
       const claimCode = String(unitData.public_claim_code || "");
       if (!claimCode) throw new Error("pod_inventory_unit_missing_claim_code");
-      await createIfMissing(`qr_print_job_items/${itemId}`, {
-        id: itemId,
-        print_job_id: jobId,
-        inventory_unit_id: unitId,
-        public_claim_code: claimCode,
-        qr_url: `/r/${token}`,
-        generated_at: now,
-        schema_version: 1,
-      });
+      const storedToken = String(unitData.public_claim_token || "");
+      const storedTokenHash = String(unitData.public_claim_token_hash || "");
+      if (storedToken && storedTokenHash && claimTokenHash(storedToken) !== storedTokenHash) {
+        throw new Error("pod_inventory_unit_claim_token_hash_mismatch");
+      }
+
+      if (storedToken) {
+        await createIfMissingWithPodJobLease(jobId, leaseId, { status: "generating", generated_items: generated + 1 }, `qr_print_job_items/${itemId}`, {
+          id: itemId,
+          print_job_id: jobId,
+          inventory_unit_id: unitId,
+          public_claim_code: claimCode,
+          qr_url: `/r/${storedToken}`,
+          generated_at: now,
+          schema_version: 1,
+        });
+      } else if (storedTokenHash) {
+        // A hash without the source token can belong to a QR code that has
+        // already been printed. Never replace it: doing so would invalidate
+        // that physical card. The unit needs explicit data repair instead.
+        throw new Error("pod_inventory_unit_claim_token_unrecoverable");
+      } else if (!unitDocument.updateTime) {
+        throw new Error("pod_inventory_unit_version_missing");
+      } else {
+        const token = claimToken();
+        await commitWithPodJobLease(jobId, leaseId, { status: "generating", generated_items: generated + 1 }, [
+          updateDocumentWrite(`inventory_units/${unitId}`, {
+            public_claim_token: token,
+            public_claim_token_hash: claimTokenHash(token),
+            updated_at: new Date().toISOString(),
+          }, unitDocument.updateTime),
+          createDocumentWrite(`qr_print_job_items/${itemId}`, {
+            id: itemId,
+            print_job_id: jobId,
+            inventory_unit_id: unitId,
+            public_claim_code: claimCode,
+            qr_url: `/r/${token}`,
+            generated_at: now,
+            schema_version: 1,
+          }),
+        ]);
+      }
       generated += 1;
-      await renewPodJobLease(jobId, leaseId, { status: "generating", generated_items: generated });
     }
   }
 
