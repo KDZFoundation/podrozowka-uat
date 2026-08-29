@@ -195,10 +195,14 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
   let resumeExistingJob = false;
   if (existingJob?.fields) {
     const existingData = fromFirestoreFields(existingJob.fields) as Record<string, unknown>;
-    if (existingData.status === "ready") await awardPurchaseGamification(orderPath, orderId, totalUnits);
+    if (existingData.status === "ready") {
+      await updateDocument(orderPath, { qr_print_job_id: jobId, pod_status: "ready", updated_at: new Date().toISOString() });
+      await awardPurchaseGamification(orderPath, orderId, totalUnits);
+      return jobId;
+    }
     if (existingData.status !== "generating") return jobId;
-    const updatedAt = Date.parse(String(existingData.updated_at || ""));
-    if (!Number.isFinite(updatedAt) || Date.now() - updatedAt < POD_JOB_STALE_AFTER_MS) return jobId;
+    const activityAt = Date.parse(String(existingData.updated_at || existingData.created_at || ""));
+    if (Number.isFinite(activityAt) && Date.now() - activityAt < POD_JOB_STALE_AFTER_MS) return jobId;
     try {
       await updateDocumentIfCurrent(`qr_print_jobs/${jobId}`, {
         status: "generating",
@@ -225,15 +229,17 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
     updated_at: now,
     schema_version: 1,
   };
-  try {
-    // Firestore's create precondition makes this a per-order generation lock.
-    // A repeated HotPay callback observes the existing job instead of running
-    // POD creation and gamification a second time.
-    await commitWrites([createDocumentWrite(`qr_print_jobs/${jobId}`, job)]);
-  } catch (error) {
-    const concurrentJob = await readDocument("qr_print_jobs", jobId).catch(() => null);
-    if (concurrentJob?.fields) return jobId;
-    throw error;
+  if (!resumeExistingJob) {
+    try {
+      // Firestore's create precondition makes this a per-order generation lock.
+      // A repeated HotPay callback observes the existing job instead of running
+      // POD creation and gamification a second time.
+      await commitWrites([createDocumentWrite(`qr_print_jobs/${jobId}`, job)]);
+    } catch (error) {
+      const concurrentJob = await readDocument("qr_print_jobs", jobId).catch(() => null);
+      if (concurrentJob?.fields) return jobId;
+      throw error;
+    }
   }
 
   const existingItems = resumeExistingJob
@@ -259,9 +265,16 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
       languageTemplates.map((template) => template.data),
     );
     const productCode = String(item.product_code || design.product_code || `PDZ-${designId.slice(0, 8).toUpperCase()}`);
-    const missingCopies = Array.from({ length: quantity }, (_, copyIndex) => copyIndex)
+    const incompleteCopies = Array.from({ length: quantity }, (_, copyIndex) => copyIndex)
       .filter((copyIndex) => !existingItemIds.has(deterministicId(`pod-job-item:${orderId}:${itemIndex}:${copyIndex}`)));
-    const firstSerial = missingCopies.length > 0 ? await reserveSerialRange(designId, missingCopies.length) : 0;
+    const existingUnits = new Map<number, Record<string, unknown>>();
+    for (const copyIndex of incompleteCopies) {
+      const unitId = deterministicId(`pod-unit:${orderId}:${itemIndex}:${copyIndex}`);
+      const unitDocument = await readDocument("inventory_units", unitId).catch(() => null);
+      if (unitDocument?.fields) existingUnits.set(copyIndex, fromFirestoreFields(unitDocument.fields) as Record<string, unknown>);
+    }
+    const copiesNeedingUnits = incompleteCopies.filter((copyIndex) => !existingUnits.has(copyIndex));
+    const firstSerial = copiesNeedingUnits.length > 0 ? await reserveSerialRange(designId, copiesNeedingUnits.length) : 0;
     const batchId = deterministicId(`pod-batch:${orderId}:${itemIndex}`);
     await setDocument("stock_batches", batchId, {
       id: batchId,
@@ -279,35 +292,40 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
       schema_version: 1,
     });
 
-    for (let copyPosition = 0; copyPosition < missingCopies.length; copyPosition += 1) {
-      const copyIndex = missingCopies[copyPosition];
+    let nextNewUnit = 0;
+    for (const copyIndex of incompleteCopies) {
       const unitId = deterministicId(`pod-unit:${orderId}:${itemIndex}:${copyIndex}`);
       const itemId = deterministicId(`pod-job-item:${orderId}:${itemIndex}:${copyIndex}`);
       const token = crypto.createHash("sha256").update(`pod-claim:${orderId}:${itemIndex}:${copyIndex}:${process.env.HOTPAY_SECRET || "uat"}`, "utf8").digest("hex");
-      const sequence = String(firstSerial + copyPosition).padStart(8, "0");
-      const internalCode = `${productCode}-${sequence}`;
-      const claimCode = `QR-${internalCode}`;
-      await setDocument("inventory_units", unitId, {
-        id: unitId,
-        stock_batch_id: batchId,
-        card_design_id: designId,
-        inventory_serial_no: Number(sequence),
-        internal_inventory_code: internalCode,
-        business_status: "purchased",
-        fulfillment_status: "qr_generated",
-        traveler_user_id: order.user_id || null,
-        order_id: orderId,
-        order_number: orderNumber,
-        order_item_id: `${orderId}-${itemIndex}`,
-        primary_language_code: primaryLanguageCode,
-        secondary_language_code: secondaryLanguageCode,
-        public_claim_code: claimCode,
-        public_claim_token_hash: crypto.createHash("sha256").update(token, "utf8").digest("hex"),
-        qr_generated_at: now,
-        created_at: now,
-        updated_at: now,
-        schema_version: 1,
-      });
+      const existingUnit = existingUnits.get(copyIndex);
+      let claimCode = String(existingUnit?.public_claim_code || "");
+      if (!existingUnit) {
+        const sequence = String(firstSerial + nextNewUnit).padStart(8, "0");
+        nextNewUnit += 1;
+        const internalCode = `${productCode}-${sequence}`;
+        claimCode = `QR-${internalCode}`;
+        await setDocument("inventory_units", unitId, {
+          id: unitId,
+          stock_batch_id: batchId,
+          card_design_id: designId,
+          inventory_serial_no: Number(sequence),
+          internal_inventory_code: internalCode,
+          business_status: "purchased",
+          fulfillment_status: "qr_generated",
+          traveler_user_id: order.user_id || null,
+          order_id: orderId,
+          order_number: orderNumber,
+          order_item_id: `${orderId}-${itemIndex}`,
+          primary_language_code: primaryLanguageCode,
+          secondary_language_code: secondaryLanguageCode,
+          public_claim_code: claimCode,
+          public_claim_token_hash: crypto.createHash("sha256").update(token, "utf8").digest("hex"),
+          qr_generated_at: now,
+          created_at: now,
+          updated_at: now,
+          schema_version: 1,
+        });
+      }
       await setDocument("qr_print_job_items", itemId, {
         id: itemId,
         print_job_id: jobId,
@@ -318,8 +336,7 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
         schema_version: 1,
       });
       generated += 1;
-      await setDocument("qr_print_jobs", jobId, {
-        ...job,
+      await updateDocument(`qr_print_jobs/${jobId}`, {
         status: "generating",
         generated_items: generated,
         updated_at: new Date().toISOString(),
@@ -327,18 +344,11 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
     }
   }
 
-  await setDocument("qr_print_jobs", jobId, {
-    id: jobId,
-    name: `POD — zamówienie ${orderNumber}`,
-    order_id: orderId,
-    order_number: orderNumber,
+  await updateDocument(`qr_print_jobs/${jobId}`, {
     status: "ready",
     total_items: totalUnits,
     generated_items: generated,
-    created_by: order.user_id || null,
-    created_at: now,
     updated_at: new Date().toISOString(),
-    schema_version: 1,
   });
   await updateDocument(orderPath, { qr_print_job_id: jobId, pod_status: "ready", updated_at: new Date().toISOString() });
 
