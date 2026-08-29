@@ -59,7 +59,8 @@ jobs:
         run: bun run test:integration
 
       - name: Build UAT frontend
-        run: bun run build
+        run: |
+          VITE_CATALOG_SOURCE=firestore VITE_ENABLE_TEST_DATA_CLEANUP=true VITE_BACKEND_API_URL=https://podrozowka-uat-one.vercel.app bun run build:uat
 
   deploy:
     name: Deploy Firebase Hosting UAT

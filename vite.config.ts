@@ -4,7 +4,12 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode }) => {
+  if (mode === "uat" && !process.env.VITE_BACKEND_API_URL?.trim()) {
+    throw new Error("VITE_BACKEND_API_URL must be set for a UAT build.");
+  }
+
+  return {
   server: {
     host: "0.0.0.0",
     port: 3000,
@@ -47,4 +52,5 @@ export default defineConfig(({ mode }) => ({
 
     globals: true,
   },
-}));
+  };
+});
