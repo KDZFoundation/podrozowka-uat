@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const firestore = vi.hoisted(() => ({
@@ -14,7 +15,7 @@ const firestore = vi.hoisted(() => ({
 
 vi.mock("../../api/_lib/gcp-firestore.js", () => firestore);
 
-import { preparePaidOrderPod } from "../../api/_lib/pod-order";
+import { awardPurchaseGamification, preparePaidOrderPod } from "../../api/_lib/pod-order";
 
 const staleJob = {
   fields: {
@@ -28,6 +29,7 @@ const staleJob = {
 describe("POD recovery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(crypto, "randomUUID").mockReturnValue("lease-test");
     firestore.commitWrites.mockResolvedValue({});
     firestore.setDocument.mockResolvedValue({});
     firestore.updateDocument.mockResolvedValue({});
@@ -39,9 +41,13 @@ describe("POD recovery", () => {
   });
 
   it("resumes a stale job without trying to create its existing lock again", async () => {
+    let jobReads = 0;
     firestore.readDocument.mockImplementation(async (collection: string) => {
       if (collection === "orders") return { fields: { items: [{ card_design_id: "design-1", quantity: 1 }], user_id: null } };
-      if (collection === "qr_print_jobs") return staleJob;
+      if (collection === "qr_print_jobs") {
+        jobReads += 1;
+        return jobReads === 1 ? staleJob : { fields: { ...staleJob.fields, recovery_lease_id: "lease-test" }, updateTime: "job-v2" };
+      }
       if (collection === "card_designs") return { fields: { country_id: "country-1", language_code: "pl" } };
       if (collection === "inventory_units") throw new Error("not_found");
       if (collection === "inventory_serial_sequences") throw new Error("not_found");
@@ -76,10 +82,13 @@ describe("POD recovery", () => {
   });
 
   it("treats a malformed heartbeat as recoverable when the original job is old", async () => {
+    let jobReads = 0;
     firestore.readDocument.mockImplementation(async (collection: string) => {
       if (collection === "orders") return { fields: { items: [{ card_design_id: "design-1", quantity: 1 }], user_id: null } };
       if (collection === "qr_print_jobs") return {
-        fields: { ...staleJob.fields, updated_at: "not-a-date" },
+        fields: jobReads++ === 0
+          ? { ...staleJob.fields, updated_at: "not-a-date" }
+          : { ...staleJob.fields, updated_at: "not-a-date", recovery_lease_id: "lease-test" },
         updateTime: "job-v1",
       };
       if (collection === "card_designs") return { fields: { country_id: "country-1", language_code: "pl" } };
@@ -98,9 +107,13 @@ describe("POD recovery", () => {
   });
 
   it("keeps an already-created inventory unit and only recreates its missing print item", async () => {
+    let jobReads = 0;
     firestore.readDocument.mockImplementation(async (collection: string) => {
       if (collection === "orders") return { fields: { items: [{ card_design_id: "design-1", quantity: 1 }], user_id: null } };
-      if (collection === "qr_print_jobs") return staleJob;
+      if (collection === "qr_print_jobs") {
+        jobReads += 1;
+        return jobReads === 1 ? staleJob : { fields: { ...staleJob.fields, recovery_lease_id: "lease-test" }, updateTime: "job-v2" };
+      }
       if (collection === "card_designs") return { fields: { country_id: "country-1", language_code: "pl" } };
       if (collection === "inventory_units") return { fields: { public_claim_code: "QR-EXISTING-00000001" } };
       throw new Error(`unexpected ${collection}`);
@@ -108,11 +121,41 @@ describe("POD recovery", () => {
 
     await preparePaidOrderPod("orders/order-1", "ORD-1");
 
-    expect(firestore.setDocument).not.toHaveBeenCalledWith("inventory_units", expect.any(String), expect.anything());
-    expect(firestore.setDocument).toHaveBeenCalledWith(
-      "qr_print_job_items",
-      expect.any(String),
+    expect(firestore.createDocumentWrite).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^inventory_units\//),
+      expect.anything(),
+    );
+    expect(firestore.createDocumentWrite).toHaveBeenCalledWith(
+      expect.stringMatching(/^qr_print_job_items\//),
       expect.objectContaining({ public_claim_code: "QR-EXISTING-00000001" }),
+    );
+    expect(firestore.updateDocument).toHaveBeenCalledWith(
+      expect.stringMatching(/^inventory_units\//),
+      expect.objectContaining({ public_claim_token: expect.any(String), public_claim_token_hash: expect.any(String) }),
+    );
+  });
+
+  it("recreates deterministic notifications after points were already awarded", async () => {
+    firestore.readDocument.mockResolvedValue({
+      fields: {
+        user_id: "user-1",
+        gamification_awarded_at: "2026-01-01T00:00:00.000Z",
+        gamification_rank_awarded: "Odkrywca",
+        gamification_previous_rank: "Zwiadowca",
+      },
+    });
+
+    await awardPurchaseGamification("orders/order-1", "order-1", 2);
+
+    expect(firestore.setDocument).toHaveBeenCalledWith(
+      "notifications",
+      "order-order-1-purchase",
+      expect.objectContaining({ user_id: "user-1" }),
+    );
+    expect(firestore.setDocument).toHaveBeenCalledWith(
+      "notifications",
+      "order-order-1-rank-Odkrywca",
+      expect.objectContaining({ type: "rank_up" }),
     );
   });
 });

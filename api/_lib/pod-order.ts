@@ -27,6 +27,33 @@ const numericSuffix = (code: unknown) => {
 // Allow a burst of concurrent checkouts to converge on the sequence CAS.
 const MAX_SERIAL_RETRIES = 12;
 
+const claimToken = () => crypto.randomBytes(32).toString("hex");
+const claimTokenHash = (token: string) => crypto.createHash("sha256").update(token, "utf8").digest("hex");
+
+const createIfMissing = async (documentPath: string, data: Record<string, unknown>) => {
+  try {
+    await commitWrites([createDocumentWrite(documentPath, data)]);
+    return true;
+  } catch (error) {
+    const [collection, id] = documentPath.split("/");
+    const existing = await readDocument(collection, id).catch(() => null);
+    if (existing?.fields) return false;
+    throw error;
+  }
+};
+
+const renewPodJobLease = async (jobId: string, leaseId: string, data: Record<string, unknown>) => {
+  const jobDocument = await readDocument("qr_print_jobs", jobId);
+  const job = jobDocument.fields ? fromFirestoreFields(jobDocument.fields) as Record<string, unknown> : {};
+  if (!jobDocument.updateTime || job.status !== "generating" || job.recovery_lease_id !== leaseId) {
+    throw new Error("pod_job_lease_lost");
+  }
+  await updateDocumentIfCurrent(`qr_print_jobs/${jobId}`, {
+    ...data,
+    updated_at: new Date().toISOString(),
+  }, jobDocument.updateTime);
+};
+
 export const reserveSerialRange = async (designId: string, quantity: number) => {
   const sequenceId = deterministicId(`inventory-sequence:${designId}`);
   for (let attempt = 0; attempt < MAX_SERIAL_RETRIES; attempt += 1) {
@@ -99,7 +126,42 @@ export const resolvePodLanguages = (
   return { primaryLanguageCode, secondaryLanguageCode };
 };
 
-const awardPurchaseGamification = async (
+const ensurePurchaseNotifications = async (
+  userId: string,
+  orderId: string,
+  totalUnits: number,
+  rank: string,
+  previousRank: string,
+  createdAt: string,
+) => {
+  const addedPoints = totalUnits * 10;
+  await setDocument("notifications", `order-${orderId}-purchase`, {
+    id: `order-${orderId}-purchase`,
+    user_id: userId,
+    type: "purchase_points",
+    title: "Punkty za zakup",
+    message: `Za zakup ${totalUnits} ${totalUnits === 1 ? "Podróżówki" : "Podróżówek"} otrzymujesz +${addedPoints} pkt.`,
+    is_read: false,
+    created_at: createdAt,
+    order_id: orderId,
+    schema_version: 1,
+  });
+  if (previousRank && previousRank !== rank) {
+    await setDocument("notifications", `order-${orderId}-rank-${rank}`, {
+      id: `order-${orderId}-rank-${rank}`,
+      user_id: userId,
+      type: "rank_up",
+      title: "Nowa ranga Podróżnika",
+      message: `Awansujesz z rangi ${previousRank} do rangi ${rank}.`,
+      is_read: false,
+      created_at: createdAt,
+      order_id: orderId,
+      schema_version: 1,
+    });
+  }
+};
+
+export const awardPurchaseGamification = async (
   orderPath: string,
   orderId: string,
   totalUnits: number,
@@ -110,7 +172,18 @@ const awardPurchaseGamification = async (
       ? fromFirestoreFields(orderDocument.fields) as Record<string, unknown>
       : {};
     const userId = typeof order.user_id === "string" ? order.user_id : "";
-    if (!userId || order.gamification_awarded_at) return;
+    if (!userId) return;
+    if (order.gamification_awarded_at) {
+      await ensurePurchaseNotifications(
+        userId,
+        orderId,
+        totalUnits,
+        String(order.gamification_rank_awarded || ""),
+        String(order.gamification_previous_rank || ""),
+        String(order.gamification_awarded_at),
+      );
+      return;
+    }
     if (!orderDocument.updateTime) throw new Error("order_version_missing");
 
     const userDoc = await readDocument("users", userId).catch(() => null);
@@ -142,7 +215,12 @@ const awardPurchaseGamification = async (
     };
     try {
       await commitWrites([
-        updateDocumentWrite(orderPath, { gamification_awarded_at: now, updated_at: now }, orderDocument.updateTime),
+        updateDocumentWrite(orderPath, {
+          gamification_awarded_at: now,
+          gamification_rank_awarded: rank,
+          gamification_previous_rank: previousRank,
+          updated_at: now,
+        }, orderDocument.updateTime),
         updateDocumentWrite(`users/${userId}`, userUpdate, userDoc.updateTime),
       ]);
     } catch (error) {
@@ -151,30 +229,7 @@ const awardPurchaseGamification = async (
     }
 
     await updateDocument(`profiles/${userId}`, userUpdate).catch(() => undefined);
-    await setDocument("notifications", `order-${orderId}-purchase`, {
-      id: `order-${orderId}-purchase`,
-      user_id: userId,
-      type: "purchase_points",
-      title: "Punkty za zakup",
-      message: `Za zakup ${totalUnits} ${totalUnits === 1 ? "Podróżówki" : "Podróżówek"} otrzymujesz +${addedPoints} pkt.`,
-      is_read: false,
-      created_at: now,
-      order_id: orderId,
-      schema_version: 1,
-    });
-    if (previousRank !== rank) {
-      await setDocument("notifications", `order-${orderId}-rank-${rank}`, {
-        id: `order-${orderId}-rank-${rank}`,
-        user_id: userId,
-        type: "rank_up",
-        title: "Nowa ranga Podróżnika",
-        message: `Awansujesz z rangi ${previousRank} do rangi ${rank}.`,
-        is_read: false,
-        created_at: now,
-        order_id: orderId,
-        schema_version: 1,
-      });
-    }
+    await ensurePurchaseNotifications(userId, orderId, totalUnits, rank, previousRank, now);
     return;
   }
 };
@@ -191,6 +246,7 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
   if (totalUnits > MAX_POD_UNITS_PER_ORDER) throw new Error("order_exceeds_pod_unit_limit");
 
   const jobId = deterministicId(`pod-job:${orderId}`);
+  const leaseId = crypto.randomUUID();
   const existingJob = await readDocument("qr_print_jobs", jobId).catch(() => null);
   let resumeExistingJob = false;
   if (existingJob?.fields) {
@@ -206,6 +262,7 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
     try {
       await updateDocumentIfCurrent(`qr_print_jobs/${jobId}`, {
         status: "generating",
+        recovery_lease_id: leaseId,
         recovery_started_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }, String(existingJob.updateTime || ""));
@@ -227,6 +284,8 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
     created_by: order.user_id || null,
     created_at: now,
     updated_at: now,
+    recovery_lease_id: leaseId,
+    lease_started_at: now,
     schema_version: 1,
   };
   if (!resumeExistingJob) {
@@ -276,7 +335,8 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
     const copiesNeedingUnits = incompleteCopies.filter((copyIndex) => !existingUnits.has(copyIndex));
     const firstSerial = copiesNeedingUnits.length > 0 ? await reserveSerialRange(designId, copiesNeedingUnits.length) : 0;
     const batchId = deterministicId(`pod-batch:${orderId}:${itemIndex}`);
-    await setDocument("stock_batches", batchId, {
+    await renewPodJobLease(jobId, leaseId, { status: "generating", generated_items: generated });
+    await createIfMissing(`stock_batches/${batchId}`, {
       id: batchId,
       name: `POD ${orderNumber}`,
       description: "Sztuki utworzone automatycznie po opłaceniu zamówienia.",
@@ -294,17 +354,17 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
 
     let nextNewUnit = 0;
     for (const copyIndex of incompleteCopies) {
+      await renewPodJobLease(jobId, leaseId, { status: "generating", generated_items: generated });
       const unitId = deterministicId(`pod-unit:${orderId}:${itemIndex}:${copyIndex}`);
       const itemId = deterministicId(`pod-job-item:${orderId}:${itemIndex}:${copyIndex}`);
-      const token = crypto.createHash("sha256").update(`pod-claim:${orderId}:${itemIndex}:${copyIndex}:${process.env.HOTPAY_SECRET || "uat"}`, "utf8").digest("hex");
-      const existingUnit = existingUnits.get(copyIndex);
-      let claimCode = String(existingUnit?.public_claim_code || "");
-      if (!existingUnit) {
+      let unitData = existingUnits.get(copyIndex);
+      if (!unitData) {
         const sequence = String(firstSerial + nextNewUnit).padStart(8, "0");
         nextNewUnit += 1;
         const internalCode = `${productCode}-${sequence}`;
-        claimCode = `QR-${internalCode}`;
-        await setDocument("inventory_units", unitId, {
+        const token = claimToken();
+        const claimCode = `QR-${internalCode}`;
+        const created = await createIfMissing(`inventory_units/${unitId}`, {
           id: unitId,
           stock_batch_id: batchId,
           card_design_id: designId,
@@ -319,14 +379,33 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
           primary_language_code: primaryLanguageCode,
           secondary_language_code: secondaryLanguageCode,
           public_claim_code: claimCode,
-          public_claim_token_hash: crypto.createHash("sha256").update(token, "utf8").digest("hex"),
+          public_claim_token: token,
+          public_claim_token_hash: claimTokenHash(token),
           qr_generated_at: now,
           created_at: now,
           updated_at: now,
           schema_version: 1,
         });
+        if (created) {
+          unitData = { public_claim_code: claimCode, public_claim_token: token };
+        } else {
+          const unitDocument = await readDocument("inventory_units", unitId);
+          unitData = unitDocument.fields ? fromFirestoreFields(unitDocument.fields) as Record<string, unknown> : undefined;
+        }
       }
-      await setDocument("qr_print_job_items", itemId, {
+      if (!unitData) throw new Error("pod_inventory_unit_missing_after_create");
+      let token = String(unitData.public_claim_token || "");
+      if (!token) {
+        token = claimToken();
+        await updateDocument(`inventory_units/${unitId}`, {
+          public_claim_token: token,
+          public_claim_token_hash: claimTokenHash(token),
+          updated_at: new Date().toISOString(),
+        });
+      }
+      const claimCode = String(unitData.public_claim_code || "");
+      if (!claimCode) throw new Error("pod_inventory_unit_missing_claim_code");
+      await createIfMissing(`qr_print_job_items/${itemId}`, {
         id: itemId,
         print_job_id: jobId,
         inventory_unit_id: unitId,
@@ -336,15 +415,11 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
         schema_version: 1,
       });
       generated += 1;
-      await updateDocument(`qr_print_jobs/${jobId}`, {
-        status: "generating",
-        generated_items: generated,
-        updated_at: new Date().toISOString(),
-      });
+      await renewPodJobLease(jobId, leaseId, { status: "generating", generated_items: generated });
     }
   }
 
-  await updateDocument(`qr_print_jobs/${jobId}`, {
+  await renewPodJobLease(jobId, leaseId, {
     status: "ready",
     total_items: totalUnits,
     generated_items: generated,
