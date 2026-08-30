@@ -122,6 +122,13 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Canonical PDFs are created by the trusted backend. Client SDKs may only
+    // inspect artifact metadata as an active administrator.
+    match /pod_print_artifacts/{artifactId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
     match /shipments/{shipmentId} {
       allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
       allow write: if isAdmin();

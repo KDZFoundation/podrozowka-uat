@@ -12,12 +12,14 @@ import publicDistributionHandler from "./server/routes/public/distribution";
 import orlenWidgetConfigHandler from "./server/routes/orlen/widget-config";
 import { requireAdmin } from "./server/auth/require-admin";
 import podPrintManifestHandler from "./server/routes/pod/print-manifest";
+import podPrintArtifactHandler from "./server/routes/pod/print-artifact";
 
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
 
   app.use(cors());
+  app.use(express.raw({ type: "application/pdf", limit: "80mb" }));
   app.use(express.json({ limit: "10mb" }));
   app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
@@ -30,12 +32,15 @@ async function startServer() {
 
   const forwardApiHandler = (handler: { fetch: (request: Request) => Promise<Response> }) => async (req: express.Request, res: express.Response) => {
     try {
+      const requestBody = ["POST", "PUT", "PATCH"].includes(req.method)
+        ? Buffer.isBuffer(req.body) ? Uint8Array.from(req.body) : JSON.stringify(req.body || {})
+        : undefined;
       const response = await handler.fetch(new Request(`http://localhost:${PORT}${req.originalUrl}`, {
         method: req.method,
-        headers: { "Content-Type": "application/json", ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}) },
-        body: ["POST", "PUT", "PATCH"].includes(req.method) ? JSON.stringify(req.body || {}) : undefined,
+        headers: { "Content-Type": req.headers["content-type"] || "application/json", ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}) },
+        body: requestBody,
       }));
-      const body = await response.text();
+      const body = Buffer.from(await response.arrayBuffer());
       res.status(response.status);
       response.headers.forEach((value, key) => res.setHeader(key, value));
       res.send(body);
@@ -50,6 +55,7 @@ async function startServer() {
   app.all("/api/public/distribution", forwardApiHandler(publicDistributionHandler));
   app.all("/api/orlen/widget-config", forwardApiHandler(orlenWidgetConfigHandler));
   app.all("/api/pod/print-manifest", forwardApiHandler(podPrintManifestHandler));
+  app.all("/api/pod/print-artifact", forwardApiHandler(podPrintArtifactHandler));
 
   const requireLocalAdmin = async (req: express.Request, res: express.Response) => {
     const denied = await requireAdmin(new Request(`http://localhost:${PORT}${req.originalUrl}`, {
