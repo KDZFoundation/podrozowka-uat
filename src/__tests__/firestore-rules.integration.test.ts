@@ -43,6 +43,9 @@ describeIntegration("Firestore security rules (emulator)", () => {
     await adminDb.doc("pod_print_manifests/manifest-rules-test").set({ state: "frozen", manifest_sha256: "abc" });
     await adminDb.doc("pod_print_manifest_chunks/manifest-rules-test-000000").set({ manifest_id: "manifest-rules-test", chunk_index: 0 });
     await adminDb.doc("pod_print_artifacts/artifact-rules-test").set({ immutable: true, status: "ready" });
+    await adminDb.doc("pod_print_asset_sets/asset-set-rules-test").set({ state: "frozen" });
+    await adminDb.doc("pod_print_asset_set_chunks/asset-set-rules-test-000000").set({ chunk_index: 0 });
+    await adminDb.doc("pod_print_asset_set_items/asset-item-rules-test").set({ asset_set_id: "asset-set-rules-test" });
   }, 30_000);
 
   afterAll(async () => {
@@ -75,12 +78,21 @@ describeIntegration("Firestore security rules (emulator)", () => {
     expect((await getDoc(doc(admin.firestore, "pod_print_manifests", "manifest-rules-test"))).exists()).toBe(true);
     expect((await getDoc(doc(admin.firestore, "pod_print_manifest_chunks", "manifest-rules-test-000000"))).exists()).toBe(true);
     expect((await getDoc(doc(admin.firestore, "pod_print_artifacts", "artifact-rules-test"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_print_asset_sets", "asset-set-rules-test"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_print_asset_set_chunks", "asset-set-rules-test-000000"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_print_asset_set_items", "asset-item-rules-test"))).exists()).toBe(true);
     await expect(getDoc(doc(owner.firestore, "pod_print_manifests", "manifest-rules-test"))).rejects.toThrow();
     await expect(getDoc(doc(owner.firestore, "pod_print_manifest_chunks", "manifest-rules-test-000000"))).rejects.toThrow();
     await expect(getDoc(doc(owner.firestore, "pod_print_artifacts", "artifact-rules-test"))).rejects.toThrow();
+    await expect(getDoc(doc(owner.firestore, "pod_print_asset_sets", "asset-set-rules-test"))).rejects.toThrow();
+    await expect(getDoc(doc(owner.firestore, "pod_print_asset_set_chunks", "asset-set-rules-test-000000"))).rejects.toThrow();
+    await expect(getDoc(doc(owner.firestore, "pod_print_asset_set_items", "asset-item-rules-test"))).rejects.toThrow();
     await expect(getDoc(doc(anonymousDb, "pod_print_manifests", "manifest-rules-test"))).rejects.toThrow();
     await expect(getDoc(doc(anonymousDb, "pod_print_manifest_chunks", "manifest-rules-test-000000"))).rejects.toThrow();
     await expect(getDoc(doc(anonymousDb, "pod_print_artifacts", "artifact-rules-test"))).rejects.toThrow();
+    await expect(getDoc(doc(anonymousDb, "pod_print_asset_sets", "asset-set-rules-test"))).rejects.toThrow();
+    await expect(getDoc(doc(anonymousDb, "pod_print_asset_set_chunks", "asset-set-rules-test-000000"))).rejects.toThrow();
+    await expect(getDoc(doc(anonymousDb, "pod_print_asset_set_items", "asset-item-rules-test"))).rejects.toThrow();
   });
 
   it("blocks direct manifest writes from administrators, users, and anonymous clients", async () => {
@@ -88,6 +100,9 @@ describeIntegration("Firestore security rules (emulator)", () => {
       await expect(setDoc(doc(firestore, "pod_print_manifests", `client-write-${Date.now()}`), { state: "frozen" })).rejects.toThrow();
       await expect(setDoc(doc(firestore, "pod_print_manifest_chunks", `client-write-${Date.now()}`), { chunk_index: 0 })).rejects.toThrow();
       await expect(setDoc(doc(firestore, "pod_print_artifacts", `client-write-${Date.now()}`), { immutable: true })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_print_asset_sets", `client-write-${Date.now()}`), { state: "frozen" })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_print_asset_set_chunks", `client-write-${Date.now()}`), { chunk_index: 0 })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_print_asset_set_items", `client-write-${Date.now()}`), { asset_role: "print_font" })).rejects.toThrow();
     }
   });
 });

@@ -1,6 +1,7 @@
 import { canonicalJson, sha256Utf8 } from "./podPrintManifest";
 
-export const POD_PRINT_ARTIFACT_VERSION = 1;
+export const POD_PRINT_ARTIFACT_VERSION = 2 as const;
+export const POD_PRINT_ARTIFACT_LEGACY_VERSION = 1 as const;
 export const POD_PRINT_ARTIFACT_STATUS = "ready" as const;
 export const POD_PRINT_ARTIFACT_CONTENT_TYPE = "application/pdf" as const;
 
@@ -33,6 +34,9 @@ export interface PodPrintArtifactDocument {
   manifest_document_id: string;
   manifest_document_path: string;
   manifest_sha256: string;
+  asset_set_id?: string;
+  asset_set_sha256?: string;
+  render_profile_version?: string;
   pdf_sha256: string;
   storage_bucket: string;
   storage_object: string;
@@ -78,6 +82,11 @@ export interface CreatePodPrintArtifactInput {
   rendererVersion: string;
   pdfBytes: Uint8Array;
   createdAt: string;
+  assetSet?: {
+    id: string;
+    assetSetSha256: string;
+    renderProfileVersion: string;
+  };
 }
 
 const validatePrintJobId = (value: string) => {
@@ -90,9 +99,15 @@ export const podPrintArtifactStorageObject = (printJobId: string, manifestSha256
   return `pod-print-artifacts/${printJobId}/${manifestSha256.toLowerCase()}.pdf`;
 };
 
-export const derivePodPrintArtifactId = async (printJobId: string, manifestSha256: string) => {
-  const digest = await sha256Utf8(canonicalJson({
-    artifact_version: POD_PRINT_ARTIFACT_VERSION,
+export const derivePodPrintArtifactId = async (printJobId: string, manifestSha256: string, assetSetId?: string) => {
+  const artifactVersion = assetSetId ? POD_PRINT_ARTIFACT_VERSION : POD_PRINT_ARTIFACT_LEGACY_VERSION;
+  const digest = await sha256Utf8(canonicalJson(assetSetId ? {
+    artifact_version: artifactVersion,
+    asset_set_id: assetSetId,
+    manifest_sha256: manifestSha256,
+    print_job_id: printJobId,
+  } : {
+    artifact_version: artifactVersion,
     manifest_sha256: manifestSha256,
     print_job_id: printJobId,
   }));
@@ -110,12 +125,18 @@ const expectedObjectMetadata = (input: {
   pdfSha256: string;
   rendererVersion: string;
   printJobId: string;
+  assetSet?: CreatePodPrintArtifactInput["assetSet"];
 }) => ({
   manifest_sha256: input.manifestSha256,
   pdf_sha256: input.pdfSha256,
   renderer_version: input.rendererVersion,
   print_job_id: input.printJobId,
   content_type: POD_PRINT_ARTIFACT_CONTENT_TYPE,
+  ...(input.assetSet ? {
+    asset_set_id: input.assetSet.id,
+    asset_set_sha256: input.assetSet.assetSetSha256,
+    render_profile_version: input.assetSet.renderProfileVersion,
+  } : {}),
 });
 
 const assertStorageObject = async (
@@ -146,6 +167,9 @@ const artifactIdentity = (document: PodPrintArtifactDocument) => ({
   manifest_document_id: document.manifest_document_id,
   manifest_document_path: document.manifest_document_path,
   manifest_sha256: document.manifest_sha256,
+  asset_set_id: document.asset_set_id || null,
+  asset_set_sha256: document.asset_set_sha256 || null,
+  render_profile_version: document.render_profile_version || null,
   pdf_sha256: document.pdf_sha256,
   storage_bucket: document.storage_bucket,
   storage_object: document.storage_object,
@@ -170,16 +194,20 @@ const assertArtifactDocument = (existing: PodPrintArtifactDocument, expected: Po
 };
 
 const assertArtifactRecordShape = async (artifact: PodPrintArtifactDocument) => {
-  const expectedId = await derivePodPrintArtifactId(artifact.print_job_id, artifact.manifest_sha256);
+  const expectedVersion = artifact.asset_set_id ? POD_PRINT_ARTIFACT_VERSION : POD_PRINT_ARTIFACT_LEGACY_VERSION;
+  const expectedId = await derivePodPrintArtifactId(artifact.print_job_id, artifact.manifest_sha256, artifact.asset_set_id);
   const expectedObject = podPrintArtifactStorageObject(artifact.print_job_id, artifact.manifest_sha256);
+  const assetBindingFields = [artifact.asset_set_id, artifact.asset_set_sha256, artifact.render_profile_version];
+  const hasPartialAssetBinding = assetBindingFields.some(Boolean) && !assetBindingFields.every(Boolean);
   if (artifact.id !== expectedId
-    || artifact.artifact_version !== POD_PRINT_ARTIFACT_VERSION
+    || artifact.artifact_version !== expectedVersion
     || artifact.schema_version !== 1
     || artifact.manifest_document_path !== `pod_print_manifests/${artifact.manifest_document_id}`
     || artifact.storage_object !== expectedObject
     || artifact.content_type !== POD_PRINT_ARTIFACT_CONTENT_TYPE
     || artifact.immutable !== true
-    || artifact.status !== POD_PRINT_ARTIFACT_STATUS) {
+    || artifact.status !== POD_PRINT_ARTIFACT_STATUS
+    || hasPartialAssetBinding) {
     throw new PodPrintArtifactError("pod_artifact_firestore_conflict");
   }
 };
@@ -216,6 +244,11 @@ const assertArtifactMatchesInput = (
     || artifact.item_count !== input.manifest.postcard_count) {
     throw new PodPrintArtifactError("pod_artifact_firestore_conflict");
   }
+  if (input.assetSet && (artifact.asset_set_id !== input.assetSet.id
+    || artifact.asset_set_sha256 !== input.assetSet.assetSetSha256
+    || artifact.render_profile_version !== input.assetSet.renderProfileVersion)) {
+    throw new PodPrintArtifactError("pod_artifact_firestore_conflict");
+  }
 };
 
 export const createPodPrintArtifact = async (
@@ -230,12 +263,13 @@ export const createPodPrintArtifact = async (
   if (!input.pdfBytes.byteLength) throw new PodPrintArtifactError("pod_artifact_empty_pdf");
   const pdfSha256 = await sha256Bytes(input.pdfBytes);
   const object = podPrintArtifactStorageObject(input.printJobId, input.manifest.manifest_sha256);
-  const id = await derivePodPrintArtifactId(input.printJobId, input.manifest.manifest_sha256);
+  const id = await derivePodPrintArtifactId(input.printJobId, input.manifest.manifest_sha256, input.assetSet?.id);
   const objectMetadata = expectedObjectMetadata({
     manifestSha256: input.manifest.manifest_sha256,
     pdfSha256,
     rendererVersion: input.rendererVersion,
     printJobId: input.printJobId,
+    assetSet: input.assetSet,
   });
 
   const existingDocument = await store.read(id);
@@ -281,7 +315,7 @@ export const createPodPrintArtifact = async (
   }, storageMetadata.generation);
   const artifact: PodPrintArtifactDocument = {
     id,
-    artifact_version: POD_PRINT_ARTIFACT_VERSION,
+    artifact_version: input.assetSet ? POD_PRINT_ARTIFACT_VERSION : POD_PRINT_ARTIFACT_LEGACY_VERSION,
     renderer_version: input.rendererVersion,
     print_job_id: input.printJobId,
     pod_job_id: input.manifest.print_job_ids.length === 1 ? input.manifest.print_job_ids[0] : null,
@@ -289,6 +323,11 @@ export const createPodPrintArtifact = async (
     manifest_document_id: input.manifest.id,
     manifest_document_path: `pod_print_manifests/${input.manifest.id}`,
     manifest_sha256: input.manifest.manifest_sha256,
+    ...(input.assetSet ? {
+      asset_set_id: input.assetSet.id,
+      asset_set_sha256: input.assetSet.assetSetSha256,
+      render_profile_version: input.assetSet.renderProfileVersion,
+    } : {}),
     pdf_sha256: pdfSha256,
     storage_bucket: verified.metadata.bucket,
     storage_object: object,
@@ -334,6 +373,11 @@ export const reprintPodPrintArtifact = async (
       pdfSha256: artifact.pdf_sha256,
       rendererVersion: artifact.renderer_version,
       printJobId: artifact.print_job_id,
+      assetSet: artifact.asset_set_id && artifact.asset_set_sha256 && artifact.render_profile_version ? {
+        id: artifact.asset_set_id,
+        assetSetSha256: artifact.asset_set_sha256,
+        renderProfileVersion: artifact.render_profile_version,
+      } : undefined,
     }),
   }, artifact.storage_generation);
   assertStoredMetadataMatchesDocument(artifact, verified.metadata);

@@ -9,6 +9,8 @@ export interface PostcardBackProps {
   className?: string;
   qrCodeUrl?: string | null;
   printMode?: boolean;
+  templateUrl?: string;
+  bodyFontFamily?: string;
 }
 
 const PreviewCropMarks = () => (
@@ -32,9 +34,14 @@ export const PostcardBack: React.FC<PostcardBackProps> = ({
   countryIso2,
   countryFlagUrl,
   printMode = false,
+  templateUrl,
+  bodyFontFamily,
 }) => {
-  const flagUrl = countryFlagUrl || (countryIso2 ? `https://flagcdn.com/w640/${countryIso2.toLowerCase()}.png` : null);
+  const flagUrl = countryFlagUrl || (!printMode && countryIso2 ? `https://flagcdn.com/w640/${countryIso2.toLowerCase()}.png` : null);
   const qrLabel = backQrLabel?.trim();
+  const effectiveBodyFontFamily = bodyFontFamily || (printMode ? "PodInterV1" : undefined);
+  const effectiveTemplateUrl = templateUrl || (!printMode ? canvaBackBase : null);
+  if (printMode && (!effectiveTemplateUrl || !flagUrl || !qrCodeUrl)) throw new Error("pod_asset_back_render_dependency_missing");
 
   return (
   <div className={`relative bg-white select-none ${printMode ? "h-full" : "p-3 sm:p-4"} ${className}`}>
@@ -45,13 +52,13 @@ export const PostcardBack: React.FC<PostcardBackProps> = ({
       style={{ containerType: "inline-size" }}
     >
       <img
-        src={canvaBackBase}
+        src={effectiveTemplateUrl || canvaBackBase}
         alt="Szablon Canva - tył pocztówki"
         className="absolute inset-0 h-full w-full"
       />
 
       <div className="absolute left-[8%] top-[6.5%] z-10 h-[18%] w-[31%] bg-white text-center text-black">
-        <div className="absolute left-0 top-[8%] flex w-full justify-center font-sans text-[4.15cqw] font-light leading-none">
+        <div className="absolute left-0 top-[8%] flex w-full justify-center font-sans text-[4.15cqw] font-light leading-none" style={effectiveBodyFontFamily ? { fontFamily: effectiveBodyFontFamily } : undefined}>
           <span className="inline-flex gap-[0.14em]">
             {Array.from("PODRÓŻÓWKA").map((letter, index) => (
               <span key={`${letter}-${index}`}>{letter}</span>
@@ -59,7 +66,7 @@ export const PostcardBack: React.FC<PostcardBackProps> = ({
           </span>
         </div>
         <div className="absolute -left-[10%] top-[64%] h-[0.38cqw] w-[120%] rounded-full bg-black" />
-        <div className="absolute left-0 top-[75%] w-full whitespace-nowrap font-sans text-[1.65cqw] font-normal leading-none tracking-[0.1em]">
+        <div className="absolute left-0 top-[75%] w-full whitespace-nowrap font-sans text-[1.65cqw] font-normal leading-none tracking-[0.1em]" style={effectiveBodyFontFamily ? { fontFamily: effectiveBodyFontFamily } : undefined}>
           ODWRÓCONA POCZTÓWKA
         </div>
       </div>
@@ -78,7 +85,7 @@ export const PostcardBack: React.FC<PostcardBackProps> = ({
 
       {qrLabel && (
         <div className="absolute left-[49.5%] top-[82%] z-10 flex h-[14%] w-[34%] items-center justify-center bg-white px-[1%] text-center">
-          <p className="font-sans text-[2.05cqw] leading-[1.15] text-[#999]">
+          <p className="font-sans text-[2.05cqw] leading-[1.15] text-[#999]" style={effectiveBodyFontFamily ? { fontFamily: effectiveBodyFontFamily } : undefined}>
             {qrLabel}
           </p>
         </div>

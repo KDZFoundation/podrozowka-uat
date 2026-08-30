@@ -13,6 +13,7 @@ import orlenWidgetConfigHandler from "./server/routes/orlen/widget-config";
 import { requireAdmin } from "./server/auth/require-admin";
 import podPrintManifestHandler from "./server/routes/pod/print-manifest";
 import podPrintArtifactHandler from "./server/routes/pod/print-artifact";
+import podPrintAssetsHandler from "./server/routes/pod/print-assets";
 
 async function startServer() {
   const app = express();
@@ -56,6 +57,7 @@ async function startServer() {
   app.all("/api/orlen/widget-config", forwardApiHandler(orlenWidgetConfigHandler));
   app.all("/api/pod/print-manifest", forwardApiHandler(podPrintManifestHandler));
   app.all("/api/pod/print-artifact", forwardApiHandler(podPrintArtifactHandler));
+  app.all("/api/pod/print-assets", forwardApiHandler(podPrintAssetsHandler));
 
   const requireLocalAdmin = async (req: express.Request, res: express.Response) => {
     const denied = await requireAdmin(new Request(`http://localhost:${PORT}${req.originalUrl}`, {

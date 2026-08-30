@@ -1,5 +1,7 @@
 # Kanoniczne artefakty PDF POD
 
+Etap 5 rozszerza pierwszy render o lancuch integralnosci zamrozonych assetow opisany w `docs/pod-print-asset-sets.md`. Nowe artefakty wiaza `asset_set_id`, `asset_set_sha256` i `render_profile_version`; starsze artefakty pozostaja wylacznie zrodlem identycznych bajtowo reprintow.
+
 ## Zakres gwarancji
 
 Etap 4 rozdziela dwie różne własności:
