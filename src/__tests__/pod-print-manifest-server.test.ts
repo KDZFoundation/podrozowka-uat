@@ -207,6 +207,7 @@ describe("authoritative POD manifest source", () => {
     const output = manifest.format_groups[0].items;
     expect(output.map((item) => item.inventory_unit_id)).toEqual(["unit-1", "unit-2"]);
     expect(output[0]).toMatchObject({
+      format_source: "legacy_fallback_v1",
       source_order_id: "order-server",
       card_design_id: "design-server",
       primary_language_code: "pl",
@@ -219,5 +220,29 @@ describe("authoritative POD manifest source", () => {
       },
     });
     expect(serializePodPrintManifest(reversedManifest)).toBe(serializePodPrintManifest(manifest));
+  });
+
+  it("uses an explicit inventory format and rejects unknown persisted format identifiers", async () => {
+    process.env.PUBLIC_APP_URL = "https://pod-uat.example.test";
+    const records = new Map<string, Record<string, unknown>>([
+      ["qr_print_jobs/job-a", { id: "job-a", status: "ready", total_items: 1, generated_items: 1, order_id: "order-a" }],
+      ["inventory_units/unit-1", { id: "unit-1", card_design_id: "design-a", order_id: "order-a", inventory_serial_no: 1, print_format_id: CURRENT_POSTCARD_PRINT_FORMAT.print_format_id, print_format_source: "inventory_unit", primary_language_code: "pl" }],
+      ["card_designs/design-a", { id: "design-a", country_id: "country-pl" }],
+      ["countries/country-pl", { id: "country-pl", iso2: "PL" }],
+    ]);
+    const reader: PodPrintManifestSourceReader = {
+      read: async (collection, id) => ({ id, ...(records.get(`${collection}/${id}`) || {}) }),
+      query: async (collection) => collection === "qr_print_job_items"
+        ? [{ id: "item-1", print_job_id: "job-a", inventory_unit_id: "unit-1", qr_url: "/r/one" }] : [],
+    };
+    const manifest = await buildAuthoritativePodPrintManifest({ printJobIds: ["job-a"] }, reader);
+    expect(manifest.format_groups[0].items[0].format_source).toBe("inventory_unit");
+    records.get("inventory_units/unit-1")!.print_format_source = "legacy_fallback_v1";
+    const legacyManifest = await buildAuthoritativePodPrintManifest({ printJobIds: ["job-a"] }, reader);
+    expect(legacyManifest.format_groups[0].items[0].format_source).toBe("legacy_fallback_v1");
+    records.get("inventory_units/unit-1")!.print_format_id = "unknown-format";
+    await expect(buildAuthoritativePodPrintManifest({ printJobIds: ["job-a"] }, reader)).rejects.toThrow(
+      "unknown_print_format_id:unknown-format",
+    );
   });
 });

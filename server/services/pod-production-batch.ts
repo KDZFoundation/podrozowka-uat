@@ -119,6 +119,7 @@ export const loadPodProductionBatchPlan = async (
           render_profile_sha256: assetSet.header.render_profile_sha256,
           render_input_sha256: position.render_input_sha256,
           print_format_id: group.print_format_id,
+          format_source: position.format_source || "legacy_fallback_v1",
           algorithm_version: manifest.header.algorithm_version,
           cut_stack_profile_version: POD_CUT_STACK_PROFILE_VERSION,
           sequence_index: position.sequence_index,

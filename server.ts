@@ -16,6 +16,9 @@ import podPrintArtifactHandler from "./server/routes/pod/print-artifact";
 import podPrintAssetsHandler from "./server/routes/pod/print-assets";
 import podProductionBatchHandler from "./server/routes/pod/production-batch";
 import podProductionBatchArtifactHandler from "./server/routes/pod/production-batch-artifact";
+import podProductionProofHandler from "./server/routes/pod/production-proof";
+import podProductionReadinessHandler from "./server/routes/pod/production-readiness";
+import podProductionReleaseHandler from "./server/routes/pod/production-release";
 
 async function startServer() {
   const app = express();
@@ -62,6 +65,9 @@ async function startServer() {
   app.all("/api/pod/print-assets", forwardApiHandler(podPrintAssetsHandler));
   app.all("/api/pod/production-batch", forwardApiHandler(podProductionBatchHandler));
   app.all("/api/pod/production-batch-artifact", forwardApiHandler(podProductionBatchArtifactHandler));
+  app.all("/api/pod/production-proof", forwardApiHandler(podProductionProofHandler));
+  app.all("/api/pod/production-readiness", forwardApiHandler(podProductionReadinessHandler));
+  app.all("/api/pod/production-release", forwardApiHandler(podProductionReleaseHandler));
 
   const requireLocalAdmin = async (req: express.Request, res: express.Response) => {
     const denied = await requireAdmin(new Request(`http://localhost:${PORT}${req.originalUrl}`, {

@@ -9,6 +9,7 @@ import {
   type PodPrintOrientation,
 } from "./podImposition";
 import { canonicalJson, sha256Utf8 } from "./podPrintManifest";
+import type { PodPrintFormatSource } from "./podPrintManifest";
 
 export const POD_PRODUCTION_BATCH_MANIFEST_VERSION = 1 as const;
 export const POD_PRODUCTION_BATCH_ALGORITHM_VERSION = "pod-production-batch-cut-stack-v1" as const;
@@ -38,6 +39,7 @@ export interface PodProductionBatchSourceItem {
   render_profile_sha256: string;
   render_input_sha256: string;
   print_format_id: string;
+  format_source?: PodPrintFormatSource;
   algorithm_version: string;
   cut_stack_profile_version: string;
   sequence_index: number;

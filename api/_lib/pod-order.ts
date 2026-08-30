@@ -9,6 +9,8 @@ import {
   updateDocumentIfCurrent,
   updateDocumentWrite,
 } from "./gcp-firestore.js";
+import { CURRENT_POSTCARD_PRINT_FORMAT } from "../../src/lib/podImposition.js";
+import { resolveRegisteredPodPrintFormat } from "../../src/lib/podPrintFormats.js";
 
 const MAX_POD_UNITS_PER_ORDER = 500;
 const POD_JOB_STALE_AFTER_MS = 5 * 60 * 1000;
@@ -139,6 +141,7 @@ type PodOrderItem = {
   product_code?: string;
   primary_language_code?: string;
   secondary_language_code?: string;
+  print_format_id?: string;
 };
 
 type LanguageTemplate = { language_code?: unknown; is_primary?: unknown };
@@ -295,6 +298,8 @@ type NewPodUnitInput = {
   itemIndex: number;
   primaryLanguageCode: string;
   secondaryLanguageCode: string | null;
+  printFormatId: string;
+  printFormatSource: "inventory_unit" | "legacy_fallback_v1";
 };
 
 /**
@@ -359,6 +364,8 @@ const createNewPodUnitWithLease = async (input: NewPodUnitInput) => {
           order_item_id: `${input.orderId}-${input.itemIndex}`,
           primary_language_code: input.primaryLanguageCode,
           secondary_language_code: input.secondaryLanguageCode,
+          print_format_id: input.printFormatId,
+          print_format_source: input.printFormatSource,
           public_claim_code: claimCode,
           public_claim_token: token,
           public_claim_token_hash: claimTokenHash(token),
@@ -483,6 +490,14 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
       languageTemplates.map((template) => template.data),
     );
     const productCode = String(item.product_code || design.product_code || `PDZ-${designId.slice(0, 8).toUpperCase()}`);
+    // New checkouts freeze the server-validated format on the order item. An
+    // older paid order has no such snapshot, so it must use the explicitly
+    // marked v1 compatibility format instead of a mutable current design.
+    const explicitPrintFormatId = typeof item.print_format_id === "string" ? item.print_format_id.trim() : "";
+    const printFormatSource = explicitPrintFormatId ? "inventory_unit" as const : "legacy_fallback_v1" as const;
+    const printFormat = resolveRegisteredPodPrintFormat(
+      explicitPrintFormatId || CURRENT_POSTCARD_PRINT_FORMAT.print_format_id,
+    );
     const incompleteCopies = Array.from({ length: quantity }, (_, copyIndex) => copyIndex)
       .filter((copyIndex) => !existingItemIds.has(deterministicId(`pod-job-item:${orderId}:${itemIndex}:${copyIndex}`)));
     const batchId = deterministicId(`pod-batch:${orderId}:${itemIndex}`);
@@ -491,6 +506,8 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
       name: `POD ${orderNumber}`,
       description: "Sztuki utworzone automatycznie po opłaceniu zamówienia.",
       card_design_id: designId,
+      print_format_id: printFormat.print_format_id,
+      print_format_source: printFormatSource,
       quantity,
       source_type: "pod",
       purpose: "Zamówienie internetowe",
@@ -529,6 +546,8 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
           itemIndex,
           primaryLanguageCode,
           secondaryLanguageCode,
+          printFormatId: printFormat.print_format_id,
+          printFormatSource,
         });
         generated += 1;
         continue;
@@ -601,4 +620,3 @@ export const preparePaidOrderPod = async (orderPath: string, orderNumber: string
 
   return jobId;
 };
-

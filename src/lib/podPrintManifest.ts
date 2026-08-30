@@ -6,7 +6,9 @@ import {
   type PodPrintFormatConfig,
 } from "./podImposition";
 
-export const POD_PRINT_MANIFEST_VERSION = 1 as const;
+export const POD_PRINT_MANIFEST_LEGACY_VERSION = 1 as const;
+export const POD_PRINT_MANIFEST_VERSION = 2 as const;
+export type PodPrintFormatSource = "inventory_unit" | "legacy_fallback_v1";
 
 export interface PodPrintRenderInput {
   qr_url: string;
@@ -21,6 +23,7 @@ export interface PodPrintRenderInput {
 }
 
 export interface PodPrintManifestSourceItem extends PodImpositionSourceItem {
+  format_source?: PodPrintFormatSource;
   batch_order_index: number;
   sequence_index: number;
   pod_job_id: string;
@@ -34,6 +37,7 @@ export interface PodPrintManifestSourceItem extends PodImpositionSourceItem {
 }
 
 export interface PodPrintManifestItem {
+  format_source?: PodPrintFormatSource;
   sequence_index: number;
   batch_order_index: number;
   print_job_item_id: string;
@@ -66,7 +70,7 @@ export interface PodPrintManifestFormatGroup {
 }
 
 export interface PodPrintManifest {
-  manifest_version: typeof POD_PRINT_MANIFEST_VERSION;
+  manifest_version: typeof POD_PRINT_MANIFEST_LEGACY_VERSION | typeof POD_PRINT_MANIFEST_VERSION;
   algorithm_version: typeof POD_IMPOSITION_ALGORITHM;
   postcard_count: number;
   sheet_count: number;
@@ -185,6 +189,7 @@ export const buildPodPrintManifest = (
       gross_width_mm: group.grossWidthMm,
       gross_height_mm: group.grossHeightMm,
       items: group.placements.map((placement) => ({
+        format_source: placement.item.format_source || "legacy_fallback_v1",
         sequence_index: placement.item.sequence_index,
         batch_order_index: placement.item.batch_order_index,
         print_job_item_id: placement.item.id,

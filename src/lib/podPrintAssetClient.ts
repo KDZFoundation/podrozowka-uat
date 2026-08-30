@@ -52,10 +52,8 @@ const loadVerifiedBytes = async (token: string, header: PodPrintAssetSetHeader, 
   return bytes;
 };
 
-export const loadFrozenPodPrintAssets = async (manifestId: string): Promise<LoadedPodPrintAssets> => {
-  const token = await auth.currentUser?.getIdToken();
-  if (!token) throw new Error("Do zamrożenia zasobów POD wymagane jest konto administratora.");
-  const frozen = await post<{ header: PodPrintAssetSetHeader }>(token, { operation: "freeze", manifest_id: manifestId });
+const loadFrozenPodPrintAssetsFromHeader = async (token: string, header: PodPrintAssetSetHeader): Promise<LoadedPodPrintAssets> => {
+  const frozen = { header };
   const itemIds: string[] = [];
   for (let chunkIndex = 0; chunkIndex < frozen.header.chunk_count; chunkIndex += 1) {
     const result = await post<{ chunk: PodPrintAssetSetChunk }>(token, {
@@ -140,4 +138,18 @@ export const loadFrozenPodPrintAssets = async (manifestId: string): Promise<Load
       loadedFonts.forEach((face) => document.fonts.delete(face));
     },
   };
+};
+
+export const loadFrozenPodPrintAssetsById = async (assetSetId: string): Promise<LoadedPodPrintAssets> => {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error("Do odczytu zasobów POD wymagane jest konto administratora.");
+  const result = await post<{ header: PodPrintAssetSetHeader }>(token, { operation: "get_header", asset_set_id: assetSetId });
+  return loadFrozenPodPrintAssetsFromHeader(token, result.header);
+};
+
+export const loadFrozenPodPrintAssets = async (manifestId: string): Promise<LoadedPodPrintAssets> => {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error("Do zamrożenia zasobów POD wymagane jest konto administratora.");
+  const frozen = await post<{ header: PodPrintAssetSetHeader }>(token, { operation: "freeze", manifest_id: manifestId });
+  return loadFrozenPodPrintAssetsFromHeader(token, frozen.header);
 };

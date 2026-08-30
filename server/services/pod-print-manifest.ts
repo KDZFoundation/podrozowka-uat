@@ -4,6 +4,7 @@ import {
   readDocument,
 } from "../../api/_lib/gcp-firestore.js";
 import { CURRENT_POSTCARD_PRINT_FORMAT } from "../../src/lib/podImposition.js";
+import { getPodPrintFormat } from "../../src/lib/podPrintFormats.js";
 import {
   buildPodPrintManifest,
   hashPodPrintRenderInput,
@@ -130,6 +131,7 @@ export const buildAuthoritativePodPrintManifest = async (
   ]));
 
   const sources: PodPrintManifestSourceItem[] = [];
+  const formats = new Map<string, ReturnType<typeof getPodPrintFormat>>();
   for (let batchOrderIndex = 0; batchOrderIndex < jobContexts.length; batchOrderIndex += 1) {
     const context = jobContexts[batchOrderIndex];
     const paired = context.items.map((item, index) => {
@@ -152,6 +154,21 @@ export const buildAuthoritativePodPrintManifest = async (
       const secondaryCode = normalizeLanguage(unit.secondary_language_code);
       const primary = primaryCode ? templateByKey.get(`${design.country_id}:${primaryCode}`) : undefined;
       const secondary = secondaryCode ? templateByKey.get(`${design.country_id}:${secondaryCode}`) : undefined;
+      const explicitFormatId = text(unit.print_format_id);
+      const printFormatId = explicitFormatId || CURRENT_POSTCARD_PRINT_FORMAT.print_format_id;
+      const storedFormatSource = text(unit.print_format_source);
+      if (storedFormatSource && storedFormatSource !== "inventory_unit" && storedFormatSource !== "legacy_fallback_v1") {
+        throw new Error(`manifest_print_format_source_invalid:${unit.id}`);
+      }
+      const formatSource = !explicitFormatId || storedFormatSource === "legacy_fallback_v1"
+        ? "legacy_fallback_v1" as const
+        : "inventory_unit" as const;
+      const format = getPodPrintFormat(printFormatId);
+      const existingFormat = formats.get(printFormatId);
+      if (existingFormat && JSON.stringify(existingFormat) !== JSON.stringify(format)) {
+        throw new Error(`manifest_print_format_configuration_conflict:${printFormatId}`);
+      }
+      formats.set(printFormatId, format);
       const renderInput: PodPrintRenderInput = {
         qr_url: new URL(text(item.qr_url), resolvePodPublicAppUrl()).toString(),
         front_text: combinedText(design.thank_you_text, primary?.front_thank_you_text, secondary?.front_thank_you_text),
@@ -165,7 +182,8 @@ export const buildAuthoritativePodPrintManifest = async (
       };
       sources.push({
         id: item.id,
-        print_format_id: CURRENT_POSTCARD_PRINT_FORMAT.print_format_id,
+        print_format_id: printFormatId,
+        format_source: formatSource,
         batch_order_index: batchOrderIndex,
         sequence_index: sequenceIndex,
         pod_job_id: context.job.id,
@@ -179,5 +197,5 @@ export const buildAuthoritativePodPrintManifest = async (
       });
     }
   }
-  return buildPodPrintManifest(sources, [CURRENT_POSTCARD_PRINT_FORMAT]);
+  return buildPodPrintManifest(sources, Array.from(formats.values()));
 };

@@ -12,7 +12,7 @@ export const deterministicPdfFileId = (manifestSha256: string) => {
 
 export const applyDeterministicPodPdfMetadata = (
   document: jsPDF,
-  input: { manifestSha256: string; documentNumber: string },
+  input: { manifestSha256: string; documentNumber: string; rendererVersion?: string },
 ) => {
   (document as JsPdfWithStringCreationDate).setCreationDate(POD_PDF_CREATION_DATE);
   document.setFileId(deterministicPdfFileId(input.manifestSha256));
@@ -20,7 +20,7 @@ export const applyDeterministicPodPdfMetadata = (
     title: `${input.documentNumber} - SRA3`,
     subject: "Arkusze impozycyjne SRA3, druk dwustronny, flip on short edge",
     author: "Podróżówka",
-    creator: POD_PDF_RENDERER_VERSION,
+    creator: input.rendererVersion || POD_PDF_RENDERER_VERSION,
     keywords: `manifest-sha256:${input.manifestSha256}`,
   });
 };

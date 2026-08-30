@@ -18,6 +18,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
+import { POD_PRINT_FORMATS } from "@/lib/podPrintFormats";
 
 interface Country {
   id: string;
@@ -55,6 +56,7 @@ interface CardDesignRowWithCountry {
   created_at: string;
   updated_at: string;
   product_code: string;
+  print_format_id: string;
   firmino_article_id: number | null;
   firmino_synced_at: string | null;
   firmino_sync_error: string | null;
@@ -82,6 +84,7 @@ interface ProductRow {
   created_at: string;
   updated_at: string;
   product_code: string;
+  print_format_id: string;
   firmino_article_id: number | null;
   firmino_synced_at: string | null;
   firmino_sync_error: string | null;
@@ -102,6 +105,7 @@ const emptyForm = {
   image_front_url: "",
   price_pln: "",
   active: true,
+  print_format_id: POD_PRINT_FORMATS[0].print_format_id,
 };
 
 type FormState = typeof emptyForm;
@@ -170,6 +174,7 @@ const AdminProducts = () => {
         created_at: design.created_at || "",
         updated_at: design.updated_at || "",
         product_code: typeof design.product_code === "string" ? design.product_code : "",
+        print_format_id: typeof design.print_format_id === "string" ? design.print_format_id : "",
         firmino_article_id: typeof design.firmino_article_id === "number" ? design.firmino_article_id : null,
         firmino_synced_at: typeof design.firmino_synced_at === "string" ? design.firmino_synced_at : null,
         firmino_sync_error: typeof design.firmino_sync_error === "string" ? design.firmino_sync_error : null,
@@ -219,6 +224,7 @@ const AdminProducts = () => {
       image_front_url: p.image_front_url || "",
       price_pln: (p.price_grosze / 100).toFixed(2),
       active: p.active,
+      print_format_id: p.print_format_id || POD_PRINT_FORMATS[0].print_format_id,
     });
     setErrors({});
     setShowDialog(true);
@@ -246,6 +252,7 @@ const AdminProducts = () => {
       image_front_url: "",
       price_pln: p.price_grosze > 0 ? (p.price_grosze / 100).toFixed(2) : "",
       active: false,
+      print_format_id: p.print_format_id || POD_PRINT_FORMATS[0].print_format_id,
     });
     setErrors({});
     setExtraImages([]);
@@ -266,6 +273,9 @@ const AdminProducts = () => {
 
   const validate = (): FormErrors => {
     const e: FormErrors = {};
+    if (!POD_PRINT_FORMATS.some((format) => format.print_format_id === form.print_format_id)) {
+      e.print_format_id = "Wybierz obsługiwany format druku";
+    }
     if (!editingId) {
       if (!sourceDesignId) e.source_design_id = "Wybierz wzór z kreatora";
       const priceStr = form.price_pln.replace(",", ".").trim();
@@ -316,6 +326,7 @@ const AdminProducts = () => {
       price_grosze: priceGrosze,
       currency: "PLN",
       active: form.active,
+      print_format_id: form.print_format_id,
     };
 
     if (editingId) {
@@ -351,6 +362,7 @@ const AdminProducts = () => {
           currency: "PLN",
           active: true,
           is_active: true,
+          print_format_id: form.print_format_id,
         });
       toast({ title: "Produkt opublikowany w sklepie" });
       closeDialog();
@@ -626,6 +638,22 @@ const AdminProducts = () => {
                   </div>
                 </div>
               )}
+              <div>
+                <label className="text-xs text-muted-foreground">Format druku POD *</label>
+                <select
+                  value={form.print_format_id}
+                  onChange={(event) => setForm({ ...form, print_format_id: event.target.value })}
+                  className="w-full px-3 py-2 bg-background border border-input rounded-md text-sm"
+                >
+                  {POD_PRINT_FORMATS.map((format) => (
+                    <option key={format.print_format_id} value={format.print_format_id}>
+                      {format.print_format_id} — {format.netWidthMm} × {format.netHeightMm} mm
+                    </option>
+                  ))}
+                </select>
+                {errors.print_format_id && <p className="text-xs text-destructive mt-1">{errors.print_format_id}</p>}
+                <p className="mt-1 text-xs text-muted-foreground">Format jest zapisywany w produkcie i kopiowany do nowych sztuk inwentarzowych.</p>
+              </div>
               {editingId && <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
