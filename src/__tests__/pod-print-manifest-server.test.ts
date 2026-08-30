@@ -17,6 +17,7 @@ import type {
 import { createPodPrintManifestHandler } from "../../server/routes/pod/print-manifest";
 import {
   buildAuthoritativePodPrintManifest,
+  resolvePodPublicAssetUrl,
   resolvePodPublicAppUrl,
   type PodPrintManifestSourceReader,
 } from "../../server/services/pod-print-manifest";
@@ -181,13 +182,27 @@ describe("authoritative POD manifest source", () => {
     expect(() => resolvePodPublicAppUrl({ PUBLIC_APP_URL: "not-a-url" })).toThrow("manifest_public_app_url_invalid");
   });
 
+  it("resolves relative print assets against the reviewed public application URL", () => {
+    const environment = { PUBLIC_APP_URL: "https://pod-uat.example.test" };
+    expect(resolvePodPublicAssetUrl("/card-designs/design-a/front.webp", environment)).toBe(
+      "https://pod-uat.example.test/card-designs/design-a/front.webp",
+    );
+    expect(resolvePodPublicAssetUrl("https://cdn.example.test/front.webp", environment)).toBe(
+      "https://cdn.example.test/front.webp",
+    );
+    expect(resolvePodPublicAssetUrl(null, environment)).toBeNull();
+    expect(() => resolvePodPublicAssetUrl("http://cdn.example.test/front.webp", environment)).toThrow(
+      "manifest_asset_url_invalid",
+    );
+  });
+
   it("builds identifiers and render input only from authoritative server reads", async () => {
     process.env.PUBLIC_APP_URL = "https://pod-uat.example.test";
     const records = new Map<string, Record<string, unknown>>([
       ["qr_print_jobs/job-a", { id: "job-a", status: "ready", total_items: 2, generated_items: 2, order_id: "order-server" }],
       ["inventory_units/unit-1", { id: "unit-1", card_design_id: "design-server", order_id: "order-server", inventory_serial_no: 1, order_item_id: "order-server-0", primary_language_code: "pl" }],
       ["inventory_units/unit-2", { id: "unit-2", card_design_id: "design-server", order_id: "order-server", inventory_serial_no: 2, order_item_id: "order-server-0", primary_language_code: "pl" }],
-      ["card_designs/design-server", { id: "design-server", country_id: "country-pl", thank_you_text: "Front serwera", back_qr_label: "Tył serwera", image_front_url: "https://cdn.test/server.jpg", image_version: "v7", crop_settings: { fit: "crop", x: 40, y: 60 } }],
+      ["card_designs/design-server", { id: "design-server", country_id: "country-pl", thank_you_text: "Front serwera", back_qr_label: "Tył serwera", image_front_url: "/card-designs/design-server/front.webp", image_version: "v7", crop_settings: { fit: "crop", x: 40, y: 60 } }],
       ["countries/country-pl", { id: "country-pl", iso2: "PL", flag_url: "https://cdn.test/pl.png" }],
     ]);
     const items = [
@@ -215,7 +230,7 @@ describe("authoritative POD manifest source", () => {
         qr_url: "https://pod-uat.example.test/r/server-1",
         front_text: "Front serwera",
         back_qr_label: "Tył serwera",
-        image_front_url: "https://cdn.test/server.jpg",
+        image_front_url: "https://pod-uat.example.test/card-designs/design-server/front.webp",
         image_version: "v7",
       },
     });

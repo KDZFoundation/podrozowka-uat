@@ -78,6 +78,22 @@ export const resolvePodPublicAppUrl = (environment: Record<string, string | unde
   return parsed.toString().replace(/\/$/, "");
 };
 
+export const resolvePodPublicAssetUrl = (
+  value: unknown,
+  environment: Record<string, string | undefined> = process.env,
+) => {
+  const source = text(value);
+  if (!source) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(source, `${resolvePodPublicAppUrl(environment)}/`);
+  } catch {
+    throw new Error("manifest_asset_url_invalid");
+  }
+  if (parsed.protocol !== "https:") throw new Error("manifest_asset_url_invalid");
+  return parsed.toString();
+};
+
 const sourceOrderIdForJob = (job: FirestoreRecord, units: FirestoreRecord[]) => {
   const unitOrderIds = [...new Set(units.map((unit) => text(unit.order_id)).filter(Boolean))];
   if (unitOrderIds.length > 1) throw new Error(`manifest_job_has_multiple_source_orders:${job.id}`);
@@ -173,12 +189,12 @@ export const buildAuthoritativePodPrintManifest = async (
         qr_url: new URL(text(item.qr_url), resolvePodPublicAppUrl()).toString(),
         front_text: combinedText(design.thank_you_text, primary?.front_thank_you_text, secondary?.front_thank_you_text),
         back_qr_label: combinedText(design.back_qr_label, primary?.back_qr_label, secondary?.back_qr_label),
-        image_front_url: text(design.image_front_url) || null,
+        image_front_url: resolvePodPublicAssetUrl(design.image_front_url),
         image_version: text(design.image_version) || text(design.image_generation) || text(design.updated_at) || null,
         photo_author: text(design.photo_author) || null,
         crop_settings: parseCropSettings(design.crop_settings),
         country_iso2: text(country.iso2) || null,
-        country_flag_url: text(country.flag_url) || null,
+        country_flag_url: resolvePodPublicAssetUrl(country.flag_url),
       };
       sources.push({
         id: item.id,
