@@ -17,6 +17,8 @@ import publicStats from "./routes/public/stats";
 import podPrintManifest from "./routes/pod/print-manifest";
 import podPrintArtifact from "./routes/pod/print-artifact";
 import podPrintAssets from "./routes/pod/print-assets";
+import podProductionBatch from "./routes/pod/production-batch";
+import podProductionBatchArtifact from "./routes/pod/production-batch-artifact";
 
 type ApiHandler = { fetch: (request: Request) => Response | Promise<Response> };
 
@@ -42,6 +44,8 @@ const routes: Record<string, ApiHandler> = {
   "pod/print-manifest": podPrintManifest,
   "pod/print-artifact": podPrintArtifact,
   "pod/print-assets": podPrintAssets,
+  "pod/production-batch": podProductionBatch,
+  "pod/production-batch-artifact": podProductionBatchArtifact,
 };
 
 const routePath = (request: Request) => new URL(request.url).pathname.replace(/^\/api\/?/, "").replace(/\/+$/, "");

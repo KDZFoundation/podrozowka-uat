@@ -29,7 +29,7 @@ const normalizeLanguageCode = (value?: string | null) => value?.trim().toLowerCa
 export const podLanguageTemplateKey = (countryId: string, languageCode?: string | null) =>
   `${countryId}:${normalizeLanguageCode(languageCode)}`;
 
-interface CardDesignData {
+export interface CardDesignData {
   id: string;
   country_id: string;
   country_iso2?: string | null;
@@ -96,7 +96,7 @@ const assertFrozenCssUrls = (container: HTMLElement) => {
   }
 };
 
-const renderCard = async (
+export const renderPodPostcardSide = async (
   side: "front" | "back",
   design: CardDesignData,
   qrCodeDataUrl: string,
@@ -180,7 +180,7 @@ const renderCard = async (
   }
 };
 
-const drawCropMarks = (doc: jsPDF, coordinates: PodImpositionSideCoordinates) => {
+export const drawPodCropMarks = (doc: jsPDF, coordinates: PodImpositionSideCoordinates) => {
   const { artwork, trim } = coordinates;
   const left = trim.x;
   const right = trim.x + trim.width;
@@ -214,7 +214,7 @@ const addSideToSheet = (
     const data = side === "front" ? item.front : item.back;
     const format = side === "front" ? "JPEG" : "PNG";
     doc.addImage(data, format, artwork.x, artwork.y, artwork.width, artwork.height, `${side}-${item.id}`, "FAST");
-    drawCropMarks(doc, coordinates);
+    drawPodCropMarks(doc, coordinates);
   });
 };
 
@@ -336,13 +336,13 @@ const generatePodPrintPdfForJobs = async (
         })}`;
         let front = renderedFronts.get(frontCacheKey);
         if (!front) {
-          front = await renderCard("front", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm, frozenAssets);
+          front = await renderPodPostcardSide("front", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm, frozenAssets);
           renderedFronts.set(frontCacheKey, front);
         }
         sheetItems.push({
           id: placement.print_job_item_id,
           front,
-          back: await renderCard("back", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm, frozenAssets),
+          back: await renderPodPostcardSide("back", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm, frozenAssets),
           placement,
         });
       }

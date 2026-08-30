@@ -46,6 +46,10 @@ describeIntegration("Firestore security rules (emulator)", () => {
     await adminDb.doc("pod_print_asset_sets/asset-set-rules-test").set({ state: "frozen" });
     await adminDb.doc("pod_print_asset_set_chunks/asset-set-rules-test-000000").set({ chunk_index: 0 });
     await adminDb.doc("pod_print_asset_set_items/asset-item-rules-test").set({ asset_set_id: "asset-set-rules-test" });
+    await adminDb.doc("pod_production_batches/batch-rules-test").set({ state: "FROZEN" });
+    await adminDb.doc("pod_production_batch_chunks/batch-rules-test-000000").set({ chunk_index: 0 });
+    await adminDb.doc("pod_production_batch_memberships/member-rules-test").set({ batch_id: "batch-rules-test" });
+    await adminDb.doc("pod_production_batch_artifacts/artifact-rules-test").set({ immutable: true });
   }, 30_000);
 
   afterAll(async () => {
@@ -81,6 +85,10 @@ describeIntegration("Firestore security rules (emulator)", () => {
     expect((await getDoc(doc(admin.firestore, "pod_print_asset_sets", "asset-set-rules-test"))).exists()).toBe(true);
     expect((await getDoc(doc(admin.firestore, "pod_print_asset_set_chunks", "asset-set-rules-test-000000"))).exists()).toBe(true);
     expect((await getDoc(doc(admin.firestore, "pod_print_asset_set_items", "asset-item-rules-test"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_production_batches", "batch-rules-test"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_production_batch_chunks", "batch-rules-test-000000"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_production_batch_memberships", "member-rules-test"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_production_batch_artifacts", "artifact-rules-test"))).exists()).toBe(true);
     await expect(getDoc(doc(owner.firestore, "pod_print_manifests", "manifest-rules-test"))).rejects.toThrow();
     await expect(getDoc(doc(owner.firestore, "pod_print_manifest_chunks", "manifest-rules-test-000000"))).rejects.toThrow();
     await expect(getDoc(doc(owner.firestore, "pod_print_artifacts", "artifact-rules-test"))).rejects.toThrow();
@@ -93,6 +101,15 @@ describeIntegration("Firestore security rules (emulator)", () => {
     await expect(getDoc(doc(anonymousDb, "pod_print_asset_sets", "asset-set-rules-test"))).rejects.toThrow();
     await expect(getDoc(doc(anonymousDb, "pod_print_asset_set_chunks", "asset-set-rules-test-000000"))).rejects.toThrow();
     await expect(getDoc(doc(anonymousDb, "pod_print_asset_set_items", "asset-item-rules-test"))).rejects.toThrow();
+    for (const [collection, id] of [
+      ["pod_production_batches", "batch-rules-test"],
+      ["pod_production_batch_chunks", "batch-rules-test-000000"],
+      ["pod_production_batch_memberships", "member-rules-test"],
+      ["pod_production_batch_artifacts", "artifact-rules-test"],
+    ]) {
+      await expect(getDoc(doc(owner.firestore, collection, id))).rejects.toThrow();
+      await expect(getDoc(doc(anonymousDb, collection, id))).rejects.toThrow();
+    }
   });
 
   it("blocks direct manifest writes from administrators, users, and anonymous clients", async () => {
@@ -103,6 +120,32 @@ describeIntegration("Firestore security rules (emulator)", () => {
       await expect(setDoc(doc(firestore, "pod_print_asset_sets", `client-write-${Date.now()}`), { state: "frozen" })).rejects.toThrow();
       await expect(setDoc(doc(firestore, "pod_print_asset_set_chunks", `client-write-${Date.now()}`), { chunk_index: 0 })).rejects.toThrow();
       await expect(setDoc(doc(firestore, "pod_print_asset_set_items", `client-write-${Date.now()}`), { asset_role: "print_font" })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_production_batches", `client-write-${Date.now()}`), { state: "FROZEN" })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_production_batch_chunks", `client-write-${Date.now()}`), { chunk_index: 0 })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_production_batch_memberships", `client-write-${Date.now()}`), { batch_id: "other" })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_production_batch_artifacts", `client-write-${Date.now()}`), { immutable: true })).rejects.toThrow();
     }
+  });
+
+  it("enforces server-style exists:false, updateTime, and ten concurrent membership claims", async () => {
+    const batchRef = adminDb.doc(`pod_production_batches/precondition-${Date.now()}`);
+    await expect(batchRef.create({ state: "BUILDING" })).resolves.toBeDefined();
+    await expect(batchRef.create({ state: "BUILDING" })).rejects.toThrow();
+
+    const current = await batchRef.get();
+    expect(current.updateTime).toBeDefined();
+    await expect(batchRef.update({ state: "FROZEN" }, { lastUpdateTime: current.updateTime! })).resolves.toBeDefined();
+    await expect(batchRef.update({ state: "BROKEN" }, { lastUpdateTime: current.updateTime! })).rejects.toThrow();
+
+    const membershipRef = adminDb.doc(`pod_production_batch_memberships/concurrent-${Date.now()}`);
+    const prefix = Date.now();
+    const attempts = await Promise.allSettled(Array.from({ length: 10 }, (_, index) => adminDb.runTransaction(async (transaction) => {
+      const membership = await transaction.get(membershipRef);
+      if (membership.exists) throw new Error("membership-conflict");
+      transaction.create(adminDb.doc(`pod_production_batches/concurrent-${prefix}-${index}`), { state: "BUILDING" });
+      transaction.create(membershipRef, { batch_id: `batch-${index}` });
+    })));
+    expect(attempts.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(attempts.filter((result) => result.status === "rejected")).toHaveLength(9);
   });
 });
