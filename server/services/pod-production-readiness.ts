@@ -31,23 +31,17 @@ const configurationChecks = (env: NodeJS.ProcessEnv): PodProductionReadinessChec
   ["POD_PRINT_FONT_ALLOWED_HOSTS", "host"],
   ["POD_PRINT_TEMPLATE_FRONT_SHA256", "hash"],
   ["POD_PRINT_TEMPLATE_BACK_SHA256", "hash"],
-  ["POD_PRINT_FONT_INTER_300_URL", "url"],
-  ["POD_PRINT_FONT_INTER_300_SHA256", "hash"],
-  ["POD_PRINT_FONT_INTER_400_URL", "url"],
-  ["POD_PRINT_FONT_INTER_400_SHA256", "hash"],
-  ["POD_PRINT_FONT_PATRICK_HAND_400_URL", "url"],
-  ["POD_PRINT_FONT_PATRICK_HAND_400_SHA256", "hash"],
   ].map(([name, kind]) => ({
   code: `configuration:${name}`,
   ok: configured(env, name, kind as "hash" | "url" | "host" | "value"),
   detail: configured(env, name, kind as "hash" | "url" | "host" | "value") ? "configured" : "missing_or_invalid",
   }));
   const allowedFontHosts = new Set((env.POD_PRINT_FONT_ALLOWED_HOSTS || "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean));
-  for (const name of ["POD_PRINT_FONT_INTER_300_URL", "POD_PRINT_FONT_INTER_400_URL", "POD_PRINT_FONT_PATRICK_HAND_400_URL"]) {
-    let host = "";
-    try { host = new URL(env[name] || "").hostname.toLowerCase(); } catch { /* URL syntax check reports the failure. */ }
-    checks.push({ code: `configuration:${name}:allowlist`, ok: Boolean(host && allowedFontHosts.has(host)), detail: host || "invalid_url" });
-  }
+  checks.push({
+    code: "configuration:POD_PRINT_FONT_ALLOWED_HOSTS:fontsource",
+    ok: allowedFontHosts.has("cdn.jsdelivr.net"),
+    detail: allowedFontHosts.has("cdn.jsdelivr.net") ? "cdn.jsdelivr.net" : "missing_cdn.jsdelivr.net",
+  });
   return checks;
 };
 

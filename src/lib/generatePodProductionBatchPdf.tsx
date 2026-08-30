@@ -121,10 +121,15 @@ export const generatePodProductionBatchGroupPdf = async (
           crop_settings: renderInput.crop_settings,
         };
         const qr = assets.urlFor("qr_raster", position.print_job_item_id);
+        const fontFamilies = assets.fontFamiliesFor({
+          primary_language_code: position.primary_language_code,
+          secondary_language_code: position.secondary_language_code,
+          render_input: renderInput,
+        });
         rendered.push({
           position,
-          front: await renderPodPostcardSide("front", design, qr, grossWidthMm, grossHeightMm, assets),
-          back: await renderPodPostcardSide("back", design, qr, grossWidthMm, grossHeightMm, assets),
+          front: await renderPodPostcardSide("front", design, qr, grossWidthMm, grossHeightMm, assets, fontFamilies),
+          back: await renderPodPostcardSide("back", design, qr, grossWidthMm, grossHeightMm, assets, fontFamilies),
         });
       }
       for (const entry of rendered) {

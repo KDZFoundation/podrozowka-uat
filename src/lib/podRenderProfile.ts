@@ -1,14 +1,15 @@
 import { canonicalJson, sha256Utf8 } from "./podPrintManifest";
 import { POD_PDF_RENDERER_VERSION } from "./podPdfMetadata";
+import { POD_FONT_REGISTRY_VERSION } from "./podFontRegistry.generated";
 
-export const POD_PRINT_ASSET_SET_VERSION = 1 as const;
-export const POD_RENDER_PROFILE_VERSION = "pod-render-profile-v1" as const;
+export const POD_PRINT_ASSET_SET_VERSION = 2 as const;
+export const POD_RENDER_PROFILE_VERSION = "pod-render-profile-v2" as const;
 
 export const POD_RENDER_PROFILE = {
   asset_set_version: POD_PRINT_ASSET_SET_VERSION,
   render_profile_version: POD_RENDER_PROFILE_VERSION,
   renderer_version: POD_PDF_RENDERER_VERSION,
-  renderer_layout_version: "postcard-front-back-v1",
+  renderer_layout_version: "postcard-front-back-v2-multiscript",
   libraries: {
     html2canvas: "1.4.1",
     jspdf: "4.2.1",
@@ -37,11 +38,13 @@ export const POD_RENDER_PROFILE = {
     error_correction_level: "M",
     content_type: "image/png",
   },
-  fonts: [
-    { key: "inter-300", family: "PodInterV1", weight: "300", style: "normal" },
-    { key: "inter-400", family: "PodInterV1", weight: "400", style: "normal" },
-    { key: "patrick-hand-400", family: "PodPatrickHandV1", weight: "400", style: "normal" },
-  ],
+  fonts: {
+    registry_version: POD_FONT_REGISTRY_VERSION,
+    selection_algorithm_version: "unicode-script-and-language-v1",
+    body_family: "PodNotoSansV2",
+    handwriting_family: "PodPatrickHandV2",
+    source: "fontsource-cdn-pinned-sha256",
+  },
   templates: [
     { key: "postcard-front-template", role: "postcard_front_template", source: "src/assets/postcard-templates/canva-front-base.png" },
     { key: "postcard-back-template", role: "postcard_back_template", source: "src/assets/postcard-templates/canva-back-base.png" },
@@ -51,10 +54,7 @@ export const POD_RENDER_PROFILE = {
 export type PodRenderProfileAssetHashes = {
   postcard_front_template: string;
   postcard_back_template: string;
-  inter_300: string;
-  inter_400: string;
-  patrick_hand_400: string;
-};
+} & Record<string, string>;
 
 export const hashPodRenderProfile = (assetHashes?: PodRenderProfileAssetHashes) => sha256Utf8(canonicalJson({
   ...POD_RENDER_PROFILE,

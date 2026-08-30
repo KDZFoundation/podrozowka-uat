@@ -21,6 +21,7 @@ import {
 } from "../../../src/lib/podPrintAssetSet.js";
 import { gcpPodPrintAssetSetStore } from "../../services/pod-print-asset-set-store.js";
 import { readCompletePodPrintAssetSet } from "./print-assets.js";
+import { selectPodPrintFontAssets } from "../../../src/lib/podPrintFonts.js";
 
 const MAX_PDF_BYTES = 80 * 1024 * 1024;
 
@@ -79,7 +80,8 @@ const validateAssetCoverage = (
   items: PodPrintAssetSetItem[],
 ) => {
   const positions = manifest.manifest.format_groups.flatMap((group) => group.items);
-  if (items.length !== 5 + positions.length * 3) {
+  const fonts = selectPodPrintFontAssets(manifest.manifest);
+  if (items.length !== 2 + fonts.length + positions.length * 3) {
     throw new PodPrintArtifactError("pod_artifact_asset_coverage_mismatch:item_count");
   }
   const exact = (role: string, printJobItemId: string | null, sharedKey: string | null = null) => {
@@ -91,9 +93,7 @@ const validateAssetCoverage = (
   };
   exact("postcard_front_template", null, "postcard-front-template");
   exact("postcard_back_template", null, "postcard-back-template");
-  exact("print_font", null, "inter-300");
-  exact("print_font", null, "inter-400");
-  exact("print_font", null, "patrick-hand-400");
+  fonts.forEach((font) => exact("print_font", null, font.key));
   for (const position of positions) {
     for (const role of ["postcard_front_photo", "country_flag", "qr_raster"] as const) {
       const asset = exact(role, position.print_job_item_id);

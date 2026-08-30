@@ -8,13 +8,15 @@ import {
   type PodPrintAssetSetItem,
   type PodPrintAssetRole,
 } from "./podPrintAssetSet";
-import { hashPodRenderProfile, POD_RENDER_PROFILE } from "./podRenderProfile";
+import { hashPodRenderProfile } from "./podRenderProfile";
 import { canonicalJson, sha256Utf8 } from "./podPrintManifest";
+import { podPrintFontFamiliesForItem, type PodPrintFontContext } from "./podPrintFonts";
 
 export interface LoadedPodPrintAssets {
   header: PodPrintAssetSetHeader;
   items: PodPrintAssetSetItem[];
   urlFor(role: PodPrintAssetRole, printJobItemId?: string): string;
+  fontFamiliesFor(item: PodPrintFontContext): { body: string; handwriting: string };
   dispose(): void;
 }
 
@@ -81,17 +83,20 @@ const loadFrozenPodPrintAssetsFromHeader = async (token: string, header: PodPrin
     items.push(result.item);
   }
   const sharedHash = (key: string) => {
-    const item = items.find((candidate) => candidate.shared_key === key);
+    const matches = items.filter((candidate) => candidate.shared_key === key);
+    if (matches.length > 1) throw new Error(`pod_asset_duplicate_shared_key:${key}`);
+    const item = matches[0];
     if (!item) throw new Error(`pod_asset_missing:${key}`);
     return item.sha256;
   };
-  const expectedProfileHash = await hashPodRenderProfile({
+  const profileHashes = {
     postcard_front_template: sharedHash("postcard-front-template"),
     postcard_back_template: sharedHash("postcard-back-template"),
-    inter_300: sharedHash("inter-300"),
-    inter_400: sharedHash("inter-400"),
-    patrick_hand_400: sharedHash("patrick-hand-400"),
-  });
+    ...Object.fromEntries(items
+      .filter((item) => item.asset_role === "print_font" && item.shared_key)
+      .map((item) => [item.shared_key!, sharedHash(item.shared_key!)])),
+  };
+  const expectedProfileHash = await hashPodRenderProfile(profileHashes);
   if (frozen.header.render_profile_sha256 !== expectedProfileHash) throw new Error("pod_asset_render_profile_mismatch");
   await verifyPodPrintAssetSet(frozen.header, items);
 
@@ -101,20 +106,19 @@ const loadFrozenPodPrintAssetsFromHeader = async (token: string, header: PodPrin
     for (const item of items) {
       const bytes = await loadVerifiedBytes(token, frozen.header, item);
       if (item.asset_role === "print_font") {
-        if (!item.font_family || !item.font_weight || !item.font_style) throw new Error("pod_asset_font_metadata_missing");
+        if (!item.font_family || !item.font_weight || !item.font_style || !item.font_unicode_range) throw new Error("pod_asset_font_metadata_missing");
         const face = new FontFace(item.font_family, Uint8Array.from(bytes).buffer, {
           weight: item.font_weight,
           style: item.font_style,
+          unicodeRange: item.font_unicode_range,
         });
         await face.load();
+        if (face.status !== "loaded") throw new Error(`pod_asset_font_unavailable:${item.shared_key}`);
         document.fonts.add(face);
         loadedFonts.push(face);
       } else {
         objectUrls.set(item.id, URL.createObjectURL(new Blob([Uint8Array.from(bytes).buffer], { type: item.content_type })));
       }
-    }
-    for (const font of POD_RENDER_PROFILE.fonts) {
-      if (!document.fonts.check(`${font.weight} 16px "${font.family}"`)) throw new Error(`pod_asset_font_unavailable:${font.key}`);
     }
     await document.fonts.ready;
   } catch (error) {
@@ -133,6 +137,7 @@ const loadFrozenPodPrintAssetsFromHeader = async (token: string, header: PodPrin
       if (!url) throw new Error(`pod_asset_role_missing:${role}:${printJobItemId || "shared"}`);
       return url;
     },
+    fontFamiliesFor: podPrintFontFamiliesForItem,
     dispose: () => {
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
       loadedFonts.forEach((face) => document.fonts.delete(face));

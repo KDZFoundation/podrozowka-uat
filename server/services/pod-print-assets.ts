@@ -15,19 +15,20 @@ import {
   hashPodRenderProfile,
   type PodRenderProfileAssetHashes,
 } from "../../src/lib/podRenderProfile.js";
+import { selectPodPrintFontAssets, type PodFontRegistryEntry } from "../../src/lib/podPrintFonts.js";
 import { fetchPodImageAsset, validatePodAssetUrl, validatePodImageBytes } from "./pod-asset-fetch.js";
 
 type StaticAssetDefinition = {
   key: string;
   role: PodPrintAssetRole;
   sourceKind: PodPrintAssetSourceKind;
-  path?: string;
-  urlEnvironment?: string;
+  path: string;
   hashEnvironment: string;
   contentType: string;
   fontFamily?: string;
   fontWeight?: string;
   fontStyle?: string;
+  fontUnicodeRange?: string;
 };
 
 export const POD_STATIC_ASSET_REGISTRY: readonly StaticAssetDefinition[] = [
@@ -47,39 +48,6 @@ export const POD_STATIC_ASSET_REGISTRY: readonly StaticAssetDefinition[] = [
     hashEnvironment: "POD_PRINT_TEMPLATE_BACK_SHA256",
     contentType: "image/png",
   },
-  {
-    key: "inter-300",
-    role: "print_font",
-    sourceKind: "pinned_font_url",
-    urlEnvironment: "POD_PRINT_FONT_INTER_300_URL",
-    hashEnvironment: "POD_PRINT_FONT_INTER_300_SHA256",
-    contentType: "font/woff2",
-    fontFamily: "PodInterV1",
-    fontWeight: "300",
-    fontStyle: "normal",
-  },
-  {
-    key: "inter-400",
-    role: "print_font",
-    sourceKind: "pinned_font_url",
-    urlEnvironment: "POD_PRINT_FONT_INTER_400_URL",
-    hashEnvironment: "POD_PRINT_FONT_INTER_400_SHA256",
-    contentType: "font/woff2",
-    fontFamily: "PodInterV1",
-    fontWeight: "400",
-    fontStyle: "normal",
-  },
-  {
-    key: "patrick-hand-400",
-    role: "print_font",
-    sourceKind: "pinned_font_url",
-    urlEnvironment: "POD_PRINT_FONT_PATRICK_HAND_400_URL",
-    hashEnvironment: "POD_PRINT_FONT_PATRICK_HAND_400_SHA256",
-    contentType: "font/woff2",
-    fontFamily: "PodPatrickHandV1",
-    fontWeight: "400",
-    fontStyle: "normal",
-  },
 ] as const;
 
 const requiredHash = (name: string) => {
@@ -88,12 +56,10 @@ const requiredHash = (name: string) => {
   return value;
 };
 
-export const readPodRenderProfileAssetHashes = (): PodRenderProfileAssetHashes => ({
+export const readPodRenderProfileAssetHashes = (fonts: readonly PodFontRegistryEntry[]): PodRenderProfileAssetHashes => ({
   postcard_front_template: requiredHash("POD_PRINT_TEMPLATE_FRONT_SHA256"),
   postcard_back_template: requiredHash("POD_PRINT_TEMPLATE_BACK_SHA256"),
-  inter_300: requiredHash("POD_PRINT_FONT_INTER_300_SHA256"),
-  inter_400: requiredHash("POD_PRINT_FONT_INTER_400_SHA256"),
-  patrick_hand_400: requiredHash("POD_PRINT_FONT_PATRICK_HAND_400_SHA256"),
+  ...Object.fromEntries(fonts.map((font) => [font.key, font.sha256])),
 });
 
 const assertExpectedHash = async (bytes: Uint8Array, environmentName: string) => {
@@ -132,9 +98,8 @@ const readBoundedFontBody = async (response: Response) => {
   return bytes;
 };
 
-const fetchPinnedFont = async (definition: StaticAssetDefinition, fetchImpl: typeof fetch) => {
-  const sourceUrl = process.env[definition.urlEnvironment!]?.trim() || "";
-  if (!sourceUrl) throw new PodPrintAssetSetError(`pod_asset_font_url_required:${definition.urlEnvironment}`);
+const fetchPinnedFont = async (definition: PodFontRegistryEntry, fetchImpl: typeof fetch) => {
+  const sourceUrl = definition.source_url;
   const url = new URL(sourceUrl);
   if (url.protocol !== "https:") throw new PodPrintAssetSetError("pod_asset_font_url_forbidden");
   const allowed = new Set((process.env.POD_PRINT_FONT_ALLOWED_HOSTS || "").split(",").map((host) => host.trim().toLowerCase()).filter(Boolean));
@@ -152,7 +117,7 @@ const fetchPinnedFont = async (definition: StaticAssetDefinition, fetchImpl: typ
     if (declaredSize > 2 * 1024 * 1024) throw new PodPrintAssetSetError("pod_asset_too_large");
     const bytes = await readBoundedFontBody(response);
     assertWoff2(bytes);
-    await assertExpectedHash(bytes, definition.hashEnvironment);
+    if (await sha256Bytes(bytes) !== definition.sha256) throw new PodPrintAssetSetError(`pod_asset_registry_hash_mismatch:${definition.key}`);
     return { bytes, sourceUrl };
   } catch (error) {
     if (controller.signal.aborted) throw new PodPrintAssetSetError("pod_asset_fetch_timeout");
@@ -162,22 +127,14 @@ const fetchPinnedFont = async (definition: StaticAssetDefinition, fetchImpl: typ
   }
 };
 
-const staticCandidates = async (fetchImpl: typeof fetch): Promise<PodPrintAssetCandidate[]> => Promise.all(POD_STATIC_ASSET_REGISTRY.map(async (definition) => {
-  let bytes: Uint8Array;
-  let sourceUrl: string | null = null;
-  if (definition.path) {
-    bytes = new Uint8Array(await readFile(path.resolve(process.cwd(), definition.path)));
-    validatePodImageBytes(bytes, definition.contentType);
-    await assertExpectedHash(bytes, definition.hashEnvironment);
-  } else {
-    const font = await fetchPinnedFont(definition, fetchImpl);
-    bytes = font.bytes;
-    sourceUrl = font.sourceUrl;
-  }
+const staticCandidates = async (): Promise<PodPrintAssetCandidate[]> => Promise.all(POD_STATIC_ASSET_REGISTRY.map(async (definition) => {
+  const bytes = new Uint8Array(await readFile(path.resolve(process.cwd(), definition.path)));
+  validatePodImageBytes(bytes, definition.contentType);
+  await assertExpectedHash(bytes, definition.hashEnvironment);
   return {
     asset_role: definition.role,
     source_kind: definition.sourceKind,
-    source_url: sourceUrl,
+    source_url: null,
     source_version: requiredHash(definition.hashEnvironment),
     content_type: definition.contentType,
     bytes,
@@ -186,9 +143,31 @@ const staticCandidates = async (fetchImpl: typeof fetch): Promise<PodPrintAssetC
     font_family: definition.fontFamily || null,
     font_weight: definition.fontWeight || null,
     font_style: definition.fontStyle || null,
+    font_unicode_range: definition.fontUnicodeRange || null,
     shared_key: definition.key,
   } satisfies PodPrintAssetCandidate;
 }));
+
+const fontCandidates = async (fonts: readonly PodFontRegistryEntry[], fetchImpl: typeof fetch): Promise<PodPrintAssetCandidate[]> => (
+  Promise.all(fonts.map(async (definition) => {
+    const font = await fetchPinnedFont(definition, fetchImpl);
+    return {
+      asset_role: "print_font",
+      source_kind: "pinned_font_url",
+      source_url: font.sourceUrl,
+      source_version: definition.sha256,
+      content_type: "font/woff2",
+      bytes: font.bytes,
+      print_job_item_id: null,
+      render_input_sha256: null,
+      font_family: definition.family,
+      font_weight: definition.weight,
+      font_style: definition.style,
+      font_unicode_range: definition.unicode_range,
+      shared_key: definition.key,
+    } satisfies PodPrintAssetCandidate;
+  }))
+);
 
 const flagSource = (countryIso2: string | null, customUrl: string | null) => {
   if (customUrl) return { sourceUrl: customUrl, sourceKind: "external_url" as const };
@@ -206,7 +185,11 @@ export const collectPodPrintAssetCandidates = async (
       throw new PodPrintAssetSetError("pod_asset_render_input_hash_mismatch");
     }
   }));
-  const candidates: PodPrintAssetCandidate[] = await staticCandidates(fetchImpl);
+  const selectedFonts = selectPodPrintFontAssets(frozen.manifest);
+  const candidates: PodPrintAssetCandidate[] = [
+    ...await staticCandidates(),
+    ...await fontCandidates(selectedFonts, fetchImpl),
+  ];
   const externalCache = new Map<string, Promise<Awaited<ReturnType<typeof fetchPodImageAsset>>>>();
   const fetchCached = (url: string) => {
     let result = externalCache.get(url);
@@ -270,6 +253,6 @@ export const collectPodPrintAssetCandidates = async (
   }
   return {
     candidates,
-    renderProfileSha256: await hashPodRenderProfile(readPodRenderProfileAssetHashes()),
+    renderProfileSha256: await hashPodRenderProfile(readPodRenderProfileAssetHashes(selectedFonts)),
   };
 };

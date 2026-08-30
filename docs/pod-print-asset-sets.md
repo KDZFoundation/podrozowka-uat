@@ -5,7 +5,7 @@
 The first PDF render has two immutable inputs:
 
 1. A frozen `pod_print_manifests/{manifest_id}` manifest.
-2. A frozen `pod_print_asset_sets/{asset_set_id}` asset set created for that manifest and `pod-render-profile-v1`.
+2. A frozen `pod_print_asset_sets/{asset_set_id}` asset set created for that manifest and `pod-render-profile-v2`.
 
 The asset-set identity is deterministic. Its canonical SHA-256 covers the manifest SHA-256, render-profile SHA-256 and version, renderer version, and every canonical item. Operational fields (`created_at`, `created_by`, `frozen_at`) do not affect this hash. Items bind the exact asset bytes and pinned Storage generation to their role, card/render-input association, MIME type, source metadata, and font or QR parameters.
 
@@ -25,11 +25,15 @@ Every render requires these roles:
 - `country_flag` for each manifest position, using `country_flag_url` or the existing `flagcdn.com` country-code derivation.
 - `qr_raster` for each manifest position; the trusted backend generates it exactly once from the manifest's `qr_url` using the pinned QR profile.
 - `postcard_front_template` and `postcard_back_template` from the repository PNG files.
-- `print_font` for `PodInterV1` weights 300 and 400 and `PodPatrickHandV1` weight 400.
+- `print_font` for the exact Fontsource WOFF2 subsets selected from the manifest text, language codes and Unicode scripts.
 
 Before acquiring assets, the backend verifies each manifest position's `render_input_sha256`. It rejects missing sources and never substitutes placeholders.
 
-The profile in `src/lib/podRenderProfile.ts` pins library versions, template keys, fonts, QR options, raster sizes, JPEG quality, and all relevant `html2canvas` options. Its canonical profile SHA-256 also includes the five configured template/font SHA-256 values, and the browser reconstructs that binding from the frozen items. Any pixel-affecting change requires a new render-profile version. A profile version must never be edited in place after it has produced an artifact.
+The profile in `src/lib/podRenderProfile.ts` pins library versions, template keys, the generated Fontsource registry version, the font-selection algorithm, QR options, raster sizes, JPEG quality, and all relevant `html2canvas` options. Its canonical profile SHA-256 includes the template hashes and every selected font-subset SHA-256. The browser reconstructs that binding from the frozen items. Any pixel-affecting change requires a new render-profile version. A profile version must never be edited in place after it has produced an artifact.
+
+`src/lib/podFontRegistry.generated.ts` records versioned CDN URLs, Unicode ranges and exact SHA-256 values for Latin, Greek, Cyrillic, Arabic, Armenian, Hebrew, Khmer, Lao, Ethiopic, Thai, Georgian, Tifinagh, Japanese, Korean, Cantonese, Simplified Chinese and Traditional Chinese. The registry is regenerated only with `node scripts/generate-pod-font-registry.mjs`. Han text without an unambiguous language code, or one card combining incompatible CJK variants, fails closed before any asset is frozen.
+
+Font provenance and license references are documented in `docs/pod-font-licenses.md`.
 
 ## Network threat model
 
@@ -40,7 +44,7 @@ Remote image and font acquisition happens only on the authenticated backend. The
 - Follows redirects manually and applies the complete URL, allowlist, and address validation to every hop.
 - Enforces a request timeout, a redirect cap, and byte limits while streaming, without trusting `Content-Length` alone.
 - Accepts only PNG, JPEG, WebP, and WOFF2 as appropriate and verifies magic bytes.
-- Verifies configured template/font SHA-256 values before any immutable record is written.
+- Verifies configured template hashes and committed per-font SHA-256 values before any immutable record is written.
 
 `flagcdn.com` is not contacted by the browser renderer. It is only an optional allowlisted acquisition source on the trusted backend.
 
@@ -82,20 +86,14 @@ Set these server-only variables before creating a new asset set:
 
 ```text
 POD_PRINT_ASSET_ALLOWED_HOSTS=flagcdn.com,reviewed-photo-host.example
-POD_PRINT_FONT_ALLOWED_HOSTS=reviewed-font-host.example
+POD_PRINT_FONT_ALLOWED_HOSTS=cdn.jsdelivr.net
 POD_PRINT_TEMPLATE_FRONT_SHA256=<64 lowercase hex characters>
 POD_PRINT_TEMPLATE_BACK_SHA256=<64 lowercase hex characters>
-POD_PRINT_FONT_INTER_300_URL=https://reviewed-font-host.example/inter-300.woff2
-POD_PRINT_FONT_INTER_300_SHA256=<64 lowercase hex characters>
-POD_PRINT_FONT_INTER_400_URL=https://reviewed-font-host.example/inter-400.woff2
-POD_PRINT_FONT_INTER_400_SHA256=<64 lowercase hex characters>
-POD_PRINT_FONT_PATRICK_HAND_400_URL=https://reviewed-font-host.example/patrick-hand-400.woff2
-POD_PRINT_FONT_PATRICK_HAND_400_SHA256=<64 lowercase hex characters>
 ```
 
-Image and font origins have separate exact-host allowlists. Values are server configuration and must not use mutable Google Fonts CSS endpoints.
+Image and font origins have separate exact-host allowlists. The runtime never uses mutable Google Fonts CSS endpoints. Font URLs include the exact Fontsource package version and their bytes must match the committed registry hash.
 
-The expected SHA-256 values must be calculated from the exact reviewed bytes that will be served. They are intentionally not inferred at runtime. Record the three concrete font SHA-256 values in deployment configuration and the release evidence before enabling first renders.
+The generator calculates font SHA-256 values from exact WOFF2 bytes and writes them into the reviewed source registry. Runtime acquisition never infers or accepts a new hash. Changing Fontsource version, Unicode ranges, a font URL or bytes requires registry regeneration, review and a new render-profile version.
 
 ## Operations
 

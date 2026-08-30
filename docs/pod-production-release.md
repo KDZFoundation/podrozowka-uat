@@ -56,7 +56,7 @@ stateDiagram-v2
 - every referenced asset set is frozen and hash-consistent;
 - every asset item has a recorded GCS generation and matching immutable object metadata;
 - every print format used by the batch has an immutable numbered proof and a matching manual approval event;
-- Storage bucket, separate image/font allowlists, template hashes, and all pinned font URL/hash pairs are configured and syntactically valid.
+- Storage bucket, separate image/font allowlists and template hashes are configured; the font allowlist contains `cdn.jsdelivr.net`, while every versioned Fontsource URL/hash pair comes from the committed render-profile registry.
 
 Legacy fallback positions do not silently disappear: readiness includes `legacy_print_format_fallback_present` as an explicit warning. Missing or inconsistent required data blocks `MARKED_READY` and `RELEASED_TO_PRINTER`.
 
