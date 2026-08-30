@@ -10,6 +10,8 @@ type FirestoreValue =
   | { arrayValue: { values: FirestoreValue[] } }
   | { mapValue: { fields: Record<string, FirestoreValue> } };
 
+export type FirestoreDocumentData = object;
+
 type WorkloadIdentityConfig = {
   projectNumber: string;
   serviceAccount: string;
@@ -137,18 +139,22 @@ export const firestoreDocumentName = (documentPath: string) => {
   return `projects/${settings.projectId}/databases/${settings.databaseId}/documents/${documentPath}`;
 };
 
-export const createDocumentWrite = (documentPath: string, data: Record<string, unknown>) => ({
+const firestoreFields = (data: FirestoreDocumentData) => Object.fromEntries(
+  Object.entries(data).map(([key, value]) => [key, toFirestoreValue(value)]),
+);
+
+export const createDocumentWrite = (documentPath: string, data: FirestoreDocumentData) => ({
   update: {
     name: firestoreDocumentName(documentPath),
-    fields: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, toFirestoreValue(value)])),
+    fields: firestoreFields(data),
   },
   currentDocument: { exists: false },
 });
 
-export const updateDocumentWrite = (documentPath: string, data: Record<string, unknown>, updateTime?: string) => ({
+export const updateDocumentWrite = (documentPath: string, data: FirestoreDocumentData, updateTime?: string) => ({
   update: {
     name: firestoreDocumentName(documentPath),
-    fields: Object.fromEntries(Object.entries(data).map(([key, value]) => [key, toFirestoreValue(value)])),
+    fields: firestoreFields(data),
   },
   updateMask: { fieldPaths: Object.keys(data) },
   ...(updateTime ? { currentDocument: { updateTime } } : {}),

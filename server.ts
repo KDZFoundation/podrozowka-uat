@@ -11,6 +11,7 @@ import publicCommunityHandler from "./server/routes/public/community";
 import publicDistributionHandler from "./server/routes/public/distribution";
 import orlenWidgetConfigHandler from "./server/routes/orlen/widget-config";
 import { requireAdmin } from "./server/auth/require-admin";
+import podPrintManifestHandler from "./server/routes/pod/print-manifest";
 
 async function startServer() {
   const app = express();
@@ -48,6 +49,7 @@ async function startServer() {
   app.all("/api/public/community", forwardApiHandler(publicCommunityHandler));
   app.all("/api/public/distribution", forwardApiHandler(publicDistributionHandler));
   app.all("/api/orlen/widget-config", forwardApiHandler(orlenWidgetConfigHandler));
+  app.all("/api/pod/print-manifest", forwardApiHandler(podPrintManifestHandler));
 
   const requireLocalAdmin = async (req: express.Request, res: express.Response) => {
     const denied = await requireAdmin(new Request(`http://localhost:${PORT}${req.originalUrl}`, {

@@ -14,6 +14,7 @@ import paymentStatus from "./routes/payments/status";
 import publicCommunity from "./routes/public/community";
 import publicDistribution from "./routes/public/distribution";
 import publicStats from "./routes/public/stats";
+import podPrintManifest from "./routes/pod/print-manifest";
 
 type ApiHandler = { fetch: (request: Request) => Response | Promise<Response> };
 
@@ -36,6 +37,7 @@ const routes: Record<string, ApiHandler> = {
   "public/community": publicCommunity,
   "public/distribution": publicDistribution,
   "public/stats": publicStats,
+  "pod/print-manifest": podPrintManifest,
 };
 
 const routePath = (request: Request) => new URL(request.url).pathname.replace(/^\/api\/?/, "").replace(/\/+$/, "");
@@ -45,7 +47,7 @@ const firstHeaderValue = (value: string | string[] | undefined) => Array.isArray
 const requestBody = (body: unknown, contentType: string | null) => {
   if (body === undefined || body === null) return undefined;
   if (typeof body === "string") return body;
-  if (Buffer.isBuffer(body)) return body;
+  if (Buffer.isBuffer(body)) return Uint8Array.from(body);
   if (contentType?.includes("application/x-www-form-urlencoded") && typeof body === "object") {
     return new URLSearchParams(Object.entries(body as Record<string, unknown>).map(([key, value]) => [key, String(value)])).toString();
   }
