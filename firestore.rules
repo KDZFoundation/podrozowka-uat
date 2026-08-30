@@ -110,6 +110,18 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
     }
 
+    // POD manifests are immutable server artifacts. Administrators may inspect
+    // them, but even an admin client cannot create, update, or delete them.
+    match /pod_print_manifests/{manifestId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /pod_print_manifest_chunks/{chunkId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
     match /shipments/{shipmentId} {
       allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
       allow write: if isAdmin();

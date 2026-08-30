@@ -49,3 +49,6 @@ migration-data/supabase-*.json
 
 .vercel
 .env*
+
+# Riptide artifacts (cloud-synced)
+.humanlayer/tasks/
