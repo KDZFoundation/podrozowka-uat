@@ -1,6 +1,6 @@
 import type { jsPDF } from "jspdf";
 
-export const POD_PDF_RENDERER_VERSION = "pod-browser-jspdf-html2canvas-v1";
+export const POD_PDF_RENDERER_VERSION = "pod-browser-jspdf-html2canvas-v2-multiscript";
 export const POD_PDF_CREATION_DATE = "D:20000101000000+00'00'";
 
 type JsPdfWithStringCreationDate = jsPDF & { setCreationDate(date: string): jsPDF };

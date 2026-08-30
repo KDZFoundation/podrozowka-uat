@@ -31,6 +31,7 @@ export interface PodPrintAssetCandidate {
   font_family?: string | null;
   font_weight?: string | null;
   font_style?: string | null;
+  font_unicode_range?: string | null;
   shared_key?: string | null;
   qr_payload_sha256?: string | null;
   qr_algorithm_version?: string | null;
@@ -61,6 +62,7 @@ export interface PodPrintAssetSetItem {
   font_family: string | null;
   font_weight: string | null;
   font_style: string | null;
+  font_unicode_range: string | null;
   shared_key: string | null;
   qr_payload_sha256?: string | null;
   qr_algorithm_version?: string | null;
@@ -158,6 +160,7 @@ const itemBusinessPayload = (item: PodPrintAssetSetItem) => ({
   crc32c: item.crc32c,
   font_family: item.font_family,
   font_style: item.font_style,
+  font_unicode_range: item.font_unicode_range,
   font_weight: item.font_weight,
   md5_hash: item.md5_hash,
   print_job_item_id: item.print_job_item_id,
@@ -324,6 +327,7 @@ export const freezePodPrintAssetSet = async (
       font_family: candidate.font_family || null,
       font_weight: candidate.font_weight || null,
       font_style: candidate.font_style || null,
+      font_unicode_range: candidate.font_unicode_range || null,
       shared_key: candidate.shared_key || null,
       qr_payload_sha256: candidate.qr_payload_sha256 || null,
       qr_algorithm_version: candidate.qr_algorithm_version || null,
@@ -457,7 +461,7 @@ export const verifyPodPrintAssetSet = async (header: PodPrintAssetSetHeader, ite
       }
     }
     if (item.asset_role === "print_font" && (item.content_type !== "font/woff2"
-      || !item.font_family || !item.font_weight || !item.font_style)) {
+      || !item.font_family || !item.font_weight || !item.font_style || !item.font_unicode_range)) {
       throw new PodPrintAssetSetError("pod_asset_set_font_profile_mismatch");
     }
   }

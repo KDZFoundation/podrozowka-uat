@@ -39,7 +39,7 @@ export const PostcardBack: React.FC<PostcardBackProps> = ({
 }) => {
   const flagUrl = countryFlagUrl || (!printMode && countryIso2 ? `https://flagcdn.com/w640/${countryIso2.toLowerCase()}.png` : null);
   const qrLabel = backQrLabel?.trim();
-  const effectiveBodyFontFamily = bodyFontFamily || (printMode ? "PodInterV1" : undefined);
+  const effectiveBodyFontFamily = bodyFontFamily || (printMode ? "PodNotoSansV2" : undefined);
   const effectiveTemplateUrl = templateUrl || (!printMode ? canvaBackBase : null);
   if (printMode && (!effectiveTemplateUrl || !flagUrl || !qrCodeUrl)) throw new Error("pod_asset_back_render_dependency_missing");
 
@@ -85,7 +85,7 @@ export const PostcardBack: React.FC<PostcardBackProps> = ({
 
       {qrLabel && (
         <div className="absolute left-[49.5%] top-[82%] z-10 flex h-[14%] w-[34%] items-center justify-center bg-white px-[1%] text-center">
-          <p className="font-sans text-[2.05cqw] leading-[1.15] text-[#999]" style={effectiveBodyFontFamily ? { fontFamily: effectiveBodyFontFamily } : undefined}>
+          <p dir="auto" className="font-sans text-[2.05cqw] leading-[1.15] text-[#999]" style={{ unicodeBidi: "plaintext", ...(effectiveBodyFontFamily ? { fontFamily: effectiveBodyFontFamily } : {}) }}>
             {qrLabel}
           </p>
         </div>

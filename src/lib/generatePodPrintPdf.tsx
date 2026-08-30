@@ -103,6 +103,7 @@ export const renderPodPostcardSide = async (
   grossWidthMm: number,
   grossHeightMm: number,
   assets: LoadedPodPrintAssets,
+  fontFamilies: { body: string; handwriting: string },
 ): Promise<string> => {
   const renderHeightPx = Math.round(RENDER_WIDTH_PX * grossHeightMm / grossWidthMm);
   const host = document.createElement("div");
@@ -129,8 +130,8 @@ export const renderPodPostcardSide = async (
         showCropMarks={false}
         printMode
         templateUrl={assets.urlFor("postcard_front_template")}
-        bodyFontFamily="PodInterV1"
-        handwritingFontFamily="PodPatrickHandV1"
+        bodyFontFamily={fontFamilies.body}
+        handwritingFontFamily={fontFamilies.handwriting}
         className="w-full h-full"
       />
     ) : (
@@ -142,7 +143,7 @@ export const renderPodPostcardSide = async (
         showCropMarks={false}
         printMode
         templateUrl={assets.urlFor("postcard_back_template")}
-        bodyFontFamily="PodInterV1"
+        bodyFontFamily={fontFamilies.body}
         className="w-full h-full"
       />
     ),
@@ -151,9 +152,6 @@ export const renderPodPostcardSide = async (
   try {
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     await document.fonts?.ready;
-    for (const font of POD_RENDER_PROFILE.fonts) {
-      if (!document.fonts.check(`${font.weight} 16px "${font.family}"`)) throw new Error(`pod_asset_font_unavailable:${font.key}`);
-    }
     assertFrozenCssUrls(host);
     await waitForImages(host);
     const canvas = await html2canvas(host, {
@@ -314,6 +312,7 @@ const generatePodPrintPdfForJobs = async (
 
       for (const placement of sourcePlacements) {
         const input = placement.render_input;
+        const fontFamilies = frozenAssets.fontFamiliesFor(placement);
         const qrCodeDataUrl = frozenAssets.urlFor("qr_raster", placement.print_job_item_id);
         const hasFlag = frozenAssets.items.some((asset) => asset.asset_role === "country_flag" && asset.print_job_item_id === placement.print_job_item_id);
         const printDesign: CardDesignData = {
@@ -333,16 +332,17 @@ const generatePodPrintPdfForJobs = async (
           image_front_url: input.image_front_url,
           image_version: input.image_version,
           photo_author: input.photo_author,
+          font_families: fontFamilies,
         })}`;
         let front = renderedFronts.get(frontCacheKey);
         if (!front) {
-          front = await renderPodPostcardSide("front", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm, frozenAssets);
+          front = await renderPodPostcardSide("front", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm, frozenAssets, fontFamilies);
           renderedFronts.set(frontCacheKey, front);
         }
         sheetItems.push({
           id: placement.print_job_item_id,
           front,
-          back: await renderPodPostcardSide("back", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm, frozenAssets),
+          back: await renderPodPostcardSide("back", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm, frozenAssets, fontFamilies),
           placement,
         });
       }

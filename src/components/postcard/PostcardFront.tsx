@@ -71,8 +71,8 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
     contentLength > 44 ? "2.45cqw" :
     "2.9cqw";
   const replacesTemplateText = Boolean(content && content !== "PODZIĘKOWANIA");
-  const effectiveBodyFontFamily = bodyFontFamily || (printMode ? "PodInterV1" : undefined);
-  const effectiveHandwritingFontFamily = handwritingFontFamily || (printMode ? "PodPatrickHandV1" : undefined);
+  const effectiveBodyFontFamily = bodyFontFamily || (printMode ? "PodNotoSansV2" : undefined);
+  const effectiveHandwritingFontFamily = handwritingFontFamily || (printMode ? "PodPatrickHandV2, PodNotoSansV2" : undefined);
   const effectiveTemplateUrl = templateUrl || (!printMode ? canvaFrontBase : null);
   if (printMode && (!effectiveTemplateUrl || !imageUrl)) throw new Error("pod_asset_front_render_dependency_missing");
 
@@ -111,6 +111,7 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
         {author && (
           <div className="absolute left-[96%] top-[2%] z-20 h-[74%] w-[2%] overflow-visible bg-white">
             <span
+              dir="auto"
               className="absolute bottom-0 left-full block whitespace-nowrap text-[1.75cqw] font-normal tracking-wide text-black"
               style={{
                 fontFamily: effectiveHandwritingFontFamily || '"Patrick Hand", "Segoe Print", "Comic Sans MS", cursive',
@@ -126,8 +127,9 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
         {replacesTemplateText && (
           <div className="absolute left-[22%] top-[80.5%] z-10 flex h-[11.5%] w-[56%] items-center justify-center overflow-hidden bg-white px-2 text-center">
             <p
+              dir="auto"
               className="w-full break-words font-sans font-normal uppercase tracking-[0.04em] text-[#999]"
-              style={{ fontSize: messageFontSize, lineHeight: 1.12, ...(effectiveBodyFontFamily ? { fontFamily: effectiveBodyFontFamily } : {}) }}
+              style={{ fontSize: messageFontSize, lineHeight: 1.12, unicodeBidi: "plaintext", ...(effectiveBodyFontFamily ? { fontFamily: effectiveBodyFontFamily } : {}) }}
             >
               {content}
             </p>

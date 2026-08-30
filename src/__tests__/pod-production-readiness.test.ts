@@ -48,4 +48,25 @@ describe("POD production readiness", () => {
     expect(report.checks).toContainEqual({ code: "batch:frozen", ok: false, detail: "missing_or_not_frozen" });
     expect(report.checks.filter((check) => check.code.startsWith("configuration:")).every((check) => !check.ok)).toBe(true);
   });
+
+  it("accepts the pinned Fontsource host without mutable font URL or hash environment pairs", async () => {
+    const report = await evaluatePodProductionReadiness({
+      batchId: "batch-missing",
+      releaseId: "release-missing",
+      batchStore: { readHeader: async () => null } as never,
+      artifactStore: {} as never,
+      assetSetStore: {} as never,
+      proofStore: {} as never,
+      releaseStore: { readRelease: async () => null } as never,
+      storage: {} as never,
+      env: {
+        POD_PRINT_ARTIFACT_BUCKET: "pod.example.test",
+        POD_PRINT_ASSET_ALLOWED_HOSTS: "pod.example.test,flagcdn.com",
+        POD_PRINT_FONT_ALLOWED_HOSTS: "cdn.jsdelivr.net",
+        POD_PRINT_TEMPLATE_FRONT_SHA256: "a".repeat(64),
+        POD_PRINT_TEMPLATE_BACK_SHA256: "b".repeat(64),
+      },
+    });
+    expect(report.checks.filter((check) => check.code.startsWith("configuration:")).every((check) => check.ok)).toBe(true);
+  });
 });

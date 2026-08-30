@@ -16,7 +16,7 @@ describe("deterministic POD PDF metadata", () => {
   it("derives a stable jsPDF file ID from the frozen manifest hash", () => {
     expect(deterministicPdfFileId(manifestSha256)).toBe("0123456789ABCDEF0123456789ABCDEF");
     expect(POD_PDF_CREATION_DATE).toBe("D:20000101000000+00'00'");
-    expect(POD_PDF_RENDERER_VERSION).toBe("pod-browser-jspdf-html2canvas-v1");
+    expect(POD_PDF_RENDERER_VERSION).toBe("pod-browser-jspdf-html2canvas-v2-multiscript");
   });
 
   it("produces identical bytes and SHA-256 in one controlled environment", async () => {
@@ -29,7 +29,7 @@ describe("deterministic POD PDF metadata", () => {
   it("does not include the current time and includes fixed properties", () => {
     const content = new TextDecoder("latin1").decode(renderControlledPdf());
     expect(content).toContain("D:20000101000000");
-    expect(content).toContain("pod-browser-jspdf-html2canvas-v1");
+    expect(content).toContain("pod-browser-jspdf-html2canvas-v2-multiscript");
     expect(content).toContain("manifest-sha256:0123456789abcdef");
     expect(content).not.toContain(String(new Date().getUTCFullYear()));
   });
