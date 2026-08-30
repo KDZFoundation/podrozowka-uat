@@ -76,11 +76,11 @@ export const fromFirestoreValue = (value: Record<string, unknown>): unknown => {
 export const fromFirestoreFields = (fields: Record<string, Record<string, unknown>> = {}) =>
   Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, fromFirestoreValue(value)]));
 
-const accessToken = async () => {
+export const gcpAccessToken = async () => {
   const settings = config();
   if (!settings.workloadIdentity) {
     const auth = new GoogleAuth({
-      scopes: ["https://www.googleapis.com/auth/datastore"],
+      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
     });
     const client = await auth.getClient();
     const accessTokenResponse = await client.getAccessToken();
@@ -111,7 +111,7 @@ const accessToken = async () => {
 
 export const firestoreApi = async (path: string, init: RequestInit = {}) => {
   const settings = config();
-  const token = await accessToken();
+  const token = await gcpAccessToken();
   const response = await fetch(
     firestoreDocumentsUrl(settings.projectId, settings.databaseId, path),
     {

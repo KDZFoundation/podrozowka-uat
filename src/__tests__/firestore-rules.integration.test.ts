@@ -42,6 +42,7 @@ describeIntegration("Firestore security rules (emulator)", () => {
     await adminDb.doc(`profiles/${owner.uid}`).set({ display_name: "Podróżnik" });
     await adminDb.doc("pod_print_manifests/manifest-rules-test").set({ state: "frozen", manifest_sha256: "abc" });
     await adminDb.doc("pod_print_manifest_chunks/manifest-rules-test-000000").set({ manifest_id: "manifest-rules-test", chunk_index: 0 });
+    await adminDb.doc("pod_print_artifacts/artifact-rules-test").set({ immutable: true, status: "ready" });
   }, 30_000);
 
   afterAll(async () => {
@@ -73,16 +74,20 @@ describeIntegration("Firestore security rules (emulator)", () => {
   it("allows only active administrators to read frozen POD manifest documents", async () => {
     expect((await getDoc(doc(admin.firestore, "pod_print_manifests", "manifest-rules-test"))).exists()).toBe(true);
     expect((await getDoc(doc(admin.firestore, "pod_print_manifest_chunks", "manifest-rules-test-000000"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_print_artifacts", "artifact-rules-test"))).exists()).toBe(true);
     await expect(getDoc(doc(owner.firestore, "pod_print_manifests", "manifest-rules-test"))).rejects.toThrow();
     await expect(getDoc(doc(owner.firestore, "pod_print_manifest_chunks", "manifest-rules-test-000000"))).rejects.toThrow();
+    await expect(getDoc(doc(owner.firestore, "pod_print_artifacts", "artifact-rules-test"))).rejects.toThrow();
     await expect(getDoc(doc(anonymousDb, "pod_print_manifests", "manifest-rules-test"))).rejects.toThrow();
     await expect(getDoc(doc(anonymousDb, "pod_print_manifest_chunks", "manifest-rules-test-000000"))).rejects.toThrow();
+    await expect(getDoc(doc(anonymousDb, "pod_print_artifacts", "artifact-rules-test"))).rejects.toThrow();
   });
 
   it("blocks direct manifest writes from administrators, users, and anonymous clients", async () => {
     for (const firestore of [admin.firestore, owner.firestore, anonymousDb]) {
       await expect(setDoc(doc(firestore, "pod_print_manifests", `client-write-${Date.now()}`), { state: "frozen" })).rejects.toThrow();
       await expect(setDoc(doc(firestore, "pod_print_manifest_chunks", `client-write-${Date.now()}`), { chunk_index: 0 })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_print_artifacts", `client-write-${Date.now()}`), { immutable: true })).rejects.toThrow();
     }
   });
 });

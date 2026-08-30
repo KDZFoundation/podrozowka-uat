@@ -16,6 +16,8 @@ import {
   type PodPrintManifestHeader,
   type FrozenPodPrintManifest,
 } from "@/lib/podPrintManifestPersistence";
+import { applyDeterministicPodPdfMetadata, podPdfBytes, POD_PDF_RENDERER_VERSION } from "@/lib/podPdfMetadata";
+import { derivePodPrintArtifactId } from "@/lib/podPrintArtifact";
 
 const RENDER_WIDTH_PX = 520;
 // 520 CSS pixels * 3.5 / 154 mm = 300 dpi on the imposed bleed area.
@@ -228,6 +230,29 @@ const generatePodPrintPdfForJobs = async (
   if (printJobIds.length === 0) throw new Error("No POD print jobs selected.");
   const frozen = await requestFrozenManifest(printJobIds, documentNumber);
   const manifest = frozen.manifest;
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error("Do pobrania artefaktu PDF POD wymagane jest konto administratora.");
+  const documentFilePrefix = /^(POD|MAG)-/.test(documentNumber) ? documentNumber : `POD-${documentNumber}`;
+  const fileName = `${documentFilePrefix}-SRA3.pdf`;
+  const existingArtifactId = await derivePodPrintArtifactId(documentNumber, frozen.header.manifest_sha256);
+  const existingUrl = `${backendApiUrl("/api/pod/print-artifact")}?${new URLSearchParams({ artifact_id: existingArtifactId })}`;
+  const existingResponse = await fetch(existingUrl, { headers: { Authorization: `Bearer ${token}` } });
+  if (existingResponse.ok) {
+    const downloadUrl = URL.createObjectURL(new Blob([await existingResponse.arrayBuffer()], { type: "application/pdf" }));
+    const downloadLink = document.createElement("a");
+    downloadLink.href = downloadUrl;
+    downloadLink.download = fileName;
+    downloadLink.style.display = "none";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    downloadLink.remove();
+    return { fileName, downloadUrl, itemCount: manifest.postcard_count, sheetCount: manifest.sheet_count };
+  }
+  const existingFailure = await existingResponse.json().catch(() => null) as { error?: string } | null;
+  if (existingResponse.status !== 404 || existingFailure?.error !== "pod_artifact_not_found") {
+    const failure = existingFailure;
+    throw new Error(failure?.error || "Nie udało się sprawdzić kanonicznego PDF POD.");
+  }
   const QRCode = await import("qrcode");
   const renderedFronts = new Map<string, string>();
   const initialFormat = manifest.format_groups[0].print_format;
@@ -238,11 +263,7 @@ const generatePodPrintPdfForJobs = async (
     compress: true,
     putOnlyUsedFonts: true,
   });
-  pdf.setProperties({
-    title: `${documentNumber} - SRA3`,
-    subject: "Arkusze impozycyjne SRA3, druk dwustronny, flip on short edge",
-    creator: "Podróżówka",
-  });
+  applyDeterministicPodPdfMetadata(pdf, { manifestSha256: frozen.header.manifest_sha256, documentNumber });
 
   // Render one SRA3 sheet at a time. A physical stock order may contain
   // thousands of cards; retaining every front/back canvas in memory would
@@ -299,9 +320,27 @@ const generatePodPrintPdfForJobs = async (
     }
   }
 
-  const documentFilePrefix = /^(POD|MAG)-/.test(documentNumber) ? documentNumber : `POD-${documentNumber}`;
-  const fileName = `${documentFilePrefix}-SRA3.pdf`;
-  const pdfBlob = pdf.output("blob");
+  const generatedBytes = podPdfBytes(pdf);
+  const createQuery = new URLSearchParams({
+    manifest_id: frozen.header.id,
+    print_job_id: documentNumber,
+    renderer_version: POD_PDF_RENDERER_VERSION,
+  });
+  const createUrl = `${backendApiUrl("/api/pod/print-artifact")}?${createQuery}`;
+  const archiveResponse = await fetch(createUrl, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/pdf" },
+    body: generatedBytes,
+  });
+  const archive = await archiveResponse.json().catch(() => null) as { artifact_id?: string; error?: string } | null;
+  if (!archiveResponse.ok || !archive?.artifact_id) throw new Error(archive?.error || "Nie udało się zarchiwizować kanonicznego PDF POD.");
+  const reprintUrl = `${backendApiUrl("/api/pod/print-artifact")}?${new URLSearchParams({ artifact_id: archive.artifact_id })}`;
+  const canonicalResponse = await fetch(reprintUrl, { headers: { Authorization: `Bearer ${token}` } });
+  if (!canonicalResponse.ok) {
+    const failure = await canonicalResponse.json().catch(() => null) as { error?: string } | null;
+    throw new Error(failure?.error || "Nie udało się pobrać kanonicznego PDF POD.");
+  }
+  const pdfBlob = new Blob([await canonicalResponse.arrayBuffer()], { type: "application/pdf" });
   const downloadUrl = URL.createObjectURL(pdfBlob);
   const downloadLink = document.createElement("a");
   downloadLink.href = downloadUrl;

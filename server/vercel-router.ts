@@ -15,6 +15,7 @@ import publicCommunity from "./routes/public/community";
 import publicDistribution from "./routes/public/distribution";
 import publicStats from "./routes/public/stats";
 import podPrintManifest from "./routes/pod/print-manifest";
+import podPrintArtifact from "./routes/pod/print-artifact";
 
 type ApiHandler = { fetch: (request: Request) => Response | Promise<Response> };
 
@@ -38,6 +39,7 @@ const routes: Record<string, ApiHandler> = {
   "public/distribution": publicDistribution,
   "public/stats": publicStats,
   "pod/print-manifest": podPrintManifest,
+  "pod/print-artifact": podPrintArtifact,
 };
 
 const routePath = (request: Request) => new URL(request.url).pathname.replace(/^\/api\/?/, "").replace(/\/+$/, "");
