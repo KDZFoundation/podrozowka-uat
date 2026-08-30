@@ -16,6 +16,9 @@ export interface PostcardFrontProps {
   showCropMarks?: boolean;
   printMode?: boolean;
   className?: string;
+  templateUrl?: string;
+  bodyFontFamily?: string;
+  handwritingFontFamily?: string;
 }
 
 const PreviewCropMarks = () => (
@@ -39,6 +42,9 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
   showCropMarks = true,
   printMode = false,
   className = "",
+  templateUrl,
+  bodyFontFamily,
+  handwritingFontFamily,
 }) => {
   const isCrop = cropSettings.fit === "crop";
   const zoom = cropSettings.zoom ?? 100;
@@ -65,6 +71,10 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
     contentLength > 44 ? "2.45cqw" :
     "2.9cqw";
   const replacesTemplateText = Boolean(content && content !== "PODZIĘKOWANIA");
+  const effectiveBodyFontFamily = bodyFontFamily || (printMode ? "PodInterV1" : undefined);
+  const effectiveHandwritingFontFamily = handwritingFontFamily || (printMode ? "PodPatrickHandV1" : undefined);
+  const effectiveTemplateUrl = templateUrl || (!printMode ? canvaFrontBase : null);
+  if (printMode && (!effectiveTemplateUrl || !imageUrl)) throw new Error("pod_asset_front_render_dependency_missing");
 
   return (
     <div className={`relative bg-white select-none ${printMode ? "h-full" : "p-3 sm:p-4"} ${className}`}>
@@ -75,7 +85,7 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
         style={{ containerType: "inline-size" }}
       >
         <img
-          src={canvaFrontBase}
+          src={effectiveTemplateUrl || canvaFrontBase}
           alt="Szablon Canva - przód pocztówki"
           className="absolute inset-0 h-full w-full"
         />
@@ -103,7 +113,7 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
             <span
               className="absolute bottom-0 left-full block whitespace-nowrap text-[1.75cqw] font-normal tracking-wide text-black"
               style={{
-                fontFamily: '"Patrick Hand", "Segoe Print", "Comic Sans MS", cursive',
+                fontFamily: effectiveHandwritingFontFamily || '"Patrick Hand", "Segoe Print", "Comic Sans MS", cursive',
                 transform: "rotate(-90deg)",
                 transformOrigin: "left bottom",
               }}
@@ -117,7 +127,7 @@ export const PostcardFront: React.FC<PostcardFrontProps> = ({
           <div className="absolute left-[22%] top-[80.5%] z-10 flex h-[11.5%] w-[56%] items-center justify-center overflow-hidden bg-white px-2 text-center">
             <p
               className="w-full break-words font-sans font-normal uppercase tracking-[0.04em] text-[#999]"
-              style={{ fontSize: messageFontSize, lineHeight: 1.12 }}
+              style={{ fontSize: messageFontSize, lineHeight: 1.12, ...(effectiveBodyFontFamily ? { fontFamily: effectiveBodyFontFamily } : {}) }}
             >
               {content}
             </p>

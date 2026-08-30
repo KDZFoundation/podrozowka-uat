@@ -56,9 +56,13 @@ export const gcsCreateOnlyUploadUrl = (bucket: string) =>
 export const gcpPodPrintArtifactStorage: PodPrintArtifactStorage = {
   createOnly: async (object, bytes, metadata) => {
     const bucket = bucketName();
-    const boundary = `pod-print-artifact-${metadata.pdf_sha256}`;
-    const resource = JSON.stringify({ name: object, contentType: "application/pdf", metadata });
-    const prefix = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${resource}\r\n--${boundary}\r\nContent-Type: application/pdf\r\n\r\n`);
+    const contentType = metadata.content_type;
+    if (!contentType) throw new Error("gcs_content_type_required");
+    const contentHash = metadata.pdf_sha256 || metadata.asset_sha256;
+    if (!contentHash) throw new Error("gcs_content_hash_required");
+    const boundary = `pod-content-${contentHash}`;
+    const resource = JSON.stringify({ name: object, contentType, metadata });
+    const prefix = Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${resource}\r\n--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`);
     const suffix = Buffer.from(`\r\n--${boundary}--`);
     const body = Buffer.concat([prefix, Buffer.from(bytes), suffix]);
     const url = gcsCreateOnlyUploadUrl(bucket);

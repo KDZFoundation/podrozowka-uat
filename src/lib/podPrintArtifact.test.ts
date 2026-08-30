@@ -114,6 +114,31 @@ describe("canonical POD print artifacts", () => {
     expect(store.documents.get(result.artifact.id)).toMatchObject({ immutable: true, status: "ready", storage_generation: "1" });
   });
 
+  it("creates version-2 artifacts bound to the frozen asset integrity chain", async () => {
+    const storage = new PreconditionStorage();
+    const store = new CreateOnlyStore();
+    const result = await createPodPrintArtifact(storage, store, {
+      ...createInput(),
+      assetSet: {
+        id: `pas-${"c".repeat(64)}`,
+        assetSetSha256: "d".repeat(64),
+        renderProfileVersion: "pod-render-profile-v1",
+      },
+    });
+    expect(result.artifact).toMatchObject({
+      artifact_version: 2,
+      asset_set_id: `pas-${"c".repeat(64)}`,
+      asset_set_sha256: "d".repeat(64),
+      render_profile_version: "pod-render-profile-v1",
+    });
+    expect(storage.createAttempts[0].metadata).toMatchObject({
+      asset_set_id: `pas-${"c".repeat(64)}`,
+      asset_set_sha256: "d".repeat(64),
+      render_profile_version: "pod-render-profile-v1",
+    });
+    expect(result.artifact.id).not.toBe(await derivePodPrintArtifactId("POD-TEST-1", manifestSha256));
+  });
+
   it("treats an identical second call and GCS 412 as idempotent success", async () => {
     const storage = new PreconditionStorage();
     const firstStore = new CreateOnlyStore();

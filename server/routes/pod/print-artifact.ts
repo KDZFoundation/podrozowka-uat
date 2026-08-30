@@ -13,6 +13,14 @@ import { sha256Utf8 } from "../../../src/lib/podPrintManifest.js";
 import { POD_PDF_RENDERER_VERSION } from "../../../src/lib/podPdfMetadata.js";
 import { gcpPodPrintArtifactStore } from "../../services/pod-print-artifact-store.js";
 import { gcpPodPrintManifestStore } from "../../services/pod-print-manifest-store.js";
+import { POD_RENDER_PROFILE_VERSION } from "../../../src/lib/podRenderProfile.js";
+import {
+  PodPrintAssetSetError,
+  type PodPrintAssetSetItem,
+  type PodPrintAssetSetStore,
+} from "../../../src/lib/podPrintAssetSet.js";
+import { gcpPodPrintAssetSetStore } from "../../services/pod-print-asset-set-store.js";
+import { readCompletePodPrintAssetSet } from "./print-assets.js";
 
 const MAX_PDF_BYTES = 80 * 1024 * 1024;
 
@@ -21,6 +29,7 @@ export interface PodPrintArtifactRouteDependencies {
   artifactStore: PodPrintArtifactStore;
   manifestStore: PodPrintManifestStore;
   storage: PodPrintArtifactStorage;
+  assetSetStore: PodPrintAssetSetStore;
   now: () => string;
 }
 
@@ -65,6 +74,36 @@ const validateFrozenRenderAssets = (manifest: Awaited<ReturnType<typeof readFroz
   }
 };
 
+const validateAssetCoverage = (
+  manifest: NonNullable<Awaited<ReturnType<typeof readFrozenPodPrintManifest>>>,
+  items: PodPrintAssetSetItem[],
+) => {
+  const positions = manifest.manifest.format_groups.flatMap((group) => group.items);
+  if (items.length !== 5 + positions.length * 3) {
+    throw new PodPrintArtifactError("pod_artifact_asset_coverage_mismatch:item_count");
+  }
+  const exact = (role: string, printJobItemId: string | null, sharedKey: string | null = null) => {
+    const matches = items.filter((item) => item.asset_role === role
+      && item.print_job_item_id === printJobItemId
+      && (sharedKey === null || item.shared_key === sharedKey));
+    if (matches.length !== 1) throw new PodPrintArtifactError(`pod_artifact_asset_coverage_mismatch:${role}`);
+    return matches[0];
+  };
+  exact("postcard_front_template", null, "postcard-front-template");
+  exact("postcard_back_template", null, "postcard-back-template");
+  exact("print_font", null, "inter-300");
+  exact("print_font", null, "inter-400");
+  exact("print_font", null, "patrick-hand-400");
+  for (const position of positions) {
+    for (const role of ["postcard_front_photo", "country_flag", "qr_raster"] as const) {
+      const asset = exact(role, position.print_job_item_id);
+      if (asset.render_input_sha256 !== position.render_input_sha256) {
+        throw new PodPrintArtifactError(`pod_artifact_asset_coverage_mismatch:${role}`);
+      }
+    }
+  }
+};
+
 export const createPodPrintArtifactHandler = (dependencies: PodPrintArtifactRouteDependencies) => ({
   fetch: async (request: Request) => {
     if (request.method === "OPTIONS") return preflight();
@@ -85,9 +124,11 @@ export const createPodPrintArtifactHandler = (dependencies: PodPrintArtifactRout
       const manifestId = url.searchParams.get("manifest_id")?.trim() || "";
       const printJobId = url.searchParams.get("print_job_id")?.trim() || "";
       const rendererVersion = url.searchParams.get("renderer_version")?.trim() || "";
+      const assetSetId = url.searchParams.get("asset_set_id")?.trim() || "";
       if (!manifestId) throw new PodPrintArtifactError("pod_artifact_manifest_id_required");
       if (!printJobId) throw new PodPrintArtifactError("pod_artifact_print_job_id_required");
       if (!rendererVersion) throw new PodPrintArtifactError("pod_artifact_renderer_version_required");
+      if (!assetSetId) throw new PodPrintArtifactError("pod_artifact_asset_set_id_required");
       if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/pdf") {
         throw new PodPrintArtifactError("pod_artifact_content_type_invalid");
       }
@@ -106,11 +147,23 @@ export const createPodPrintArtifactHandler = (dependencies: PodPrintArtifactRout
         throw new PodPrintArtifactError("pod_artifact_manifest_hash_mismatch");
       }
       validateFrozenRenderAssets(frozen);
+      const assetSet = await readCompletePodPrintAssetSet(dependencies.assetSetStore, assetSetId);
+      if (!assetSet || assetSet.header.manifest_id !== manifestId
+        || assetSet.header.manifest_sha256 !== frozen.header.manifest_sha256
+        || assetSet.header.render_profile_version !== POD_RENDER_PROFILE_VERSION) {
+        throw new PodPrintArtifactError("pod_artifact_asset_set_mismatch");
+      }
+      validateAssetCoverage(frozen, assetSet.items);
       const result = await createPodPrintArtifact(dependencies.storage, dependencies.artifactStore, {
         printJobId,
         rendererVersion,
         pdfBytes,
         createdAt: dependencies.now(),
+        assetSet: {
+          id: assetSet.header.id,
+          assetSetSha256: assetSet.header.asset_set_sha256,
+          renderProfileVersion: assetSet.header.render_profile_version,
+        },
         manifest: {
           id: frozen.header.id,
           state: frozen.header.state,
@@ -125,12 +178,16 @@ export const createPodPrintArtifactHandler = (dependencies: PodPrintArtifactRout
         artifact_id: result.artifact.id,
         manifest_sha256: result.artifact.manifest_sha256,
         pdf_sha256: result.artifact.pdf_sha256,
+        asset_set_id: result.artifact.asset_set_id,
+        asset_set_sha256: result.artifact.asset_set_sha256,
+        render_profile_version: result.artifact.render_profile_version,
         storage_generation: result.artifact.storage_generation,
         size_bytes: result.artifact.size_bytes,
         created: result.created,
       });
     } catch (error) {
       if (error instanceof PodPrintArtifactError) return json({ error: error.code }, errorStatus(error.code));
+      if (error instanceof PodPrintAssetSetError) return json({ error: error.code }, errorStatus(error.code));
       if (error instanceof PodPrintManifestIntegrityError) {
         const code = error.message.includes("not_frozen")
           ? "pod_artifact_manifest_not_frozen"
@@ -148,5 +205,6 @@ export default createPodPrintArtifactHandler({
   artifactStore: gcpPodPrintArtifactStore,
   manifestStore: gcpPodPrintManifestStore,
   storage: gcpPodPrintArtifactStorage,
+  assetSetStore: gcpPodPrintAssetSetStore,
   now: () => new Date().toISOString(),
 });

@@ -18,6 +18,16 @@ const unusedManifestStore = {
   freezeHeader: vi.fn(),
 };
 
+const unusedAssetSetStore = {
+  readHeader: vi.fn(),
+  createHeader: vi.fn(),
+  readItem: vi.fn(),
+  createItem: vi.fn(),
+  readChunk: vi.fn(),
+  createChunk: vi.fn(),
+  freezeHeader: vi.fn(),
+};
+
 describe("POD print artifact endpoint", () => {
   it("rejects unauthenticated requests before reading Storage or Firestore", async () => {
     const artifactRead = vi.fn();
@@ -27,6 +37,7 @@ describe("POD print artifact endpoint", () => {
       artifactStore: { read: artifactRead, createOnly: vi.fn() },
       manifestStore: unusedManifestStore,
       storage: { createOnly: vi.fn(), readMetadata: storageRead, download: vi.fn() },
+      assetSetStore: unusedAssetSetStore,
       now: () => "2026-01-01T00:00:00.000Z",
     });
     const response = await handler.fetch(new Request("https://api.test/api/pod/print-artifact?artifact_id=pa-test"));
@@ -88,6 +99,7 @@ describe("POD print artifact endpoint", () => {
       artifactStore: { read: async () => artifact, createOnly: vi.fn() },
       manifestStore: unusedManifestStore,
       storage: { createOnly: vi.fn(), readMetadata: async () => metadata, download: async () => bytes },
+      assetSetStore: unusedAssetSetStore,
       now: () => "2026-01-01T00:00:00.000Z",
     });
     const response = await handler.fetch(new Request(`https://api.test/api/pod/print-artifact?artifact_id=${artifact.id}`));

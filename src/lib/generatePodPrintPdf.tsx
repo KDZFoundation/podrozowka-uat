@@ -18,15 +18,18 @@ import {
 } from "@/lib/podPrintManifestPersistence";
 import { applyDeterministicPodPdfMetadata, podPdfBytes, POD_PDF_RENDERER_VERSION } from "@/lib/podPdfMetadata";
 import { derivePodPrintArtifactId } from "@/lib/podPrintArtifact";
+import { derivePodPrintAssetSetId } from "@/lib/podPrintAssetSet";
+import { loadFrozenPodPrintAssets, type LoadedPodPrintAssets } from "@/lib/podPrintAssetClient";
+import { POD_RENDER_PROFILE } from "@/lib/podRenderProfile";
 
-const RENDER_WIDTH_PX = 520;
+const RENDER_WIDTH_PX = POD_RENDER_PROFILE.raster.render_width_px;
 // 520 CSS pixels * 3.5 / 154 mm = 300 dpi on the imposed bleed area.
-const RENDER_SCALE = 3.5;
+const RENDER_SCALE = POD_RENDER_PROFILE.raster.render_scale;
 const normalizeLanguageCode = (value?: string | null) => value?.trim().toLowerCase() || "";
 export const podLanguageTemplateKey = (countryId: string, languageCode?: string | null) =>
   `${countryId}:${normalizeLanguageCode(languageCode)}`;
 
-interface CardDesignData {
+export interface CardDesignData {
   id: string;
   country_id: string;
   country_iso2?: string | null;
@@ -68,7 +71,9 @@ const waitForImages = async (container: HTMLElement) => {
   const images = Array.from(container.querySelectorAll("img"));
   const loading = Promise.all(
     images.map((image) => {
-      if (image.complete) return Promise.resolve();
+      if (!image.src.startsWith("blob:")) return Promise.reject(new Error("pod_asset_renderer_non_frozen_image"));
+      if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+      if (image.complete) return Promise.reject(new Error("pod_asset_renderer_image_invalid"));
       return new Promise<void>((resolve, reject) => {
         image.addEventListener("load", () => resolve(), { once: true });
         image.addEventListener("error", () => reject(new Error(`Nie udało się wczytać obrazu: ${image.src}`)), { once: true });
@@ -83,12 +88,21 @@ const waitForImages = async (container: HTMLElement) => {
   ]);
 };
 
-const renderCard = async (
+const assertFrozenCssUrls = (container: HTMLElement) => {
+  for (const element of [container, ...Array.from(container.querySelectorAll<HTMLElement>("*"))]) {
+    const backgroundImage = window.getComputedStyle(element).backgroundImage;
+    const urls = Array.from(backgroundImage.matchAll(/url\(["']?([^"')]+)["']?\)/g), (match) => match[1]);
+    if (urls.some((url) => !url.startsWith("blob:"))) throw new Error("pod_asset_renderer_non_frozen_css_url");
+  }
+};
+
+export const renderPodPostcardSide = async (
   side: "front" | "back",
   design: CardDesignData,
   qrCodeDataUrl: string,
   grossWidthMm: number,
   grossHeightMm: number,
+  assets: LoadedPodPrintAssets,
 ): Promise<string> => {
   const renderHeightPx = Math.round(RENDER_WIDTH_PX * grossHeightMm / grossWidthMm);
   const host = document.createElement("div");
@@ -114,6 +128,9 @@ const renderCard = async (
         cropSettings={parseCropSettings(design.crop_settings)}
         showCropMarks={false}
         printMode
+        templateUrl={assets.urlFor("postcard_front_template")}
+        bodyFontFamily="PodInterV1"
+        handwritingFontFamily="PodPatrickHandV1"
         className="w-full h-full"
       />
     ) : (
@@ -124,6 +141,8 @@ const renderCard = async (
         qrCodeUrl={qrCodeDataUrl}
         showCropMarks={false}
         printMode
+        templateUrl={assets.urlFor("postcard_back_template")}
+        bodyFontFamily="PodInterV1"
         className="w-full h-full"
       />
     ),
@@ -132,24 +151,36 @@ const renderCard = async (
   try {
     await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     await document.fonts?.ready;
+    for (const font of POD_RENDER_PROFILE.fonts) {
+      if (!document.fonts.check(`${font.weight} 16px "${font.family}"`)) throw new Error(`pod_asset_font_unavailable:${font.key}`);
+    }
+    assertFrozenCssUrls(host);
     await waitForImages(host);
     const canvas = await html2canvas(host, {
-      backgroundColor: "#ffffff",
+      backgroundColor: POD_RENDER_PROFILE.raster.background_color,
       width: RENDER_WIDTH_PX,
       height: renderHeightPx,
       scale: RENDER_SCALE,
       useCORS: true,
       allowTaint: false,
-      logging: false,
+      imageTimeout: POD_RENDER_PROFILE.raster.image_timeout_ms,
+      windowWidth: RENDER_WIDTH_PX,
+      windowHeight: renderHeightPx,
+      scrollX: POD_RENDER_PROFILE.raster.scroll_x,
+      scrollY: POD_RENDER_PROFILE.raster.scroll_y,
+      foreignObjectRendering: POD_RENDER_PROFILE.raster.foreign_object_rendering,
+      logging: POD_RENDER_PROFILE.raster.logging,
+      removeContainer: POD_RENDER_PROFILE.raster.remove_container,
+      proxy: POD_RENDER_PROFILE.raster.proxy || undefined,
     });
-    return side === "front" ? canvas.toDataURL("image/jpeg", 0.96) : canvas.toDataURL("image/png");
+    return side === "front" ? canvas.toDataURL("image/jpeg", POD_RENDER_PROFILE.raster.jpeg_quality) : canvas.toDataURL("image/png");
   } finally {
     root.unmount();
     host.remove();
   }
 };
 
-const drawCropMarks = (doc: jsPDF, coordinates: PodImpositionSideCoordinates) => {
+export const drawPodCropMarks = (doc: jsPDF, coordinates: PodImpositionSideCoordinates) => {
   const { artwork, trim } = coordinates;
   const left = trim.x;
   const right = trim.x + trim.width;
@@ -183,7 +214,7 @@ const addSideToSheet = (
     const data = side === "front" ? item.front : item.back;
     const format = side === "front" ? "JPEG" : "PNG";
     doc.addImage(data, format, artwork.x, artwork.y, artwork.width, artwork.height, `${side}-${item.id}`, "FAST");
-    drawCropMarks(doc, coordinates);
+    drawPodCropMarks(doc, coordinates);
   });
 };
 
@@ -234,26 +265,31 @@ const generatePodPrintPdfForJobs = async (
   if (!token) throw new Error("Do pobrania artefaktu PDF POD wymagane jest konto administratora.");
   const documentFilePrefix = /^(POD|MAG)-/.test(documentNumber) ? documentNumber : `POD-${documentNumber}`;
   const fileName = `${documentFilePrefix}-SRA3.pdf`;
-  const existingArtifactId = await derivePodPrintArtifactId(documentNumber, frozen.header.manifest_sha256);
-  const existingUrl = `${backendApiUrl("/api/pod/print-artifact")}?${new URLSearchParams({ artifact_id: existingArtifactId })}`;
-  const existingResponse = await fetch(existingUrl, { headers: { Authorization: `Bearer ${token}` } });
-  if (existingResponse.ok) {
-    const downloadUrl = URL.createObjectURL(new Blob([await existingResponse.arrayBuffer()], { type: "application/pdf" }));
-    const downloadLink = document.createElement("a");
-    downloadLink.href = downloadUrl;
-    downloadLink.download = fileName;
-    downloadLink.style.display = "none";
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    downloadLink.remove();
-    return { fileName, downloadUrl, itemCount: manifest.postcard_count, sheetCount: manifest.sheet_count };
+  const assetSetId = await derivePodPrintAssetSetId(frozen.header.manifest_sha256);
+  const artifactIds = [
+    await derivePodPrintArtifactId(documentNumber, frozen.header.manifest_sha256, assetSetId),
+    await derivePodPrintArtifactId(documentNumber, frozen.header.manifest_sha256),
+  ];
+  for (const artifactId of artifactIds) {
+    const existingUrl = `${backendApiUrl("/api/pod/print-artifact")}?${new URLSearchParams({ artifact_id: artifactId })}`;
+    const existingResponse = await fetch(existingUrl, { headers: { Authorization: `Bearer ${token}` } });
+    if (existingResponse.ok) {
+      const downloadUrl = URL.createObjectURL(new Blob([await existingResponse.arrayBuffer()], { type: "application/pdf" }));
+      const downloadLink = document.createElement("a");
+      downloadLink.href = downloadUrl;
+      downloadLink.download = fileName;
+      downloadLink.style.display = "none";
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+      return { fileName, downloadUrl, itemCount: manifest.postcard_count, sheetCount: manifest.sheet_count };
+    }
+    const existingFailure = await existingResponse.json().catch(() => null) as { error?: string } | null;
+    if (existingResponse.status !== 404 || existingFailure?.error !== "pod_artifact_not_found") {
+      throw new Error(existingFailure?.error || "Nie udało się sprawdzić kanonicznego PDF POD.");
+    }
   }
-  const existingFailure = await existingResponse.json().catch(() => null) as { error?: string } | null;
-  if (existingResponse.status !== 404 || existingFailure?.error !== "pod_artifact_not_found") {
-    const failure = existingFailure;
-    throw new Error(failure?.error || "Nie udało się sprawdzić kanonicznego PDF POD.");
-  }
-  const QRCode = await import("qrcode");
+  const frozenAssets = await loadFrozenPodPrintAssets(frozen.header.id);
   const renderedFronts = new Map<string, string>();
   const initialFormat = manifest.format_groups[0].print_format;
   const pdf = new jsPDF({
@@ -265,6 +301,8 @@ const generatePodPrintPdfForJobs = async (
   });
   applyDeterministicPodPdfMetadata(pdf, { manifestSha256: frozen.header.manifest_sha256, documentNumber });
 
+  let generatedBytes: Uint8Array;
+  try {
   // Render one SRA3 sheet at a time. A physical stock order may contain
   // thousands of cards; retaining every front/back canvas in memory would
   // exhaust the browser before the PDF could be written.
@@ -276,17 +314,14 @@ const generatePodPrintPdfForJobs = async (
 
       for (const placement of sourcePlacements) {
         const input = placement.render_input;
-        const qrCodeDataUrl = await QRCode.toDataURL(input.qr_url, {
-          width: 600,
-          margin: 3,
-          errorCorrectionLevel: "M",
-        });
+        const qrCodeDataUrl = frozenAssets.urlFor("qr_raster", placement.print_job_item_id);
+        const hasFlag = frozenAssets.items.some((asset) => asset.asset_role === "country_flag" && asset.print_job_item_id === placement.print_job_item_id);
         const printDesign: CardDesignData = {
           id: placement.card_design_id,
           country_id: "frozen-manifest",
-          country_iso2: input.country_iso2,
-          country_flag_url: input.country_flag_url,
-          image_front_url: input.image_front_url,
+          country_iso2: null,
+          country_flag_url: hasFlag ? frozenAssets.urlFor("country_flag", placement.print_job_item_id) : null,
+          image_front_url: input.image_front_url ? frozenAssets.urlFor("postcard_front_photo", placement.print_job_item_id) : null,
           photo_author: input.photo_author,
           thank_you_text: input.front_text,
           back_qr_label: input.back_qr_label,
@@ -301,13 +336,13 @@ const generatePodPrintPdfForJobs = async (
         })}`;
         let front = renderedFronts.get(frontCacheKey);
         if (!front) {
-          front = await renderCard("front", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm);
+          front = await renderPodPostcardSide("front", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm, frozenAssets);
           renderedFronts.set(frontCacheKey, front);
         }
         sheetItems.push({
           id: placement.print_job_item_id,
           front,
-          back: await renderCard("back", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm),
+          back: await renderPodPostcardSide("back", printDesign, qrCodeDataUrl, group.gross_width_mm, group.gross_height_mm, frozenAssets),
           placement,
         });
       }
@@ -320,11 +355,15 @@ const generatePodPrintPdfForJobs = async (
     }
   }
 
-  const generatedBytes = podPdfBytes(pdf);
+    generatedBytes = podPdfBytes(pdf);
+  } finally {
+    frozenAssets.dispose();
+  }
   const createQuery = new URLSearchParams({
     manifest_id: frozen.header.id,
     print_job_id: documentNumber,
     renderer_version: POD_PDF_RENDERER_VERSION,
+    asset_set_id: frozenAssets.header.id,
   });
   const createUrl = `${backendApiUrl("/api/pod/print-artifact")}?${createQuery}`;
   const archiveResponse = await fetch(createUrl, {
