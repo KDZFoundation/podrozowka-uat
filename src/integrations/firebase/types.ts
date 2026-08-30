@@ -75,6 +75,7 @@ export interface FirestoreCardDesign {
   stock_quantity?: number;
   inventory_type?: "stock" | "pod" | "hybrid";
   product_code?: string;
+  print_format_id?: string;
   firmino_article_id?: number | null;
   firmino_synced_at?: string | null;
   firmino_sync_error?: string | null;
@@ -131,6 +132,7 @@ export interface FirestoreOrderItem {
   language_code?: string;
   primary_language_code?: string;
   secondary_language_code?: string;
+  print_format_id?: string;
 }
 
 export interface FirestoreOrder {
@@ -170,6 +172,8 @@ export interface FirestoreInventoryUnit {
   public_claim_token_hash: string;
   status: "printed" | "assigned" | "traveling" | "registered" | "lost";
   order_id?: string;
+  print_format_id?: string;
+  print_format_source?: "inventory_unit" | "legacy_fallback_v1";
   traveler_user_id?: string;
   registered_at?: string;
   registered_country_id?: string;

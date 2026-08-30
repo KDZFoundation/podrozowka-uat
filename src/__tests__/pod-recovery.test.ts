@@ -60,6 +60,13 @@ describe("POD recovery", () => {
       expect.stringMatching(/^qr_print_jobs\//),
       expect.anything(),
     );
+    expect(firestore.createDocumentWrite).toHaveBeenCalledWith(
+      expect.stringMatching(/^inventory_units\//),
+      expect.objectContaining({
+        print_format_id: "postcard-148x105-v1",
+        print_format_source: "legacy_fallback_v1",
+      }),
+    );
     expect(firestore.updateDocument).toHaveBeenCalledWith(
       "orders/order-1",
       expect.objectContaining({ pod_status: "ready" }),

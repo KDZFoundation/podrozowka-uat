@@ -1,4 +1,5 @@
 import {
+  POD_PRINT_MANIFEST_LEGACY_VERSION,
   POD_PRINT_MANIFEST_VERSION,
   canonicalJson,
   hashPodPrintManifest,
@@ -280,7 +281,7 @@ export const reconstructAndVerifyPodPrintManifest = async (
   chunks: PodPrintManifestChunk[],
 ): Promise<FrozenPodPrintManifest> => {
   if (header.state !== "frozen") throw new PodPrintManifestIntegrityError(`manifest_not_frozen:${header.id}`);
-  if (header.manifest_version !== POD_PRINT_MANIFEST_VERSION) {
+  if (header.manifest_version !== POD_PRINT_MANIFEST_VERSION && header.manifest_version !== POD_PRINT_MANIFEST_LEGACY_VERSION) {
     throw new PodPrintManifestIntegrityError(`manifest_version_unsupported:${header.manifest_version}`);
   }
   if (chunks.length !== header.chunk_count) throw new PodPrintManifestIntegrityError(`manifest_chunk_count_mismatch:${header.id}`);
@@ -302,7 +303,7 @@ export const reconstructAndVerifyPodPrintManifest = async (
   }
   if (positions.length !== header.postcard_count) throw new PodPrintManifestIntegrityError(`manifest_postcard_count_mismatch:${header.id}`);
   const manifest: PodPrintManifest = {
-    manifest_version: header.manifest_version as 1,
+    manifest_version: header.manifest_version as PodPrintManifest["manifest_version"],
     algorithm_version: header.algorithm_version as PodPrintManifest["algorithm_version"],
     postcard_count: header.postcard_count,
     sheet_count: header.sheet_count,

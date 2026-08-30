@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { collection, doc, getDocs, query, updateDoc, where, writeBatch } from "firebase/firestore";
+import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/integrations/firebase/config";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Search, ArrowLeft, PackageCheck, Printer, FileText, CheckCircle2, Send, Trash2, CalendarClock, ClipboardList } from "lucide-react";
+import { Loader2, Search, ArrowLeft, PackageCheck, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { generatePodBatchPrintPdf, generatePodPrintPdf } from "@/lib/generatePodPrintPdf";
-import { generatePodShippingManifestPdf, type PodBatchShippingRow } from "@/lib/generatePodShippingManifestPdf";
+import { PodProductionPanel } from "@/components/admin/PodProductionPanel";
 
 interface OrderRow {
   id: string;
@@ -31,18 +30,6 @@ interface OrderRow {
   shipping_city: string | null;
   created_at: string;
   display_name: string | null;
-}
-
-interface PodProductionBatch {
-  id: string;
-  batch_number: string;
-  production_date: string;
-  status: "queued" | "prepared" | "sent_to_printer" | "closed" | "failed";
-  total_orders: number;
-  total_postcards: number;
-  sent_to_printer_at: string | null;
-  printer_email: string | null;
-  pod_production_batch_orders: Array<PodBatchShippingRow & { print_job_id: string }>;
 }
 
 interface OrderDetail {
@@ -126,241 +113,6 @@ const AdminOrders = () => {
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [reservedUnits, setReservedUnits] = useState<ReservedUnit[]>([]);
-  const [isGeneratingPodPdf, setIsGeneratingPodPdf] = useState(false);
-  const [lastGeneratedPodPdf, setLastGeneratedPodPdf] = useState<{
-    orderId: string;
-    fileName: string;
-    downloadUrl: string;
-  } | null>(null);
-  const [productionBatches, setProductionBatches] = useState<PodProductionBatch[]>([]);
-  const [isLoadingBatches, setIsLoadingBatches] = useState(true);
-  const [isCreatingBatch, setIsCreatingBatch] = useState(false);
-  const [isDownloadingBatch, setIsDownloadingBatch] = useState<string | null>(null);
-
-  useEffect(() => () => {
-    if (lastGeneratedPodPdf) URL.revokeObjectURL(lastGeneratedPodPdf.downloadUrl);
-  }, [lastGeneratedPodPdf]);
-
-  const fetchProductionBatches = useCallback(async () => {
-    setIsLoadingBatches(true);
-    try {
-      const [batchesSnapshot, rowsSnapshot] = await Promise.all([
-        getDocs(collection(db, "pod_production_batches")),
-        getDocs(collection(db, "pod_production_batch_orders")),
-      ]);
-      const rowsByBatch = new Map<string, Array<PodBatchShippingRow & { print_job_id: string }>>();
-      rowsSnapshot.docs.forEach((item) => {
-        const data = item.data();
-        const batchId = String(data.batch_id || "");
-        if (!batchId) return;
-        const row = {
-          order_number: String(data.order_number || ""),
-          postcard_count: Number(data.postcard_count || 0),
-          shipping_method: String(data.shipping_method || "courier"),
-          recipient_name: typeof data.recipient_name === "string" ? data.recipient_name : null,
-          recipient_email: typeof data.recipient_email === "string" ? data.recipient_email : null,
-          recipient_street: typeof data.recipient_street === "string" ? data.recipient_street : null,
-          recipient_postal_code: typeof data.recipient_postal_code === "string" ? data.recipient_postal_code : null,
-          recipient_city: typeof data.recipient_city === "string" ? data.recipient_city : null,
-          pickup_point_code: typeof data.pickup_point_code === "string" ? data.pickup_point_code : null,
-          pickup_point_name: typeof data.pickup_point_name === "string" ? data.pickup_point_name : null,
-          pickup_point_address: typeof data.pickup_point_address === "string" ? data.pickup_point_address : null,
-          pickup_point_city: typeof data.pickup_point_city === "string" ? data.pickup_point_city : null,
-          carrier_label_status: typeof data.carrier_label_status === "string" ? data.carrier_label_status : "not_created",
-          tracking_number: typeof data.tracking_number === "string" ? data.tracking_number : null,
-          print_job_id: String(data.print_job_id || ""),
-        };
-        rowsByBatch.set(batchId, [...(rowsByBatch.get(batchId) || []), row]);
-      });
-      setProductionBatches(batchesSnapshot.docs
-        .map((item) => {
-          const data = item.data();
-          return {
-            id: item.id,
-            batch_number: String(data.batch_number || item.id),
-            production_date: String(data.production_date || ""),
-            status: String(data.status || "queued") as PodProductionBatch["status"],
-            total_orders: Number(data.total_orders || 0),
-            total_postcards: Number(data.total_postcards || 0),
-            sent_to_printer_at: typeof data.sent_to_printer_at === "string" ? data.sent_to_printer_at : null,
-            printer_email: typeof data.printer_email === "string" ? data.printer_email : null,
-            pod_production_batch_orders: rowsByBatch.get(item.id) || [],
-          };
-        })
-        .sort((left, right) => right.production_date.localeCompare(left.production_date)));
-    } catch (error) {
-      console.warn("POD production batches fetch failed:", error);
-      setProductionBatches([]);
-    } finally {
-      setIsLoadingBatches(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchProductionBatches();
-  }, [fetchProductionBatches]);
-
-  const createTodayBatch = async () => {
-    setIsCreatingBatch(true);
-    const date = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Warsaw",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-    try {
-      const [orders, jobsSnapshot, existingRows] = await Promise.all([
-        firestoreService.getAllOrders(),
-        getDocs(collection(db, "qr_print_jobs")),
-        getDocs(collection(db, "pod_production_batch_orders")),
-      ]);
-      const existingOrderIds = new Set(existingRows.docs.map((item) => String(item.data().order_id || "")));
-      const readyJobsByOrder = new Map(
-        jobsSnapshot.docs
-          .filter((item) => ["ready", "printed"].includes(String(item.data().status || "")) && typeof item.data().order_id === "string")
-          .map((item) => [String(item.data().order_id), { id: item.id, ...item.data() }]),
-      );
-      const eligible = orders.filter((order) => order.payment_status === "paid" && order.status === "paid" && !existingOrderIds.has(order.id) && readyJobsByOrder.has(order.id));
-      if (eligible.length === 0) {
-        toast({ title: "Nie utworzono paczki produkcyjnej", description: "Brak opłaconych zamówień z gotowymi kodami QR, które nie są już w paczce.", variant: "destructive" });
-        return;
-      }
-      const id = crypto.randomUUID();
-      const batchNumber = `POD-${date.replaceAll("-", "")}-${id.slice(0, 5).toUpperCase()}`;
-      const batch = writeBatch(db);
-      let totalPostcards = 0;
-      eligible.forEach((order) => {
-        const job = readyJobsByOrder.get(order.id)!;
-        const address = (order.shipping_address || {}) as Record<string, unknown>;
-        const postcardCount = order.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-        totalPostcards += postcardCount;
-        const rowId = crypto.randomUUID();
-        batch.set(doc(db, "pod_production_batch_orders", rowId), {
-          id: rowId,
-          batch_id: id,
-          order_id: order.id,
-          print_job_id: job.id,
-          order_number: order.order_number,
-          postcard_count: postcardCount,
-          shipping_method: String((order as unknown as Record<string, unknown>).shipping_method || "courier"),
-          recipient_name: String(address.name || [address.first_name, address.last_name].filter(Boolean).join(" ") || "") || null,
-          recipient_email: order.guest_email || null,
-          recipient_street: String(address.address || address.street || "") || null,
-          recipient_postal_code: String(address.postal_code || "") || null,
-          recipient_city: String(address.city || "") || null,
-          pickup_point_code: typeof address.pickup_point_code === "string" ? address.pickup_point_code : null,
-          pickup_point_name: typeof address.pickup_point_name === "string" ? address.pickup_point_name : null,
-          pickup_point_address: typeof address.pickup_point_address === "string" ? address.pickup_point_address : null,
-          pickup_point_city: typeof address.pickup_point_city === "string" ? address.pickup_point_city : null,
-          carrier_label_status: "not_created",
-          tracking_number: null,
-          created_at: new Date().toISOString(),
-        });
-      });
-      batch.set(doc(db, "pod_production_batches", id), {
-        id,
-        batch_number: batchNumber,
-        production_date: date,
-        status: "prepared",
-        total_orders: eligible.length,
-        total_postcards: totalPostcards,
-        created_at: new Date().toISOString(),
-      });
-      await batch.commit();
-      toast({ title: `Utworzono paczkę ${batchNumber}`, description: `${eligible.length} zamówień / ${totalPostcards} Podróżówek gotowych do wspólnego druku.` });
-      await fetchProductionBatches();
-      fetchOrders();
-    } catch (error) {
-      toast({
-        title: "Nie utworzono paczki produkcyjnej",
-        description: getErrorMessage(error),
-        variant: "destructive",
-      });
-    } finally {
-      setIsCreatingBatch(false);
-    }
-  };
-
-  const downloadBatchProductionPdf = async (batch: PodProductionBatch) => {
-    setIsDownloadingBatch(batch.id);
-    try {
-      const result = await generatePodBatchPrintPdf(
-        batch.pod_production_batch_orders.map((order) => order.print_job_id),
-        batch.batch_number,
-      );
-      toast({ title: "Pobrano zbiorczy PDF SRA3", description: `${result.itemCount} Podróżówek na ${result.sheetCount} arkuszach.` });
-    } catch (error) {
-      toast({ title: "Błąd PDF paczki POD", description: getErrorMessage(error), variant: "destructive" });
-    } finally {
-      setIsDownloadingBatch(null);
-    }
-  };
-
-  const downloadBatchManifest = (batch: PodProductionBatch) => {
-    generatePodShippingManifestPdf(batch.batch_number, batch.production_date, batch.pod_production_batch_orders);
-    toast({ title: "Pobrano manifest wysyłek", description: "Zawiera osobną kartę kompletacyjną dla każdego zamówienia." });
-  };
-
-  const markBatchSent = async (batch: PodProductionBatch) => {
-    try {
-      await updateDoc(doc(db, "pod_production_batches", batch.id), { status: "sent_to_printer", sent_to_printer_at: new Date().toISOString() });
-      toast({ title: "Paczka przekazana do drukarni", description: "Status paczki został zapisany. Etykiety przewoźników pozostają osobnym etapem." });
-      await fetchProductionBatches();
-    } catch (error) {
-      toast({ title: "Nie udało się zmienić statusu paczki", description: getErrorMessage(error), variant: "destructive" });
-    }
-  };
-
-  const handleGeneratePodPdf = async (order: OrderDetail) => {
-    setIsGeneratingPodPdf(true);
-    try {
-      // A PDF is generated from a prepared QR print job, not directly from an order.
-      const snapshot = await getDocs(
-        query(collection(db, "qr_print_jobs"), where("order_id", "==", order.id)),
-      );
-      const printJob = snapshot.docs
-        .map((job) => ({ id: job.id, ...job.data() }))
-        .filter((job) => job.status === "ready" || job.status === "printed")
-        .sort((left, right) => String(right.created_at ?? "").localeCompare(String(left.created_at ?? "")))[0];
-
-      if (!printJob) {
-        toast({
-          title: "Brak przygotowanego pliku POD",
-          description: `Dla zamówienia ${order.order_number} nie utworzono jeszcze kodów QR. Najpierw przygotuj zadanie druku POD.`,
-          variant: "destructive",
-        });
-        return;
-      }
-
-      const result = await generatePodPrintPdf(printJob.id, order.order_number);
-      setLastGeneratedPodPdf({
-        orderId: order.id,
-        fileName: result.fileName,
-        downloadUrl: result.downloadUrl,
-      });
-      toast({
-        title: "Plik produkcyjny SRA3 pobrany",
-        description: `${result.itemCount} kartek na ${result.sheetCount} arkuszach, front + tył, indywidualne kody QR.`,
-      });
-    } catch (err) {
-      console.error(err);
-      toast({
-        title: "Błąd PDF POD",
-        description: getErrorMessage(err),
-        variant: "destructive",
-      });
-    } finally {
-      setIsGeneratingPodPdf(false);
-    }
-  };
-
-  const handleMarkPodFulfilled = async (orderId: string) => {
-    await updateOrderStatus(orderId, "fulfilled");
-    toast({
-      title: "Zamówienie zrealizowane",
-      description: "Drukarnia wydrukowała, spakowała i wysłała zamówienie do klienta.",
-    });
-  };
 
   const handleDeleteOrder = async (orderId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -701,93 +453,6 @@ const AdminOrders = () => {
               </table>
             </div>
 
-            {/* Print On Demand (POD) Workflow Section */}
-            <div className="bg-card rounded-xl p-6 shadow-soft space-y-4 border border-primary/20">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <h4 className="font-display font-semibold text-lg flex items-center gap-2">
-                    <Printer className="w-5 h-5 text-primary" /> System Print on Demand (POD)
-                  </h4>
-                  <p className="text-xs text-muted-foreground">
-                    Generowanie pliku PDF ze wzorami kartek i unikalnymi kodami QR do wysyłki e-mailem / API do Drukarni.
-                  </p>
-                </div>
-                <div className="flex gap-2 items-center flex-wrap">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleGeneratePodPdf(selectedOrder)}
-                    disabled={isGeneratingPodPdf || selectedOrder.payment_status !== "paid"}
-                    className="gap-2"
-                  >
-                    {isGeneratingPodPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-                    Pobierz PDF dla Drukarni
-                  </Button>
-                  {lastGeneratedPodPdf?.orderId === selectedOrder.id && (
-                    <Button size="sm" variant="ghost" asChild>
-                      <a href={lastGeneratedPodPdf.downloadUrl} download={lastGeneratedPodPdf.fileName}>
-                        Pobierz ponownie PDF
-                      </a>
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setSelectedOrder(null);
-                      void createTodayBatch();
-                    }}
-                    disabled={isCreatingBatch || selectedOrder.payment_status !== "paid"}
-                    className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
-                  >
-                    {isCreatingBatch ? <Loader2 className="w-4 h-4 animate-spin" /> : <PackageCheck className="w-4 h-4" />}
-                    Dodaj do paczki dziennej POD
-                  </Button>
-                  {selectedOrder.status === 'processing_pod' && (
-                    <Button
-                      size="sm"
-                      onClick={() => handleMarkPodFulfilled(selectedOrder.id)}
-                      className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                      Oznacz jako Zrealizowane (Drukarnia API)
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {/* POD Flow Status Steps */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2">
-                <div className={`p-3 rounded-lg border text-xs space-y-1 ${
-                  selectedOrder.payment_status === 'paid' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-muted/40 border-border'
-                }`}>
-                  <p className="font-semibold text-foreground">1. Zamówienie & Płatność</p>
-                  <p className="text-muted-foreground">{selectedOrder.payment_status === 'paid' ? 'Opłacone przez podróżnika' : 'Oczekuje na opłacenie'}</p>
-                </div>
-                <div className={`p-3 rounded-lg border text-xs space-y-1 ${
-                  selectedOrder.payment_status === 'paid' ? 'bg-blue-500/10 border-blue-500/30' : 'bg-muted/40 border-border'
-                }`}>
-                  <p className="font-semibold text-foreground">2. Generowanie PDF + QR</p>
-                  <p className="text-muted-foreground">Wzory kartek z kodami QR dla drukarni</p>
-                </div>
-                <div className={`p-3 rounded-lg border text-xs space-y-1 ${
-                  selectedOrder.status === 'processing_pod' ? 'bg-amber-500/10 border-amber-500/30' : selectedOrder.status === 'fulfilled' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-muted/40 border-border'
-                }`}>
-                  <p className="font-semibold text-foreground">3. Realizacja w Drukarni</p>
-                  <p className="text-muted-foreground">{selectedOrder.status === 'processing_pod' ? 'W przygotowaniu (API Drukarnia)' : selectedOrder.status === 'fulfilled' ? 'Zrealizowane' : 'Oczekuje na wysyłkę'}</p>
-                </div>
-                <div className={`p-3 rounded-lg border text-xs space-y-1 ${
-                  selectedOrder.status === 'fulfilled' ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-muted/40 border-border'
-                }`}>
-                  <p className="font-semibold text-foreground">4. Pakowanie & Wysyłka</p>
-                  <p className="text-muted-foreground">{selectedOrder.status === 'fulfilled' ? 'Wysłano do podróżnika' : 'Drukarnia pakuje i wysyła'}</p>
-                </div>
-              </div>
-
-              <p className="rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground">
-                Zlecenie trafia do dziennej paczki produkcyjnej. Po utworzeniu paczki pobierzesz jeden PDF SRA3 oraz manifest adresowy dla wszystkich zamówień.
-              </p>
-            </div>
-
             {/* POD units are generated after payment; there is no stock reservation. */}
             <div className="bg-card rounded-xl p-6 shadow-soft space-y-4">
               <h4 className="font-display font-semibold">Sztuki POD z indywidualnymi kodami QR</h4>
@@ -846,55 +511,7 @@ const AdminOrders = () => {
         </div>
       </div>
 
-      <div className="grid gap-3 rounded-2xl border border-primary/15 bg-primary/[0.04] p-4 text-sm md:grid-cols-3">
-        <div><span className="font-semibold text-primary">1. Opłacone</span><p className="mt-1 text-muted-foreground">System tworzy jednostki POD i indywidualne QR.</p></div>
-        <div><span className="font-semibold text-primary">2. Paczka dzienna</span><p className="mt-1 text-muted-foreground">Jedna paczka łączy PDF SRA3 wielu zamówień i manifest kompletacyjny.</p></div>
-        <div><span className="font-semibold text-primary">3. Drukarnia i wysyłki</span><p className="mt-1 text-muted-foreground">Drukarnia otrzymuje produkcję i adresy; etykiety przewoźników powstają osobno.</p></div>
-      </div>
-
-      <section className="rounded-2xl border border-primary/20 bg-card p-5 shadow-soft">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="mb-1 flex items-center gap-2 text-sm font-medium text-primary"><CalendarClock className="h-4 w-4" /> Dzienne paczki produkcyjne</p>
-            <h3 className="font-display text-xl font-semibold">Jedna produkcja, wiele zamówień</h3>
-            <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Paczka zawiera zbiorczy PDF SRA3 z Podróżówkami i osobny manifest adresowy. Miasto odbiorcy nie jest już statusem wysyłki.</p>
-          </div>
-          <Button onClick={createTodayBatch} disabled={isCreatingBatch} className="gap-2 shrink-0">
-            {isCreatingBatch ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
-            Utwórz paczkę z dzisiejszych opłaconych
-          </Button>
-        </div>
-        <p className="mt-4 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">Automat o 23:00 utworzy analogiczną paczkę po skonfigurowaniu harmonogramu Supabase. Żaden plik ani etykieta przewoźnika nie zostaną wysłane bez integracji i konfiguracji tego harmonogramu.</p>
-
-        <div className="mt-4 space-y-3">
-          {isLoadingBatches ? (
-            <div className="flex justify-center py-5"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
-          ) : productionBatches.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">Nie ma jeszcze utworzonych paczek dziennych.</p>
-          ) : productionBatches.slice(0, 5).map((batch) => (
-            <article key={batch.id} className="rounded-xl border border-border bg-background p-4">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-mono text-sm font-semibold">{batch.batch_number}</p>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${batch.status === "sent_to_printer" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
-                      {batch.status === "sent_to_printer" ? "Przekazana drukarni" : "Gotowa do przygotowania"}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{batch.production_date} · {batch.total_orders} zamówień · {batch.total_postcards} Podróżówek</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" onClick={() => downloadBatchProductionPdf(batch)} disabled={isDownloadingBatch === batch.id} className="gap-1.5">
-                    {isDownloadingBatch === batch.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />} PDF SRA3
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => downloadBatchManifest(batch)} className="gap-1.5"><ClipboardList className="h-3.5 w-3.5" /> Manifest wysyłek</Button>
-                  {batch.status !== "sent_to_printer" && <Button size="sm" onClick={() => markBatchSent(batch)} className="gap-1.5"><Send className="h-3.5 w-3.5" /> Przekazano drukarni</Button>}
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <PodProductionPanel />
 
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[200px]">

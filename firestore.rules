@@ -164,6 +164,33 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /pod_production_proof_artifacts/{artifactId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /pod_production_proof_approval_events/{eventId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /pod_production_releases/{releaseId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /pod_production_release_events/{eventId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // Legacy daily-package rows remain readable for audit only. The former
+    // client workflow is permanently disabled and cannot append new rows.
+    match /pod_production_batch_orders/{rowId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
     match /shipments/{shipmentId} {
       allow read: if isAdmin() || (signedIn() && resource.data.user_id == request.auth.uid);
       allow write: if isAdmin();
@@ -180,7 +207,6 @@ service cloud.firestore {
           'shipments',
           'qr_print_jobs',
           'qr_print_job_items',
-          'pod_production_batch_orders',
           'config',
           'platform_stats',
           'gamification_config',

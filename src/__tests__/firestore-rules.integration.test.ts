@@ -50,6 +50,10 @@ describeIntegration("Firestore security rules (emulator)", () => {
     await adminDb.doc("pod_production_batch_chunks/batch-rules-test-000000").set({ chunk_index: 0 });
     await adminDb.doc("pod_production_batch_memberships/member-rules-test").set({ batch_id: "batch-rules-test" });
     await adminDb.doc("pod_production_batch_artifacts/artifact-rules-test").set({ immutable: true });
+    await adminDb.doc("pod_production_proof_artifacts/proof-rules-test").set({ immutable: true });
+    await adminDb.doc("pod_production_proof_approval_events/proof-event-rules-test").set({ event_type: "PHYSICAL_PROOF_APPROVED" });
+    await adminDb.doc("pod_production_releases/release-rules-test").set({ status: "DRAFT" });
+    await adminDb.doc("pod_production_release_events/release-event-rules-test").set({ event_type: "CREATED" });
   }, 30_000);
 
   afterAll(async () => {
@@ -89,6 +93,10 @@ describeIntegration("Firestore security rules (emulator)", () => {
     expect((await getDoc(doc(admin.firestore, "pod_production_batch_chunks", "batch-rules-test-000000"))).exists()).toBe(true);
     expect((await getDoc(doc(admin.firestore, "pod_production_batch_memberships", "member-rules-test"))).exists()).toBe(true);
     expect((await getDoc(doc(admin.firestore, "pod_production_batch_artifacts", "artifact-rules-test"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_production_proof_artifacts", "proof-rules-test"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_production_proof_approval_events", "proof-event-rules-test"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_production_releases", "release-rules-test"))).exists()).toBe(true);
+    expect((await getDoc(doc(admin.firestore, "pod_production_release_events", "release-event-rules-test"))).exists()).toBe(true);
     await expect(getDoc(doc(owner.firestore, "pod_print_manifests", "manifest-rules-test"))).rejects.toThrow();
     await expect(getDoc(doc(owner.firestore, "pod_print_manifest_chunks", "manifest-rules-test-000000"))).rejects.toThrow();
     await expect(getDoc(doc(owner.firestore, "pod_print_artifacts", "artifact-rules-test"))).rejects.toThrow();
@@ -106,6 +114,10 @@ describeIntegration("Firestore security rules (emulator)", () => {
       ["pod_production_batch_chunks", "batch-rules-test-000000"],
       ["pod_production_batch_memberships", "member-rules-test"],
       ["pod_production_batch_artifacts", "artifact-rules-test"],
+      ["pod_production_proof_artifacts", "proof-rules-test"],
+      ["pod_production_proof_approval_events", "proof-event-rules-test"],
+      ["pod_production_releases", "release-rules-test"],
+      ["pod_production_release_events", "release-event-rules-test"],
     ]) {
       await expect(getDoc(doc(owner.firestore, collection, id))).rejects.toThrow();
       await expect(getDoc(doc(anonymousDb, collection, id))).rejects.toThrow();
@@ -124,6 +136,11 @@ describeIntegration("Firestore security rules (emulator)", () => {
       await expect(setDoc(doc(firestore, "pod_production_batch_chunks", `client-write-${Date.now()}`), { chunk_index: 0 })).rejects.toThrow();
       await expect(setDoc(doc(firestore, "pod_production_batch_memberships", `client-write-${Date.now()}`), { batch_id: "other" })).rejects.toThrow();
       await expect(setDoc(doc(firestore, "pod_production_batch_artifacts", `client-write-${Date.now()}`), { immutable: true })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_production_proof_artifacts", `client-write-${Date.now()}`), { immutable: true })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_production_proof_approval_events", `client-write-${Date.now()}`), { event_type: "PHYSICAL_PROOF_APPROVED" })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_production_releases", `client-write-${Date.now()}`), { status: "READY" })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_production_release_events", `client-write-${Date.now()}`), { event_type: "CREATED" })).rejects.toThrow();
+      await expect(setDoc(doc(firestore, "pod_production_batch_orders", `client-write-${Date.now()}`), { batch_id: "legacy" })).rejects.toThrow();
     }
   });
 

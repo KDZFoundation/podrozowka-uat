@@ -15,11 +15,15 @@ import {
   type PodProductionBatchSelection,
   type PodProductionBatchSourceStores,
 } from "../../services/pod-production-batch.js";
+import { listDocuments } from "../../../api/_lib/gcp-firestore.js";
+import { readFrozenPodPrintManifest } from "../../../src/lib/podPrintManifestPersistence.js";
+import { derivePodProductionBatchMembershipId } from "../../../src/lib/podProductionBatchPersistence.js";
 
 interface Dependencies extends PodProductionBatchSourceStores {
   authorize: typeof requireAdmin;
   batchStore: PodProductionBatchStore;
   now: () => string;
+  listCandidates?: () => Promise<Array<{ print_manifest_id: string; asset_set_id: string; item_count: number }>>;
 }
 
 const adminUid = (request: Request) => {
@@ -52,7 +56,11 @@ export const createPodProductionBatchHandler = (dependencies: Dependencies) => (
         chunk_index?: unknown;
         selections?: unknown;
       } | null;
-      const operation = body?.operation === "get_header" || body?.operation === "get_chunk" ? body.operation : "create";
+      const operation = body?.operation === "get_header" || body?.operation === "get_chunk" || body?.operation === "list_candidates" ? body.operation : "create";
+      if (operation === "list_candidates") {
+        if (!dependencies.listCandidates) throw new PodProductionBatchError("pod_batch_candidate_listing_unavailable");
+        return json({ candidates: await dependencies.listCandidates() });
+      }
       if (operation === "get_header") {
         const batchId = typeof body?.batch_id === "string" ? body.batch_id.trim() : "";
         if (!batchId) throw new PodProductionBatchPersistenceError("pod_batch_id_required");
@@ -107,4 +115,24 @@ export default createPodProductionBatchHandler({
   assetSetStore: gcpPodPrintAssetSetStore,
   batchStore: gcpPodProductionBatchStore,
   now: () => new Date().toISOString(),
+  listCandidates: async () => {
+    const assetSets = (await listDocuments("pod_print_asset_sets", 500))
+      .filter((document) => document.data.state === "frozen")
+      .sort((left, right) => String(left.data.manifest_id || "").localeCompare(String(right.data.manifest_id || "")) || left.id.localeCompare(right.id));
+    const candidates: Array<{ print_manifest_id: string; asset_set_id: string; item_count: number }> = [];
+    for (const assetSet of assetSets) {
+      const manifestId = String(assetSet.data.manifest_id || "");
+      const manifest = manifestId ? await readFrozenPodPrintManifest(gcpPodPrintManifestStore, manifestId).catch(() => null) : null;
+      if (!manifest || manifest.header.manifest_sha256 !== assetSet.data.manifest_sha256) continue;
+      let claimed = false;
+      for (const item of manifest.manifest.format_groups.flatMap((group) => group.items)) {
+        if (await gcpPodProductionBatchStore.readMembership(await derivePodProductionBatchMembershipId(item.print_job_item_id))) {
+          claimed = true;
+          break;
+        }
+      }
+      if (!claimed) candidates.push({ print_manifest_id: manifestId, asset_set_id: assetSet.id, item_count: manifest.header.postcard_count });
+    }
+    return candidates;
+  },
 });

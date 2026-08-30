@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { fromFirestoreFields, queryDocuments, readDocument, updateDocument, writeDocument } from "../../../api/_lib/gcp-firestore.js";
 import { json, preflight } from "../../../api/_lib/http.js";
 import { releaseExpiredReservations, reserveDesignAvailability, updateReservationStatus } from "../../../api/_lib/design-reservation.js";
+import { resolveRegisteredPodPrintFormat } from "../../../src/lib/podPrintFormats.js";
 
 type CheckoutItem = { card_design_id?: string; quantity?: number; primary_language_code?: string; secondary_language_code?: string };
 
@@ -42,6 +43,7 @@ export default {
         const design = fromFirestoreFields(document.fields);
         const data = design as Record<string, unknown>;
         if (data.active === false) throw new Error("card_design_unavailable");
+        const printFormat = resolveRegisteredPodPrintFormat(data.print_format_id);
         const countryId = typeof data.country_id === "string" ? data.country_id : "";
         if (!countryId) throw new Error("card_design_missing_country");
         const quantity = Math.floor(Number(item.quantity) || 0);
@@ -75,6 +77,7 @@ export default {
           product_code: String(data.product_code || ""),
           secondary_language_code: secondaryLanguageCode || null,
           primary_language_code: primaryLanguageCode,
+          print_format_id: printFormat.print_format_id,
         };
       }));
 
@@ -191,8 +194,10 @@ export default {
         "invalid_primary_language_for_country",
         "invalid_secondary_language_for_country",
         "secondary_language_must_differ",
+        "print_format_id_required",
       ]);
-      return json({ error: message }, message === "design_out_of_stock" ? 409 : invalidCheckoutInput.has(message) ? 400 : 500);
+      return json({ error: message }, message === "design_out_of_stock" ? 409
+        : invalidCheckoutInput.has(message) || message.startsWith("unknown_print_format_id:") ? 400 : 500);
     }
   },
 };

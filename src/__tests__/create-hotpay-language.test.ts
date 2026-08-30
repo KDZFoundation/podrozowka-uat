@@ -17,6 +17,7 @@ vi.mock("../../api/_lib/gcp-firestore.js", () => firestore);
 vi.mock("../../api/_lib/design-reservation.js", () => reservations);
 
 import createHotpay from "../../server/routes/payments/create-hotpay";
+import { CURRENT_POSTCARD_PRINT_FORMAT } from "../lib/podImposition";
 
 const requestFor = (item: Record<string, unknown>, idempotencyKey?: string) => new Request("https://example.test/api/payments/create-hotpay", {
   method: "POST",
@@ -36,6 +37,7 @@ describe("HotPay checkout language validation", () => {
         country_id: "country-es",
         language_code: "es",
         price_grosze: 499,
+        print_format_id: CURRENT_POSTCARD_PRINT_FORMAT.print_format_id,
       } };
       throw new Error("not_found");
     });
@@ -60,8 +62,25 @@ describe("HotPay checkout language validation", () => {
         language_code: "ca",
         primary_language_code: "ca",
         secondary_language_code: "es",
+        print_format_id: CURRENT_POSTCARD_PRINT_FORMAT.print_format_id,
       })],
     }));
+  });
+
+  it("rejects a server-side design with an unknown print format", async () => {
+    firestore.readDocument.mockResolvedValue({ fields: {
+      active: true,
+      country_id: "country-es",
+      language_code: "es",
+      price_grosze: 499,
+      print_format_id: "client-controlled-format",
+    } });
+
+    const response = await createHotpay.fetch(requestFor({ primary_language_code: "es" }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({ error: "unknown_print_format_id:client-controlled-format" });
+    expect(firestore.writeDocument).not.toHaveBeenCalled();
   });
 
   it("rejects a checkout item with no selected primary language", async () => {
@@ -80,6 +99,7 @@ describe("HotPay checkout language validation", () => {
         country_id: "country-es",
         language_code: "es",
         price_grosze: 499,
+        print_format_id: CURRENT_POSTCARD_PRINT_FORMAT.print_format_id,
       } };
       if (collection === "orders") return { fields: {
         order_number: "ORD-EXISTING",
