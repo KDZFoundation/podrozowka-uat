@@ -68,6 +68,24 @@ const loadBatchRenderSources = async (batch: FrozenPodProductionBatch): Promise<
   };
 };
 
+export const loadFrozenPodProductionBatch = async (batchId: string): Promise<FrozenPodProductionBatch> => {
+  const id = batchId.trim();
+  if (!id) throw new Error("pod_batch_id_required");
+  const header = (await post<{ header: FrozenPodProductionBatch["header"] }>("/api/pod/production-batch", {
+    operation: "get_header",
+    batch_id: id,
+  })).header;
+  const chunks = [];
+  for (let chunkIndex = 0; chunkIndex < header.chunk_count; chunkIndex += 1) {
+    chunks.push((await post<{ chunk: FrozenPodProductionBatch["chunks"][number] }>("/api/pod/production-batch", {
+      operation: "get_chunk",
+      batch_id: id,
+      chunk_index: chunkIndex,
+    })).chunk);
+  }
+  return reconstructAndVerifyPodProductionBatch(header, chunks);
+};
+
 export const createPodProductionAndArtifacts = async (selections: PodProductionBatchSelectionRequest[]) => {
   const batch = await createOrLoadPodProductionBatch(selections);
   const artifacts: Awaited<ReturnType<typeof generatePodProductionBatchGroupPdf>>[] = [];
