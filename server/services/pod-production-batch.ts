@@ -12,6 +12,7 @@ import {
   type PodProductionBatchSourceItem,
 } from "../../src/lib/podProductionBatch.js";
 import type { PodPrintFormatConfig } from "../../src/lib/podImposition.js";
+import { selectPodPrintFontAssets } from "../../src/lib/podPrintFonts.js";
 
 export interface PodProductionBatchSelection {
   print_manifest_id: string;
@@ -42,15 +43,22 @@ const readAssetSet = async (store: PodPrintAssetSetStore, assetSetId: string) =>
   return verifyPodPrintAssetSet(header.data, items);
 };
 
-const assertAssetCoverage = (
+export const assertPodProductionBatchAssetCoverage = (
   positionIds: string[],
   renderInputHashes: Map<string, string>,
   assets: PodPrintAssetSetItem[],
+  requiredFontKeys: readonly string[],
 ) => {
-  const sharedKeys = ["postcard-front-template", "postcard-back-template", "inter-300", "inter-400", "patrick-hand-400"];
-  for (const sharedKey of sharedKeys) {
-    if (assets.filter((asset) => asset.shared_key === sharedKey && asset.print_job_item_id === null).length !== 1) {
-      throw new PodProductionBatchError(`pod_batch_asset_coverage_mismatch:${sharedKey}`);
+  const sharedAssets = [
+    { role: "postcard_front_template", key: "postcard-front-template" },
+    { role: "postcard_back_template", key: "postcard-back-template" },
+    ...requiredFontKeys.map((key) => ({ role: "print_font", key })),
+  ] as const;
+  for (const sharedAsset of sharedAssets) {
+    if (assets.filter((asset) => asset.asset_role === sharedAsset.role
+      && asset.shared_key === sharedAsset.key
+      && asset.print_job_item_id === null).length !== 1) {
+      throw new PodProductionBatchError(`pod_batch_asset_coverage_mismatch:${sharedAsset.key}`);
     }
   }
   for (const itemId of positionIds) {
@@ -93,7 +101,13 @@ export const loadPodProductionBatchPlan = async (
     }
     const positions = manifest.manifest.format_groups.flatMap((group) => group.items);
     const renderInputHashes = new Map(positions.map((position) => [position.print_job_item_id, position.render_input_sha256]));
-    assertAssetCoverage(positions.map((position) => position.print_job_item_id), renderInputHashes, assetSet.items);
+    const requiredFontKeys = selectPodPrintFontAssets(manifest.manifest).map((font) => font.key);
+    assertPodProductionBatchAssetCoverage(
+      positions.map((position) => position.print_job_item_id),
+      renderInputHashes,
+      assetSet.items,
+      requiredFontKeys,
+    );
 
     for (const group of manifest.manifest.format_groups) {
       const existingFormat = formatsById.get(group.print_format_id);
