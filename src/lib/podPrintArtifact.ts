@@ -89,8 +89,24 @@ export interface CreatePodPrintArtifactInput {
   };
 }
 
+export interface FinalizePodPrintArtifactUploadInput {
+  printJobId: string;
+  manifest: PodPrintArtifactManifestReference;
+  rendererVersion: string;
+  pdfSha256: string;
+  sizeBytes: number;
+  createdAt: string;
+  assetSet?: CreatePodPrintArtifactInput["assetSet"];
+}
+
 const validatePrintJobId = (value: string) => {
-  if (!/^[A-Za-z0-9._-]{1,160}$/.test(value)) throw new PodPrintArtifactError("pod_artifact_print_job_id_invalid");
+  const hasUnsafeCharacter = Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) || 0;
+    return character === "/" || character === "\\" || codePoint < 32 || codePoint === 127;
+  });
+  if (!value.trim() || value.length > 160 || hasUnsafeCharacter) {
+    throw new PodPrintArtifactError("pod_artifact_print_job_id_invalid");
+  }
 };
 
 export const podPrintArtifactStorageObject = (printJobId: string, manifestSha256: string) => {
@@ -227,9 +243,10 @@ const assertStoredMetadataMatchesDocument = (
 
 const assertArtifactMatchesInput = (
   artifact: PodPrintArtifactDocument,
-  input: CreatePodPrintArtifactInput,
+  input: Omit<CreatePodPrintArtifactInput, "pdfBytes">,
   pdfSha256: string,
   object: string,
+  sizeBytes: number,
 ) => {
   if (artifact.renderer_version !== input.rendererVersion
     || artifact.print_job_id !== input.printJobId
@@ -237,7 +254,7 @@ const assertArtifactMatchesInput = (
     || artifact.manifest_sha256 !== input.manifest.manifest_sha256
     || artifact.pdf_sha256 !== pdfSha256
     || artifact.storage_object !== object
-    || artifact.size_bytes !== input.pdfBytes.byteLength
+    || artifact.size_bytes !== sizeBytes
     || canonicalJson(artifact.pod_job_ids) !== canonicalJson(input.manifest.print_job_ids)
     || artifact.print_format_id !== input.manifest.print_format_ids.join(",")
     || artifact.sheet_count !== input.manifest.sheet_count
@@ -249,6 +266,109 @@ const assertArtifactMatchesInput = (
     || artifact.render_profile_version !== input.assetSet.renderProfileVersion)) {
     throw new PodPrintArtifactError("pod_artifact_firestore_conflict");
   }
+};
+
+const buildArtifactDocument = (
+  input: FinalizePodPrintArtifactUploadInput,
+  id: string,
+  object: string,
+  storageMetadata: PodPrintArtifactStorageMetadata,
+): PodPrintArtifactDocument => ({
+  id,
+  artifact_version: input.assetSet ? POD_PRINT_ARTIFACT_VERSION : POD_PRINT_ARTIFACT_LEGACY_VERSION,
+  renderer_version: input.rendererVersion,
+  print_job_id: input.printJobId,
+  pod_job_id: input.manifest.print_job_ids.length === 1 ? input.manifest.print_job_ids[0] : null,
+  pod_job_ids: [...input.manifest.print_job_ids],
+  manifest_document_id: input.manifest.id,
+  manifest_document_path: `pod_print_manifests/${input.manifest.id}`,
+  manifest_sha256: input.manifest.manifest_sha256,
+  ...(input.assetSet ? {
+    asset_set_id: input.assetSet.id,
+    asset_set_sha256: input.assetSet.assetSetSha256,
+    render_profile_version: input.assetSet.renderProfileVersion,
+  } : {}),
+  pdf_sha256: input.pdfSha256,
+  storage_bucket: storageMetadata.bucket,
+  storage_object: object,
+  storage_generation: storageMetadata.generation,
+  storage_metageneration: storageMetadata.metageneration,
+  size_bytes: input.sizeBytes,
+  content_type: POD_PRINT_ARTIFACT_CONTENT_TYPE,
+  crc32c: storageMetadata.crc32c,
+  md5_hash: storageMetadata.md5Hash,
+  print_format_id: input.manifest.print_format_ids.join(","),
+  sheet_count: input.manifest.sheet_count,
+  item_count: input.manifest.postcard_count,
+  immutable: true,
+  status: POD_PRINT_ARTIFACT_STATUS,
+  created_at: input.createdAt,
+  schema_version: 1,
+});
+
+export const preparePodPrintArtifactUpload = async (input: FinalizePodPrintArtifactUploadInput) => {
+  if (input.manifest.state !== "frozen") throw new PodPrintArtifactError("pod_artifact_manifest_not_frozen");
+  if (!/^[0-9a-f]{64}$/i.test(input.manifest.manifest_sha256)) {
+    throw new PodPrintArtifactError("pod_artifact_manifest_hash_mismatch");
+  }
+  if (!/^[0-9a-f]{64}$/i.test(input.pdfSha256)) throw new PodPrintArtifactError("pod_artifact_hash_mismatch");
+  if (!Number.isSafeInteger(input.sizeBytes) || input.sizeBytes <= 0) {
+    throw new PodPrintArtifactError("pod_artifact_size_invalid");
+  }
+  const pdfSha256 = input.pdfSha256.toLowerCase();
+  const object = podPrintArtifactStorageObject(input.printJobId, input.manifest.manifest_sha256);
+  const id = await derivePodPrintArtifactId(input.printJobId, input.manifest.manifest_sha256, input.assetSet?.id);
+  const objectMetadata = expectedObjectMetadata({
+    manifestSha256: input.manifest.manifest_sha256,
+    pdfSha256,
+    rendererVersion: input.rendererVersion,
+    printJobId: input.printJobId,
+    assetSet: input.assetSet,
+  });
+  return { id, object, objectMetadata, pdfSha256 };
+};
+
+export const finalizePodPrintArtifactUpload = async (
+  storage: PodPrintArtifactStorage,
+  store: PodPrintArtifactStore,
+  input: FinalizePodPrintArtifactUploadInput,
+) => {
+  const prepared = await preparePodPrintArtifactUpload(input);
+  const normalizedInput = { ...input, pdfSha256: prepared.pdfSha256 };
+  const existing = await store.read(prepared.id);
+  if (existing) {
+    await assertArtifactRecordShape(existing);
+    assertArtifactMatchesInput(existing, normalizedInput, prepared.pdfSha256, prepared.object, input.sizeBytes);
+    const currentMetadata = await storage.readMetadata(prepared.object);
+    if (currentMetadata.generation !== existing.storage_generation) {
+      throw new PodPrintArtifactError("pod_artifact_firestore_conflict");
+    }
+    const verified = await assertStorageObject(storage, {
+      object: prepared.object,
+      pdfSha256: prepared.pdfSha256,
+      size: input.sizeBytes,
+      metadata: prepared.objectMetadata,
+    }, existing.storage_generation);
+    assertStoredMetadataMatchesDocument(existing, verified.metadata);
+    return { artifact: existing, created: false };
+  }
+
+  const verified = await assertStorageObject(storage, {
+    object: prepared.object,
+    pdfSha256: prepared.pdfSha256,
+    size: input.sizeBytes,
+    metadata: prepared.objectMetadata,
+  });
+  const artifact = buildArtifactDocument(normalizedInput, prepared.id, prepared.object, verified.metadata);
+  try {
+    await store.createOnly(prepared.id, artifact);
+  } catch {
+    const concurrent = await store.read(prepared.id);
+    if (!concurrent) throw new PodPrintArtifactError("pod_artifact_firestore_write_failed");
+    assertArtifactDocument(concurrent, artifact);
+    return { artifact: concurrent, created: false };
+  }
+  return { artifact, created: true };
 };
 
 export const createPodPrintArtifact = async (
@@ -275,7 +395,7 @@ export const createPodPrintArtifact = async (
   const existingDocument = await store.read(id);
   if (existingDocument) {
     await assertArtifactRecordShape(existingDocument);
-    assertArtifactMatchesInput(existingDocument, input, pdfSha256, object);
+    assertArtifactMatchesInput(existingDocument, input, pdfSha256, object, input.pdfBytes.byteLength);
     const currentMetadata = await storage.readMetadata(object);
     if (currentMetadata.generation !== existingDocument.storage_generation) {
       throw new PodPrintArtifactError("pod_artifact_firestore_conflict");
@@ -313,38 +433,15 @@ export const createPodPrintArtifact = async (
     size: input.pdfBytes.byteLength,
     metadata: objectMetadata,
   }, storageMetadata.generation);
-  const artifact: PodPrintArtifactDocument = {
-    id,
-    artifact_version: input.assetSet ? POD_PRINT_ARTIFACT_VERSION : POD_PRINT_ARTIFACT_LEGACY_VERSION,
-    renderer_version: input.rendererVersion,
-    print_job_id: input.printJobId,
-    pod_job_id: input.manifest.print_job_ids.length === 1 ? input.manifest.print_job_ids[0] : null,
-    pod_job_ids: [...input.manifest.print_job_ids],
-    manifest_document_id: input.manifest.id,
-    manifest_document_path: `pod_print_manifests/${input.manifest.id}`,
-    manifest_sha256: input.manifest.manifest_sha256,
-    ...(input.assetSet ? {
-      asset_set_id: input.assetSet.id,
-      asset_set_sha256: input.assetSet.assetSetSha256,
-      render_profile_version: input.assetSet.renderProfileVersion,
-    } : {}),
-    pdf_sha256: pdfSha256,
-    storage_bucket: verified.metadata.bucket,
-    storage_object: object,
-    storage_generation: verified.metadata.generation,
-    storage_metageneration: verified.metadata.metageneration,
-    size_bytes: input.pdfBytes.byteLength,
-    content_type: POD_PRINT_ARTIFACT_CONTENT_TYPE,
-    crc32c: verified.metadata.crc32c,
-    md5_hash: verified.metadata.md5Hash,
-    print_format_id: input.manifest.print_format_ids.join(","),
-    sheet_count: input.manifest.sheet_count,
-    item_count: input.manifest.postcard_count,
-    immutable: true,
-    status: POD_PRINT_ARTIFACT_STATUS,
-    created_at: input.createdAt,
-    schema_version: 1,
-  };
+  const artifact = buildArtifactDocument({
+    printJobId: input.printJobId,
+    manifest: input.manifest,
+    rendererVersion: input.rendererVersion,
+    pdfSha256,
+    sizeBytes: input.pdfBytes.byteLength,
+    createdAt: input.createdAt,
+    assetSet: input.assetSet,
+  }, id, object, verified.metadata);
   try {
     await store.createOnly(id, artifact);
   } catch {

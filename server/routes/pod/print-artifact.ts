@@ -1,9 +1,11 @@
 import { corsHeaders, json, preflight } from "../../../api/_lib/http.js";
-import { gcpPodPrintArtifactStorage } from "../../../api/_lib/gcp-storage.js";
+import { gcpPodPrintArtifactStorage, initiateGcsCreateOnlyResumableUpload } from "../../../api/_lib/gcp-storage.js";
 import { requireAdmin } from "../../auth/require-admin.js";
 import {
   PodPrintArtifactError,
   createPodPrintArtifact,
+  finalizePodPrintArtifactUpload,
+  preparePodPrintArtifactUpload,
   reprintPodPrintArtifact,
   type PodPrintArtifactStorage,
   type PodPrintArtifactStore,
@@ -32,6 +34,7 @@ export interface PodPrintArtifactRouteDependencies {
   manifestStore: PodPrintManifestStore;
   storage: PodPrintArtifactStorage;
   assetSetStore: PodPrintAssetSetStore;
+  initiateUpload?: typeof initiateGcsCreateOnlyResumableUpload;
   now: () => string;
 }
 
@@ -107,6 +110,20 @@ const validateAssetCoverage = (
   }
 };
 
+const readUploadRequest = async (request: Request) => {
+  if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/json") {
+    throw new PodPrintArtifactError("pod_artifact_content_type_invalid");
+  }
+  const body = await request.json().catch(() => null) as { pdf_sha256?: unknown; size_bytes?: unknown } | null;
+  const pdfSha256 = typeof body?.pdf_sha256 === "string" ? body.pdf_sha256.trim().toLowerCase() : "";
+  const sizeBytes = Number(body?.size_bytes);
+  if (!/^[0-9a-f]{64}$/.test(pdfSha256)) throw new PodPrintArtifactError("pod_artifact_hash_mismatch");
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_PDF_BYTES) {
+    throw new PodPrintArtifactError("pod_artifact_pdf_too_large");
+  }
+  return { pdfSha256, sizeBytes };
+};
+
 export const createPodPrintArtifactHandler = (dependencies: PodPrintArtifactRouteDependencies) => ({
   fetch: async (request: Request) => {
     if (request.method === "OPTIONS") return preflight();
@@ -124,6 +141,7 @@ export const createPodPrintArtifactHandler = (dependencies: PodPrintArtifactRout
         });
       }
       if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+      const operation = url.searchParams.get("operation")?.trim() || "legacy_upload";
       const manifestId = url.searchParams.get("manifest_id")?.trim() || "";
       const printJobId = url.searchParams.get("print_job_id")?.trim() || "";
       const rendererVersion = url.searchParams.get("renderer_version")?.trim() || "";
@@ -132,16 +150,7 @@ export const createPodPrintArtifactHandler = (dependencies: PodPrintArtifactRout
       if (!printJobId) throw new PodPrintArtifactError("pod_artifact_print_job_id_required");
       if (!rendererVersion) throw new PodPrintArtifactError("pod_artifact_renderer_version_required");
       if (!assetSetId) throw new PodPrintArtifactError("pod_artifact_asset_set_id_required");
-      if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/pdf") {
-        throw new PodPrintArtifactError("pod_artifact_content_type_invalid");
-      }
-      const contentLength = Number(request.headers.get("content-length") || 0);
-      if (contentLength > MAX_PDF_BYTES) throw new PodPrintArtifactError("pod_artifact_pdf_too_large");
-      const pdfBytes = new Uint8Array(await request.arrayBuffer());
-      if (pdfBytes.byteLength > MAX_PDF_BYTES) throw new PodPrintArtifactError("pod_artifact_pdf_too_large");
-      if (new TextDecoder().decode(pdfBytes.slice(0, 5)) !== "%PDF-") {
-        throw new PodPrintArtifactError("pod_artifact_pdf_invalid");
-      }
+
       const frozen = await readFrozenPodPrintManifest(dependencies.manifestStore, manifestId);
       if (!frozen) throw new PodPrintArtifactError("pod_artifact_manifest_not_found");
       if (printJobId !== frozen.header.batch_id) throw new PodPrintArtifactError("pod_artifact_print_job_id_mismatch");
@@ -157,6 +166,77 @@ export const createPodPrintArtifactHandler = (dependencies: PodPrintArtifactRout
         throw new PodPrintArtifactError("pod_artifact_asset_set_mismatch");
       }
       validateAssetCoverage(frozen, assetSet.items);
+
+      if (operation === "initiate_upload" || operation === "finalize_upload") {
+        const upload = await readUploadRequest(request);
+        const uploadInput = {
+          printJobId,
+          rendererVersion,
+          pdfSha256: upload.pdfSha256,
+          sizeBytes: upload.sizeBytes,
+          createdAt: dependencies.now(),
+          assetSet: {
+            id: assetSet.header.id,
+            assetSetSha256: assetSet.header.asset_set_sha256,
+            renderProfileVersion: assetSet.header.render_profile_version,
+          },
+          manifest: {
+            id: frozen.header.id,
+            state: frozen.header.state,
+            manifest_sha256: frozen.header.manifest_sha256,
+            print_job_ids: frozen.header.print_job_ids,
+            print_format_ids: frozen.header.print_format_ids,
+            sheet_count: frozen.header.sheet_count,
+            postcard_count: frozen.header.postcard_count,
+          },
+        } as const;
+        if (operation === "initiate_upload") {
+          if (!dependencies.initiateUpload) throw new Error("pod_artifact_resumable_upload_unavailable");
+          const prepared = await preparePodPrintArtifactUpload(uploadInput);
+          const existing = await dependencies.artifactStore.read(prepared.id);
+          if (existing) return json({ artifact_id: prepared.id, existing: true, upload_url: null });
+          const configuredOrigin = process.env.FRONTEND_ORIGIN || "https://podrozowka.web.app";
+          const requestOrigin = request.headers.get("origin") || configuredOrigin;
+          if (requestOrigin !== configuredOrigin) throw new PodPrintArtifactError("pod_artifact_origin_invalid");
+          try {
+            const uploadUrl = await dependencies.initiateUpload(
+              prepared.object,
+              upload.sizeBytes,
+              prepared.objectMetadata,
+              requestOrigin,
+            );
+            return json({ artifact_id: prepared.id, existing: false, upload_url: uploadUrl });
+          } catch (error) {
+            if (error instanceof PodPrintArtifactError && error.code === "pod_artifact_storage_precondition_failed") {
+              return json({ artifact_id: prepared.id, existing: true, upload_url: null });
+            }
+            throw error;
+          }
+        }
+        const result = await finalizePodPrintArtifactUpload(dependencies.storage, dependencies.artifactStore, uploadInput);
+        return json({
+          artifact_id: result.artifact.id,
+          manifest_sha256: result.artifact.manifest_sha256,
+          pdf_sha256: result.artifact.pdf_sha256,
+          asset_set_id: result.artifact.asset_set_id,
+          asset_set_sha256: result.artifact.asset_set_sha256,
+          render_profile_version: result.artifact.render_profile_version,
+          storage_generation: result.artifact.storage_generation,
+          size_bytes: result.artifact.size_bytes,
+          created: result.created,
+        });
+      }
+
+      if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/pdf") {
+        throw new PodPrintArtifactError("pod_artifact_content_type_invalid");
+      }
+      const contentLength = Number(request.headers.get("content-length") || 0);
+      if (contentLength > MAX_PDF_BYTES) throw new PodPrintArtifactError("pod_artifact_pdf_too_large");
+      const pdfBytes = new Uint8Array(await request.arrayBuffer());
+      if (pdfBytes.byteLength > MAX_PDF_BYTES) throw new PodPrintArtifactError("pod_artifact_pdf_too_large");
+      if (new TextDecoder().decode(pdfBytes.slice(0, 5)) !== "%PDF-") {
+        throw new PodPrintArtifactError("pod_artifact_pdf_invalid");
+      }
       const result = await createPodPrintArtifact(dependencies.storage, dependencies.artifactStore, {
         printJobId,
         rendererVersion,
@@ -209,5 +289,6 @@ export default createPodPrintArtifactHandler({
   manifestStore: gcpPodPrintManifestStore,
   storage: gcpPodPrintArtifactStorage,
   assetSetStore: gcpPodPrintAssetSetStore,
+  initiateUpload: initiateGcsCreateOnlyResumableUpload,
   now: () => new Date().toISOString(),
 });

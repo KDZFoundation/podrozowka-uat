@@ -25,6 +25,13 @@ import podProductionRelease from "./routes/pod/production-release";
 
 type ApiHandler = { fetch: (request: Request) => Response | Promise<Response> };
 
+type NodeResponseTarget = {
+  setHeader: (key: string, value: string) => void;
+  end: (body?: Buffer) => void;
+  write: (chunk: Buffer) => boolean;
+  once: (event: "drain", listener: () => void) => void;
+};
+
 // Kept outside api/ because Vercel treats every non-underscore API file as a
 // separate function. scripts/build-vercel-router.mjs bundles this complete
 // router into api/_router.cjs, leaving one catch-all function on Hobby.
@@ -68,13 +75,33 @@ const requestBody = (body: unknown, contentType: string | null) => {
   return JSON.stringify(body);
 };
 
+export const streamWebResponse = async (response: Response, target: NodeResponseTarget) => {
+  if (!response.body) {
+    target.end();
+    return;
+  }
+  const reader = response.body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!target.write(Buffer.from(value))) {
+        await new Promise<void>((resolve) => target.once("drain", resolve));
+      }
+    }
+    target.end();
+  } finally {
+    reader.releaseLock();
+  }
+};
+
 export default async function handler(nodeRequest: {
   method?: string;
   url?: string;
   headers: Record<string, string | string[] | undefined>;
   body?: unknown;
 }, nodeResponse: {
-  status: (status: number) => { setHeader: (key: string, value: string) => void; end: (body?: Buffer) => void };
+  status: (status: number) => NodeResponseTarget;
 }) {
   const protocol = firstHeaderValue(nodeRequest.headers["x-forwarded-proto"]) || "https";
   const host = firstHeaderValue(nodeRequest.headers.host) || "localhost";
@@ -105,7 +132,7 @@ export default async function handler(nodeRequest: {
     const response = await apiHandler.fetch(request);
     const target = nodeResponse.status(response.status);
     response.headers.forEach((value, key) => target.setHeader(key, value));
-    target.end(Buffer.from(await response.arrayBuffer()));
+    await streamWebResponse(response, target);
   } catch (error) {
     console.error("[api router error]", error);
     const target = nodeResponse.status(500);

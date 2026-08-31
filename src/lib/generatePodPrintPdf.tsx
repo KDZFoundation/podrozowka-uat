@@ -17,7 +17,7 @@ import {
   type FrozenPodPrintManifest,
 } from "@/lib/podPrintManifestPersistence";
 import { applyDeterministicPodPdfMetadata, podPdfBytes, POD_PDF_RENDERER_VERSION } from "@/lib/podPdfMetadata";
-import { derivePodPrintArtifactId } from "@/lib/podPrintArtifact";
+import { derivePodPrintArtifactId, sha256Bytes } from "@/lib/podPrintArtifact";
 import { derivePodPrintAssetSetId } from "@/lib/podPrintAssetSet";
 import { loadFrozenPodPrintAssets, type LoadedPodPrintAssets } from "@/lib/podPrintAssetClient";
 import { POD_RENDER_PROFILE } from "@/lib/podRenderProfile";
@@ -282,6 +282,11 @@ const generatePodPrintPdfForJobs = async (
       downloadLink.remove();
       return { fileName, downloadUrl, itemCount: manifest.postcard_count, sheetCount: manifest.sheet_count };
     }
+    // Vercel Functions reject buffered responses above 4.5 MB. Older
+    // deployments can therefore return 413 for an otherwise valid archived
+    // PDF. Regenerate from the frozen manifest/assets and let finalize_upload
+    // verify that the exact canonical bytes match the private GCS object.
+    if (existingResponse.status === 413) continue;
     const existingFailure = await existingResponse.json().catch(() => null) as { error?: string } | null;
     if (existingResponse.status !== 404 || existingFailure?.error !== "pod_artifact_not_found") {
       throw new Error(existingFailure?.error || "Nie udało się sprawdzić kanonicznego PDF POD.");
@@ -359,27 +364,58 @@ const generatePodPrintPdfForJobs = async (
   } finally {
     frozenAssets.dispose();
   }
-  const createQuery = new URLSearchParams({
+  const artifactQuery = new URLSearchParams({
     manifest_id: frozen.header.id,
     print_job_id: documentNumber,
     renderer_version: POD_PDF_RENDERER_VERSION,
     asset_set_id: frozenAssets.header.id,
   });
-  const createUrl = `${backendApiUrl("/api/pod/print-artifact")}?${createQuery}`;
-  const archiveResponse = await fetch(createUrl, {
+  const pdfSha256 = await sha256Bytes(generatedBytes);
+  const uploadRequest = JSON.stringify({ pdf_sha256: pdfSha256, size_bytes: generatedBytes.byteLength });
+  artifactQuery.set("operation", "initiate_upload");
+  const initiateUrl = `${backendApiUrl("/api/pod/print-artifact")}?${artifactQuery}`;
+  const initiateResponse = await fetch(initiateUrl, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/pdf" },
-    body: generatedBytes,
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: uploadRequest,
   });
-  const archive = await archiveResponse.json().catch(() => null) as { artifact_id?: string; error?: string } | null;
-  if (!archiveResponse.ok || !archive?.artifact_id) throw new Error(archive?.error || "Nie udało się zarchiwizować kanonicznego PDF POD.");
-  const reprintUrl = `${backendApiUrl("/api/pod/print-artifact")}?${new URLSearchParams({ artifact_id: archive.artifact_id })}`;
-  const canonicalResponse = await fetch(reprintUrl, { headers: { Authorization: `Bearer ${token}` } });
-  if (!canonicalResponse.ok) {
-    const failure = await canonicalResponse.json().catch(() => null) as { error?: string } | null;
-    throw new Error(failure?.error || "Nie udało się pobrać kanonicznego PDF POD.");
+  const initiation = await initiateResponse.json().catch(() => null) as {
+    artifact_id?: string;
+    existing?: boolean;
+    upload_url?: string | null;
+    error?: string;
+  } | null;
+  if (!initiateResponse.ok || !initiation?.artifact_id) {
+    throw new Error(initiation?.error || "Nie udało się rozpocząć archiwizacji kanonicznego PDF POD.");
   }
-  const pdfBlob = new Blob([await canonicalResponse.arrayBuffer()], { type: "application/pdf" });
+  if (!initiation.existing) {
+    if (!initiation.upload_url) throw new Error("pod_artifact_upload_url_missing");
+    const storageResponse = await fetch(initiation.upload_url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/pdf" },
+      body: generatedBytes,
+    });
+    if (!storageResponse.ok && storageResponse.status !== 412) {
+      throw new Error(`pod_artifact_direct_upload_failed:${storageResponse.status}`);
+    }
+  }
+
+  artifactQuery.set("operation", "finalize_upload");
+  const finalizeUrl = `${backendApiUrl("/api/pod/print-artifact")}?${artifactQuery}`;
+  const finalizeResponse = await fetch(finalizeUrl, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: uploadRequest,
+  });
+  const archive = await finalizeResponse.json().catch(() => null) as { artifact_id?: string; error?: string } | null;
+  if (!finalizeResponse.ok || archive?.artifact_id !== initiation.artifact_id) {
+    throw new Error(archive?.error || "Nie udało się zatwierdzić kanonicznego PDF POD.");
+  }
+
+  // finalize_upload has verified the frozen manifest binding, exact byte
+  // length, SHA-256 and generation in private GCS. The local bytes are thus
+  // the canonical artifact and do not need to cross the Vercel payload limit.
+  const pdfBlob = new Blob([Uint8Array.from(generatedBytes).buffer], { type: "application/pdf" });
   const downloadUrl = URL.createObjectURL(pdfBlob);
   const downloadLink = document.createElement("a");
   downloadLink.href = downloadUrl;
