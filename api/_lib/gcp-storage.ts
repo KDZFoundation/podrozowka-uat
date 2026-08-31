@@ -4,9 +4,9 @@ import { PodPrintArtifactError, type PodPrintArtifactStorage, type PodPrintArtif
 type GcsObjectResource = {
   bucket?: string;
   name?: string;
-  generation?: string;
-  metageneration?: string;
-  size?: string;
+  generation?: string | number;
+  metageneration?: string | number;
+  size?: string | number;
   contentType?: string;
   crc32c?: string;
   md5Hash?: string;
@@ -19,15 +19,15 @@ const bucketName = () => {
   return value;
 };
 
-const objectMetadata = (value: GcsObjectResource): PodPrintArtifactStorageMetadata => {
+export const normalizeGcsObjectMetadata = (value: GcsObjectResource): PodPrintArtifactStorageMetadata => {
   if (!value.bucket || !value.name || !value.generation || !value.metageneration || !value.size || !value.crc32c) {
     throw new PodPrintArtifactError("pod_artifact_metadata_mismatch");
   }
   return {
     bucket: value.bucket,
     object: value.name,
-    generation: value.generation,
-    metageneration: value.metageneration,
+    generation: String(value.generation),
+    metageneration: String(value.metageneration),
     size: Number(value.size),
     contentType: value.contentType || "",
     crc32c: value.crc32c,
@@ -74,14 +74,14 @@ export const gcpPodPrintArtifactStorage: PodPrintArtifactStorage = {
     if (response.status === 412) throw new PodPrintArtifactError("pod_artifact_storage_precondition_failed");
     const result = await response.json().catch(() => null) as GcsObjectResource | null;
     if (!response.ok) throw new Error(`pod_artifact_storage_upload_failed:${response.status}:${JSON.stringify(result)}`);
-    return objectMetadata(result || {});
+    return normalizeGcsObjectMetadata(result || {});
   },
   readMetadata: async (object, generation) => {
     const response = await authorizedFetch(metadataUrl(bucketName(), object, generation));
     if (response.status === 404) throw new PodPrintArtifactError("pod_artifact_missing_object");
     const result = await response.json().catch(() => null) as GcsObjectResource | null;
     if (!response.ok) throw new Error(`pod_artifact_storage_metadata_failed:${response.status}:${JSON.stringify(result)}`);
-    return objectMetadata(result || {});
+    return normalizeGcsObjectMetadata(result || {});
   },
   download: async (object, generation) => {
     const url = `${metadataUrl(bucketName(), object, generation)}&alt=media`;
