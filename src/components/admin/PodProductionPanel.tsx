@@ -11,6 +11,7 @@ import {
   createPodProductionRelease,
   listPodProductionCandidates,
   loadFrozenPodProductionBatch,
+  preparePodProductionBatchArtifacts,
   transitionPodProductionRelease,
   type PodProductionCandidate,
 } from "@/lib/podProductionOperations";
@@ -25,6 +26,7 @@ export const PodProductionPanel = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [batch, setBatch] = useState<Awaited<ReturnType<typeof createPodProductionAndArtifacts>>["batch"] | null>(null);
+  const [artifactsReady, setArtifactsReady] = useState(false);
   const [resumeBatchId, setResumeBatchId] = useState("");
   const [proofs, setProofs] = useState<Array<{ id: string; format: string; approvalId?: string }>>([]);
   const [proofComment, setProofComment] = useState("");
@@ -48,6 +50,7 @@ export const PodProductionPanel = () => {
     try {
       const result = await createPodProductionAndArtifacts(selections);
       setBatch(result.batch);
+      setArtifactsReady(true);
       setProofs([]);
       setRelease(null);
       setReadiness(null);
@@ -62,6 +65,7 @@ export const PodProductionPanel = () => {
     try {
       const restored = await loadFrozenPodProductionBatch(resumeBatchId);
       setBatch(restored);
+      setArtifactsReady(false);
       setProofs([]);
       setRelease(null);
       setReadiness(null);
@@ -70,8 +74,20 @@ export const PodProductionPanel = () => {
     finally { setBusy(null); }
   };
 
-  const prepareProofs = async () => {
+  const prepareBatchArtifacts = async () => {
     if (!batch) return;
+    setBusy("artifacts");
+    try {
+      const artifacts = await preparePodProductionBatchArtifacts(batch);
+      setArtifactsReady(true);
+      toast({ title: "Kanoniczne artefakty batcha są gotowe", description: `${artifacts.length} grup. Można przygotować próby fizyczne.` });
+    } catch (error) {
+      toast({ title: "Nie można przygotować artefaktów batcha", description: message(error), variant: "destructive" });
+    } finally { setBusy(null); }
+  };
+
+  const prepareProofs = async () => {
+    if (!batch || !artifactsReady) return;
     setBusy("proof");
     try {
       const created = [];
@@ -186,7 +202,11 @@ export const PodProductionPanel = () => {
 
         <div className="space-y-4">
           <h4 className="font-semibold">2. Próba fizyczna i release</h4>
-          <Button variant="outline" onClick={() => void prepareProofs()} disabled={!batch || Boolean(busy)} className="w-full">Przygotuj numerowane próby formatów</Button>
+          <Button variant="outline" onClick={() => void prepareBatchArtifacts()} disabled={!batch || artifactsReady || Boolean(busy)} className="w-full">
+            {busy === "artifacts" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {artifactsReady ? "Kanoniczne artefakty batcha są gotowe" : "Przygotuj kanoniczne artefakty batcha"}
+          </Button>
+          <Button variant="outline" onClick={() => void prepareProofs()} disabled={!batch || !artifactsReady || Boolean(busy)} className="w-full">Przygotuj numerowane próby formatów</Button>
           {proofs.map((proof) => <div key={proof.id} className="flex items-center justify-between rounded-lg border p-3 text-xs"><span><strong>{proof.format}</strong><br /><span className="font-mono text-muted-foreground">{proof.id.slice(0, 24)}…</span></span><Button size="sm" variant="ghost" onClick={() => void downloadProof(proof.id)}><Download className="h-4 w-4" /></Button></div>)}
           {proofs.length > 0 && <div className="space-y-3 rounded-xl border border-amber-600/25 bg-amber-500/[0.06] p-4">
             <p className="flex gap-2 text-sm"><AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" /> Approval jest ręczny. Sprawdź kolejność arkuszy, face-up, short-edge duplex, cięcie row-major i merge stosów.</p>

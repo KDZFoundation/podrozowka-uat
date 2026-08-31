@@ -5,7 +5,7 @@ import { reconstructAndVerifyPodPrintManifest, type PodPrintManifestChunk, type 
 import type { PodPrintRenderInput } from "@/lib/podPrintManifest";
 import { loadFrozenPodPrintAssetsById, type LoadedPodPrintAssets } from "@/lib/podPrintAssetClient";
 import { generatePodProductionBatchGroupPdf, type PodProductionBatchRenderSources } from "@/lib/generatePodProductionBatchPdf";
-import type { FrozenPodProductionBatch } from "@/lib/podProductionBatchPersistence";
+import { reconstructAndVerifyPodProductionBatch, type FrozenPodProductionBatch } from "@/lib/podProductionBatchPersistence";
 
 const adminToken = async () => {
   const token = await auth.currentUser?.getIdToken();
@@ -86,12 +86,17 @@ export const loadFrozenPodProductionBatch = async (batchId: string): Promise<Fro
   return reconstructAndVerifyPodProductionBatch(header, chunks);
 };
 
-export const createPodProductionAndArtifacts = async (selections: PodProductionBatchSelectionRequest[]) => {
-  const batch = await createOrLoadPodProductionBatch(selections);
+export const preparePodProductionBatchArtifacts = async (batch: FrozenPodProductionBatch) => {
   const artifacts: Awaited<ReturnType<typeof generatePodProductionBatchGroupPdf>>[] = [];
   for (const group of batch.manifest.groups) {
     artifacts.push(await generatePodProductionBatchGroupPdf(batch.manifest, group.group_index, () => loadBatchRenderSources(batch)));
   }
+  return artifacts;
+};
+
+export const createPodProductionAndArtifacts = async (selections: PodProductionBatchSelectionRequest[]) => {
+  const batch = await createOrLoadPodProductionBatch(selections);
+  const artifacts = await preparePodProductionBatchArtifacts(batch);
   return { batch, artifacts };
 };
 
