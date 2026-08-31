@@ -181,5 +181,6 @@ export default createPodProductionBatchArtifactHandler({
   batchStore: gcpPodProductionBatchStore,
   artifactStore: gcpPodProductionBatchArtifactStore,
   storage: gcpPodPrintArtifactStorage,
+  initiateUpload: initiateGcsCreateOnlyResumableUpload,
   now: () => new Date().toISOString(),
 });
