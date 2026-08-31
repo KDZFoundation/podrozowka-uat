@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { CURRENT_POSTCARD_PRINT_FORMAT, POD_IMPOSITION_ALGORITHM } from "./podImposition";
-import { PodPrintArtifactError, type PodPrintArtifactStorage, type PodPrintArtifactStorageMetadata } from "./podPrintArtifact";
+import { PodPrintArtifactError, sha256Bytes, type PodPrintArtifactStorage, type PodPrintArtifactStorageMetadata } from "./podPrintArtifact";
 import { POD_CUT_STACK_PROFILE_VERSION, planPodProductionBatch, type PodProductionBatchSourceItem } from "./podProductionBatch";
 import type { FrozenPodProductionBatch, PodProductionBatchHeader } from "./podProductionBatchPersistence";
 import {
   createPodProductionBatchArtifact,
+  finalizePodProductionBatchArtifactUpload,
+  preparePodProductionBatchArtifactUpload,
   reprintPodProductionBatchArtifact,
   type PodProductionBatchArtifactDocument,
   type PodProductionBatchArtifactStore,
@@ -128,6 +130,33 @@ const input = async (bytes = pdf()) => ({
 });
 
 describe("immutable POD production batch artifacts", () => {
+  it("finalizes an exact PDF uploaded directly to GCS without sending its bytes through the API", async () => {
+    const storage = new Storage();
+    const store = new Store();
+    const request = await input();
+    const bytes = request.pdfBytes;
+    const prepared = await preparePodProductionBatchArtifactUpload({
+      batch: request.batch,
+      groupIndex: request.groupIndex,
+      pdfSha256: await sha256Bytes(bytes),
+      sizeBytes: bytes.byteLength,
+    });
+    await storage.createOnly(prepared.object, bytes, prepared.objectMetadata);
+
+    const result = await finalizePodProductionBatchArtifactUpload(storage, store, {
+      batch: request.batch,
+      groupIndex: request.groupIndex,
+      pdfSha256: prepared.pdfSha256,
+      sizeBytes: bytes.byteLength,
+      createdAt: request.createdAt,
+      createdBy: request.createdBy,
+    });
+
+    expect(result.created).toBe(true);
+    expect(result.artifact.pdf_sha256).toBe(prepared.pdfSha256);
+    expect(store.documents.size).toBe(1);
+  });
+
   it("performs the first content-addressed create-only upload", async () => {
     const storage = new Storage();
     const result = await createPodProductionBatchArtifact(storage, new Store(), await input());
