@@ -47,6 +47,15 @@ export interface PodProductionBatchArtifactStore {
   createOnly(id: string, document: PodProductionBatchArtifactDocument): Promise<void>;
 }
 
+export interface FinalizePodProductionBatchArtifactUploadInput {
+  batch: FrozenPodProductionBatch;
+  groupIndex: number;
+  pdfSha256: string;
+  sizeBytes: number;
+  createdAt: string;
+  createdBy: string;
+}
+
 export const derivePodProductionBatchArtifactId = async (batchId: string, groupIndex: number) => {
   if (!batchId.trim() || !Number.isInteger(groupIndex) || groupIndex < 0) {
     throw new PodProductionBatchArtifactError("pod_batch_artifact_reference_invalid");
@@ -132,6 +141,135 @@ const verifyObject = async (
     throw new PodProductionBatchArtifactError("pod_batch_artifact_hash_mismatch");
   }
   return { metadata, bytes };
+};
+
+const assertPdfBytes = (bytes: Uint8Array) => {
+  if (!bytes.byteLength || new TextDecoder().decode(bytes.slice(0, 5)) !== "%PDF-") {
+    throw new PodProductionBatchArtifactError("pod_batch_artifact_pdf_invalid");
+  }
+};
+
+export const preparePodProductionBatchArtifactUpload = async (
+  input: Omit<FinalizePodProductionBatchArtifactUploadInput, "createdAt" | "createdBy">,
+) => {
+  if (input.batch.header.state !== "FROZEN") throw new PodProductionBatchArtifactError("pod_batch_artifact_batch_not_frozen");
+  const group = input.batch.manifest.groups[input.groupIndex];
+  if (!group || group.group_index !== input.groupIndex) throw new PodProductionBatchArtifactError("pod_batch_artifact_group_missing");
+  if (!/^[0-9a-f]{64}$/i.test(input.pdfSha256)) throw new PodProductionBatchArtifactError("pod_batch_artifact_hash_mismatch");
+  if (!Number.isSafeInteger(input.sizeBytes) || input.sizeBytes <= 0) {
+    throw new PodProductionBatchArtifactError("pod_batch_artifact_size_invalid");
+  }
+  const pdfSha256 = input.pdfSha256.toLowerCase();
+  const id = await derivePodProductionBatchArtifactId(input.batch.header.id, input.groupIndex);
+  const object = podProductionBatchArtifactObject(input.batch.header.id, input.groupIndex, input.batch.header.batch_sha256, pdfSha256);
+  const objectMetadata = expectedMetadata({
+    batchId: input.batch.header.id,
+    batchSha256: input.batch.header.batch_sha256,
+    groupIndex: input.groupIndex,
+    cutStackProfileVersion: input.batch.header.cut_stack_profile_version,
+    pdfSha256,
+    printFormatId: group.print_format_id,
+    renderProfileVersion: group.render_profile_version,
+    renderProfileSha256: group.render_profile_sha256,
+    sourceManifestsSha256: await sha256Utf8(canonicalJson(group.source_manifests)),
+    assetSetsSha256: await sha256Utf8(canonicalJson(group.asset_sets)),
+  });
+  return { id, object, objectMetadata, pdfSha256, group };
+};
+
+const assertArtifactMatchesUpload = (
+  artifact: PodProductionBatchArtifactDocument,
+  input: FinalizePodProductionBatchArtifactUploadInput,
+  prepared: Awaited<ReturnType<typeof preparePodProductionBatchArtifactUpload>>,
+) => {
+  if (artifact.id !== prepared.id || artifact.artifact_version !== POD_PRODUCTION_BATCH_ARTIFACT_VERSION
+    || artifact.batch_id !== input.batch.header.id || artifact.group_index !== input.groupIndex
+    || artifact.pdf_sha256 !== prepared.pdfSha256 || artifact.size_bytes !== input.sizeBytes
+    || artifact.batch_sha256 !== input.batch.header.batch_sha256
+    || artifact.print_format_id !== prepared.group.print_format_id
+    || artifact.cut_stack_profile_version !== input.batch.header.cut_stack_profile_version
+    || artifact.render_profile_version !== prepared.group.render_profile_version
+    || artifact.render_profile_sha256 !== prepared.group.render_profile_sha256
+    || canonicalJson(artifact.source_manifests) !== canonicalJson(prepared.group.source_manifests)
+    || canonicalJson(artifact.asset_sets) !== canonicalJson(prepared.group.asset_sets)
+    || artifact.storage_object !== prepared.object) {
+    throw new PodProductionBatchArtifactError("pod_batch_artifact_firestore_conflict");
+  }
+};
+
+const buildArtifactDocument = (
+  input: FinalizePodProductionBatchArtifactUploadInput,
+  prepared: Awaited<ReturnType<typeof preparePodProductionBatchArtifactUpload>>,
+  metadata: PodPrintArtifactStorageMetadata,
+): PodProductionBatchArtifactDocument => ({
+  id: prepared.id,
+  artifact_version: POD_PRODUCTION_BATCH_ARTIFACT_VERSION,
+  batch_id: input.batch.header.id,
+  batch_sha256: input.batch.header.batch_sha256,
+  group_index: input.groupIndex,
+  print_format_id: prepared.group.print_format_id,
+  cut_stack_profile_version: input.batch.header.cut_stack_profile_version,
+  render_profile_version: prepared.group.render_profile_version,
+  render_profile_sha256: prepared.group.render_profile_sha256,
+  source_manifests: prepared.group.source_manifests,
+  asset_sets: prepared.group.asset_sets,
+  pdf_sha256: prepared.pdfSha256,
+  storage_bucket: metadata.bucket,
+  storage_object: prepared.object,
+  storage_generation: metadata.generation,
+  storage_metageneration: metadata.metageneration,
+  size_bytes: input.sizeBytes,
+  content_type: POD_PRODUCTION_BATCH_ARTIFACT_CONTENT_TYPE,
+  crc32c: metadata.crc32c,
+  md5_hash: metadata.md5Hash,
+  sheet_count: prepared.group.sheet_count,
+  item_count: prepared.group.item_count,
+  immutable: true,
+  status: "ready",
+  created_at: input.createdAt,
+  created_by: input.createdBy,
+  schema_version: 1,
+});
+
+export const finalizePodProductionBatchArtifactUpload = async (
+  storage: PodPrintArtifactStorage,
+  store: PodProductionBatchArtifactStore,
+  input: FinalizePodProductionBatchArtifactUploadInput,
+) => {
+  const prepared = await preparePodProductionBatchArtifactUpload(input);
+  const existing = await store.read(prepared.id);
+  if (existing) {
+    assertArtifactMatchesUpload(existing, input, prepared);
+    const currentMetadata = await storage.readMetadata(prepared.object);
+    if (currentMetadata.generation !== existing.storage_generation) {
+      throw new PodProductionBatchArtifactError("pod_batch_artifact_firestore_conflict");
+    }
+    const verified = await verifyObject(storage, prepared.object, existing.storage_generation,
+      prepared.pdfSha256, input.sizeBytes, prepared.objectMetadata);
+    assertPdfBytes(verified.bytes);
+    if (verified.metadata.bucket !== existing.storage_bucket
+      || verified.metadata.metageneration !== existing.storage_metageneration
+      || verified.metadata.crc32c !== existing.crc32c
+      || verified.metadata.md5Hash !== existing.md5_hash) {
+      throw new PodProductionBatchArtifactError("pod_batch_artifact_metadata_mismatch");
+    }
+    return { artifact: existing, created: false };
+  }
+
+  const verified = await verifyObject(storage, prepared.object, undefined,
+    prepared.pdfSha256, input.sizeBytes, prepared.objectMetadata);
+  assertPdfBytes(verified.bytes);
+  const artifact = buildArtifactDocument(input, prepared, verified.metadata);
+  try {
+    await store.createOnly(prepared.id, artifact);
+  } catch {
+    const concurrent = await store.read(prepared.id);
+    if (!concurrent || canonicalJson(identity(concurrent)) !== canonicalJson(identity(artifact))) {
+      throw new PodProductionBatchArtifactError("pod_batch_artifact_firestore_conflict");
+    }
+    return { artifact: concurrent, created: false };
+  }
+  return { artifact, created: true };
 };
 
 export const createPodProductionBatchArtifact = async (

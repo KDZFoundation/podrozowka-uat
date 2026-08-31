@@ -3,7 +3,7 @@ import { auth } from "@/integrations/firebase/config";
 import { backendApiUrl } from "@/lib/backendApi";
 import { hashPodPrintRenderInput, type PodPrintRenderInput } from "@/lib/podPrintManifest";
 import type { PodProductionBatchManifest, PodProductionBatchPosition } from "@/lib/podProductionBatch";
-import { derivePodProductionBatchArtifactId } from "@/lib/podProductionBatchArtifact";
+import { sha256Bytes } from "@/lib/podPrintArtifact";
 import type { LoadedPodPrintAssets } from "@/lib/podPrintAssetClient";
 import { applyDeterministicPodPdfMetadata, podPdfBytes } from "@/lib/podPdfMetadata";
 import { drawPodCropMarks, renderPodPostcardSide, type CardDesignData } from "@/lib/generatePodPrintPdf";
@@ -70,24 +70,7 @@ export const generatePodProductionBatchGroupPdf = async (
   if (!group || group.group_index !== groupIndex) throw new Error("pod_batch_render_group_missing");
   const token = await auth.currentUser?.getIdToken();
   if (!token) throw new Error("Do przygotowania batcha POD wymagane jest konto administratora.");
-  const artifactId = await derivePodProductionBatchArtifactId(manifest.batch_id, groupIndex);
-  const artifactUrl = `${backendApiUrl("/api/pod/production-batch-artifact")}?${new URLSearchParams({ artifact_id: artifactId })}`;
-  const existing = await fetch(artifactUrl, { headers: { Authorization: `Bearer ${token}` } });
   const fileName = `${manifest.batch_id}-group-${String(groupIndex).padStart(4, "0")}.pdf`;
-  if (existing.ok) {
-    return {
-      artifactId,
-      batchId: manifest.batch_id,
-      groupIndex,
-      downloadUrl: download(await existing.arrayBuffer(), fileName),
-      reprinted: true,
-    };
-  }
-  const failure = await existing.json().catch(() => null) as { error?: string } | null;
-  if (existing.status !== 404 || failure?.error !== "pod_batch_artifact_not_found") {
-    throw new Error(failure?.error || "pod_batch_artifact_lookup_failed");
-  }
-
   const sources = await loadSources();
   try {
     const shortEdge = Math.min(group.print_format.netWidthMm, group.print_format.netHeightMm);
@@ -147,27 +130,57 @@ export const generatePodProductionBatchGroupPdf = async (
       }
     }
     const bytes = podPdfBytes(pdf);
-    const createUrl = `${backendApiUrl("/api/pod/production-batch-artifact")}?${new URLSearchParams({
+    const artifactQuery = new URLSearchParams({
       batch_id: manifest.batch_id,
       group_index: String(groupIndex),
-    })}`;
-    const archived = await fetch(createUrl, {
+    });
+    const pdfSha256 = await sha256Bytes(bytes);
+    const uploadRequest = JSON.stringify({ pdf_sha256: pdfSha256, size_bytes: bytes.byteLength });
+    artifactQuery.set("operation", "initiate_upload");
+    const initiateUrl = `${backendApiUrl("/api/pod/production-batch-artifact")}?${artifactQuery}`;
+    const initiated = await fetch(initiateUrl, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/pdf" },
-      body: bytes,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: uploadRequest,
     });
-    const archive = await archived.json().catch(() => null) as { artifact_id?: string; error?: string } | null;
-    if (!archived.ok || !archive?.artifact_id) throw new Error(archive?.error || "pod_batch_artifact_archive_failed");
-    const canonical = await fetch(`${backendApiUrl("/api/pod/production-batch-artifact")}?${new URLSearchParams({ artifact_id: archive.artifact_id })}`, {
-      headers: { Authorization: `Bearer ${token}` },
+    const initiation = await initiated.json().catch(() => null) as {
+      artifact_id?: string;
+      existing?: boolean;
+      upload_url?: string | null;
+      error?: string;
+    } | null;
+    if (!initiated.ok || !initiation?.artifact_id) {
+      throw new Error(initiation?.error || "pod_batch_artifact_upload_initiate_failed");
+    }
+    if (!initiation.existing) {
+      if (!initiation.upload_url) throw new Error("pod_batch_artifact_upload_url_missing");
+      const upload = await fetch(initiation.upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/pdf" },
+        body: bytes,
+      });
+      if (!upload.ok && upload.status !== 412) {
+        throw new Error(`pod_batch_artifact_direct_upload_failed:${upload.status}`);
+      }
+    }
+    artifactQuery.set("operation", "finalize_upload");
+    const finalized = await fetch(`${backendApiUrl("/api/pod/production-batch-artifact")}?${artifactQuery}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: uploadRequest,
     });
-    if (!canonical.ok) throw new Error("pod_batch_artifact_reprint_failed");
+    const archive = await finalized.json().catch(() => null) as { artifact_id?: string; error?: string } | null;
+    if (!finalized.ok || archive?.artifact_id !== initiation.artifact_id) {
+      throw new Error(archive?.error || "pod_batch_artifact_archive_failed");
+    }
     return {
       artifactId: archive.artifact_id,
       batchId: manifest.batch_id,
       groupIndex,
-      downloadUrl: download(await canonical.arrayBuffer(), fileName),
-      reprinted: false,
+      // Finalize verified exact bytes, SHA-256 and immutable GCS generation.
+      // Use local deterministic bytes, avoiding Vercel's 4.5 MiB response cap.
+      downloadUrl: download(Uint8Array.from(bytes).buffer, fileName),
+      reprinted: Boolean(initiation.existing),
     };
   } finally {
     sources.dispose();

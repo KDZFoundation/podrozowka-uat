@@ -1,10 +1,12 @@
 import { corsHeaders, json, preflight } from "../../../api/_lib/http.js";
-import { gcpPodPrintArtifactStorage } from "../../../api/_lib/gcp-storage.js";
+import { gcpPodPrintArtifactStorage, initiateGcsCreateOnlyResumableUpload } from "../../../api/_lib/gcp-storage.js";
 import { requireAdmin } from "../../auth/require-admin.js";
 import {
   PodProductionBatchArtifactError,
   createPodProductionBatchArtifact,
   derivePodProductionBatchArtifactId,
+  finalizePodProductionBatchArtifactUpload,
+  preparePodProductionBatchArtifactUpload,
   reprintPodProductionBatchArtifact,
   type PodProductionBatchArtifactStore,
 } from "../../../src/lib/podProductionBatchArtifact.js";
@@ -24,6 +26,7 @@ interface Dependencies {
   batchStore: PodProductionBatchStore;
   artifactStore: PodProductionBatchArtifactStore;
   storage: PodPrintArtifactStorage;
+  initiateUpload?: typeof initiateGcsCreateOnlyResumableUpload;
   now: () => string;
 }
 
@@ -42,6 +45,20 @@ const statusFor = (code: string) => code.includes("not_found") || code.includes(
     : code.includes("too_large") ? 413
       : code.includes("conflict") || code.includes("mismatch") || code.includes("not_frozen") ? 409
         : 500;
+
+const readUploadRequest = async (request: Request) => {
+  if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/json") {
+    throw new PodProductionBatchArtifactError("pod_batch_artifact_content_type_invalid");
+  }
+  const body = await request.json().catch(() => null) as { pdf_sha256?: unknown; size_bytes?: unknown } | null;
+  const pdfSha256 = typeof body?.pdf_sha256 === "string" ? body.pdf_sha256.trim().toLowerCase() : "";
+  const sizeBytes = Number(body?.size_bytes);
+  if (!/^[0-9a-f]{64}$/.test(pdfSha256)) throw new PodProductionBatchArtifactError("pod_batch_artifact_hash_mismatch");
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_PDF_BYTES) {
+    throw new PodProductionBatchArtifactError("pod_batch_artifact_pdf_too_large");
+  }
+  return { pdfSha256, sizeBytes };
+};
 
 export const createPodProductionBatchArtifactHandler = (dependencies: Dependencies) => ({
   fetch: async (request: Request) => {
@@ -80,6 +97,55 @@ export const createPodProductionBatchArtifactHandler = (dependencies: Dependenci
       if (!batchId || !Number.isInteger(groupIndex) || groupIndex < 0) {
         throw new PodProductionBatchArtifactError("pod_batch_artifact_reference_invalid");
       }
+      const operation = url.searchParams.get("operation")?.trim() || "legacy_upload";
+      const batch = await readFrozenPodProductionBatch(dependencies.batchStore, batchId);
+      if (!batch) throw new PodProductionBatchArtifactError("pod_batch_artifact_batch_not_found");
+
+      if (operation === "initiate_upload" || operation === "finalize_upload") {
+        const upload = await readUploadRequest(request);
+        const input = {
+          batch,
+          groupIndex,
+          pdfSha256: upload.pdfSha256,
+          sizeBytes: upload.sizeBytes,
+          createdAt: dependencies.now(),
+          createdBy: adminUid(request),
+        } as const;
+        if (operation === "initiate_upload") {
+          if (!dependencies.initiateUpload) throw new Error("pod_batch_artifact_resumable_upload_unavailable");
+          const prepared = await preparePodProductionBatchArtifactUpload(input);
+          const existing = await dependencies.artifactStore.read(prepared.id);
+          if (existing) return json({ artifact_id: prepared.id, existing: true, upload_url: null });
+          const configuredOrigin = process.env.FRONTEND_ORIGIN || "https://podrozowka.web.app";
+          const requestOrigin = request.headers.get("origin") || configuredOrigin;
+          if (requestOrigin !== configuredOrigin) throw new PodProductionBatchArtifactError("pod_batch_artifact_origin_invalid");
+          try {
+            const uploadUrl = await dependencies.initiateUpload(
+              prepared.object,
+              upload.sizeBytes,
+              prepared.objectMetadata,
+              requestOrigin,
+            );
+            return json({ artifact_id: prepared.id, existing: false, upload_url: uploadUrl });
+          } catch (error) {
+            if (error instanceof PodProductionBatchArtifactError
+              && error.code === "pod_artifact_storage_precondition_failed") {
+              return json({ artifact_id: prepared.id, existing: true, upload_url: null });
+            }
+            throw error;
+          }
+        }
+        const result = await finalizePodProductionBatchArtifactUpload(dependencies.storage, dependencies.artifactStore, input);
+        return json({
+          artifact_id: result.artifact.id,
+          batch_id: result.artifact.batch_id,
+          batch_sha256: result.artifact.batch_sha256,
+          pdf_sha256: result.artifact.pdf_sha256,
+          storage_generation: result.artifact.storage_generation,
+          size_bytes: result.artifact.size_bytes,
+          created: result.created,
+        });
+      }
       if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/pdf") {
         throw new PodProductionBatchArtifactError("pod_batch_artifact_content_type_invalid");
       }
@@ -87,8 +153,6 @@ export const createPodProductionBatchArtifactHandler = (dependencies: Dependenci
       if (contentLength > MAX_PDF_BYTES) throw new PodProductionBatchArtifactError("pod_batch_artifact_pdf_too_large");
       const bytes = new Uint8Array(await request.arrayBuffer());
       if (bytes.byteLength > MAX_PDF_BYTES) throw new PodProductionBatchArtifactError("pod_batch_artifact_pdf_too_large");
-      const batch = await readFrozenPodProductionBatch(dependencies.batchStore, batchId);
-      if (!batch) throw new PodProductionBatchArtifactError("pod_batch_artifact_batch_not_found");
       const result = await createPodProductionBatchArtifact(dependencies.storage, dependencies.artifactStore, {
         batch,
         groupIndex,
