@@ -3,7 +3,9 @@ import {
   PodPrintArtifactError,
   createPodPrintArtifact,
   derivePodPrintArtifactId,
+  finalizePodPrintArtifactUpload,
   podPrintArtifactStorageObject,
+  preparePodPrintArtifactUpload,
   reprintPodPrintArtifact,
   sha256Bytes,
   type PodPrintArtifactDocument,
@@ -112,6 +114,48 @@ describe("canonical POD print artifacts", () => {
       content_type: "application/pdf",
     });
     expect(store.documents.get(result.artifact.id)).toMatchObject({ immutable: true, status: "ready", storage_generation: "1" });
+  });
+
+  it("finalizes a direct resumable upload after verifying its exact bytes and metadata", async () => {
+    const storage = new PreconditionStorage();
+    const store = new CreateOnlyStore();
+    const bytes = pdf("direct-upload");
+    const input = {
+      printJobId: "MAG — PRÓBA SRA3 — 8 szt.",
+      manifest,
+      rendererVersion: "renderer-v1",
+      pdfSha256: await sha256Bytes(bytes),
+      sizeBytes: bytes.byteLength,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const prepared = await preparePodPrintArtifactUpload(input);
+    await storage.createOnly(prepared.object, bytes, prepared.objectMetadata);
+    const result = await finalizePodPrintArtifactUpload(storage, store, input);
+    expect(result.created).toBe(true);
+    expect(result.artifact).toMatchObject({
+      id: prepared.id,
+      print_job_id: input.printJobId,
+      pdf_sha256: input.pdfSha256,
+      size_bytes: bytes.byteLength,
+    });
+  });
+
+  it("rejects direct-upload bytes that do not match the declared SHA-256", async () => {
+    const storage = new PreconditionStorage();
+    const bytes = pdf("uploaded-tampered");
+    const input = {
+      printJobId: "POD-TEST-DIRECT",
+      manifest,
+      rendererVersion: "renderer-v1",
+      pdfSha256: await sha256Bytes(pdf("expected")),
+      sizeBytes: bytes.byteLength,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const prepared = await preparePodPrintArtifactUpload(input);
+    await storage.createOnly(prepared.object, bytes, prepared.objectMetadata);
+    await expect(finalizePodPrintArtifactUpload(storage, new CreateOnlyStore(), input)).rejects.toMatchObject({
+      code: "pod_artifact_hash_mismatch",
+    });
   });
 
   it("creates version-2 artifacts bound to the frozen asset integrity chain", async () => {

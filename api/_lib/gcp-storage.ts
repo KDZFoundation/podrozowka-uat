@@ -53,6 +53,45 @@ const metadataUrl = (bucket: string, object: string, generation?: string) => {
 export const gcsCreateOnlyUploadUrl = (bucket: string) =>
   `https://storage.googleapis.com/upload/storage/v1/b/${encodeURIComponent(bucket)}/o?uploadType=multipart&ifGenerationMatch=0`;
 
+export const gcsCreateOnlyResumableUploadUrl = (bucket: string, object: string) => {
+  const query = new URLSearchParams({
+    uploadType: "resumable",
+    ifGenerationMatch: "0",
+    name: object,
+  });
+  return `https://storage.googleapis.com/upload/storage/v1/b/${encodeURIComponent(bucket)}/o?${query}`;
+};
+
+export const initiateGcsCreateOnlyResumableUpload = async (
+  object: string,
+  sizeBytes: number,
+  metadata: Record<string, string>,
+  origin: string,
+) => {
+  const bucket = bucketName();
+  const contentType = metadata.content_type;
+  if (!contentType) throw new Error("gcs_content_type_required");
+  const response = await authorizedFetch(
+    gcsCreateOnlyResumableUploadUrl(bucket, object),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": contentType,
+        "X-Upload-Content-Length": String(sizeBytes),
+        Origin: origin,
+      },
+      body: JSON.stringify({ name: object, contentType, metadata }),
+    },
+  );
+  if (response.status === 412) throw new PodPrintArtifactError("pod_artifact_storage_precondition_failed");
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(`pod_artifact_storage_upload_init_failed:${response.status}:${JSON.stringify(body)}`);
+  const uploadUrl = response.headers.get("location");
+  if (!uploadUrl) throw new Error("pod_artifact_storage_upload_location_missing");
+  return uploadUrl;
+};
+
 export const gcpPodPrintArtifactStorage: PodPrintArtifactStorage = {
   createOnly: async (object, bytes, metadata) => {
     const bucket = bucketName();

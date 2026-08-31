@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { gcsCreateOnlyUploadUrl, normalizeGcsObjectMetadata } from "../../api/_lib/gcp-storage";
+import { gcsCreateOnlyResumableUploadUrl, gcsCreateOnlyUploadUrl, normalizeGcsObjectMetadata } from "../../api/_lib/gcp-storage";
 import { createDocumentWrite } from "../../api/_lib/gcp-firestore";
 
 describe("GCS POD artifact preconditions", () => {
@@ -9,6 +9,13 @@ describe("GCS POD artifact preconditions", () => {
     expect(url.searchParams.get("uploadType")).toBe("multipart");
     expect(url.searchParams.get("ifGenerationMatch")).toBe("0");
     expect(url.pathname).toContain("private%20pod%20bucket");
+  });
+
+  it("pins direct browser uploads to a create-only resumable session", () => {
+    const url = new URL(gcsCreateOnlyResumableUploadUrl("private pod bucket", "pod-print-artifacts/MAG — próba/file.pdf"));
+    expect(url.searchParams.get("uploadType")).toBe("resumable");
+    expect(url.searchParams.get("ifGenerationMatch")).toBe("0");
+    expect(url.searchParams.get("name")).toBe("pod-print-artifacts/MAG — próba/file.pdf");
   });
 
   it("normalizes numeric GCS generation fields at the API boundary", () => {
