@@ -9,6 +9,7 @@ import {
 import { gcpPodProductionBatchStore } from "../../services/pod-production-batch-store.js";
 import { gcpPodPrintManifestStore } from "../../services/pod-print-manifest-store.js";
 import { gcpPodPrintAssetSetStore } from "../../services/pod-print-asset-set-store.js";
+import { derivePodPrintAssetSetId } from "../../../src/lib/podPrintAssetSet.js";
 import {
   loadPodProductionBatchPlan,
   verifyPodProductionBatchSources,
@@ -116,14 +117,19 @@ export default createPodProductionBatchHandler({
   batchStore: gcpPodProductionBatchStore,
   now: () => new Date().toISOString(),
   listCandidates: async () => {
-    const assetSets = (await listDocuments("pod_print_asset_sets", 500))
+    const manifestHeaders = (await listDocuments("pod_print_manifests", 500))
       .filter((document) => document.data.state === "frozen")
-      .sort((left, right) => String(left.data.manifest_id || "").localeCompare(String(right.data.manifest_id || "")) || left.id.localeCompare(right.id));
+      .sort((left, right) => left.id.localeCompare(right.id));
     const candidates: Array<{ print_manifest_id: string; asset_set_id: string; item_count: number }> = [];
-    for (const assetSet of assetSets) {
-      const manifestId = String(assetSet.data.manifest_id || "");
-      const manifest = manifestId ? await readFrozenPodPrintManifest(gcpPodPrintManifestStore, manifestId).catch(() => null) : null;
-      if (!manifest || manifest.header.manifest_sha256 !== assetSet.data.manifest_sha256) continue;
+    for (const manifestHeader of manifestHeaders) {
+      const manifestId = manifestHeader.id;
+      const manifest = await readFrozenPodPrintManifest(gcpPodPrintManifestStore, manifestId).catch(() => null);
+      if (!manifest) continue;
+      const assetSetId = await derivePodPrintAssetSetId(manifest.header.manifest_sha256);
+      const assetSet = await gcpPodPrintAssetSetStore.readHeader(assetSetId).catch(() => null);
+      if (!assetSet || assetSet.data.state !== "frozen"
+        || assetSet.data.manifest_id !== manifest.header.id
+        || assetSet.data.manifest_sha256 !== manifest.header.manifest_sha256) continue;
       let claimed = false;
       for (const item of manifest.manifest.format_groups.flatMap((group) => group.items)) {
         if (await gcpPodProductionBatchStore.readMembership(await derivePodProductionBatchMembershipId(item.print_job_item_id))) {
@@ -131,7 +137,7 @@ export default createPodProductionBatchHandler({
           break;
         }
       }
-      if (!claimed) candidates.push({ print_manifest_id: manifestId, asset_set_id: assetSet.id, item_count: manifest.header.postcard_count });
+      if (!claimed) candidates.push({ print_manifest_id: manifestId, asset_set_id: assetSetId, item_count: manifest.header.postcard_count });
     }
     return candidates;
   },
