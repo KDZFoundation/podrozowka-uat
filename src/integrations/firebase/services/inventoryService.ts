@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../config";
 import { buildWarehouseCleanupPlan, type CleanupDocument } from "./inventoryCleanup";
+import { resolveRegisteredPodPrintFormat } from "@/lib/podPrintFormats";
 
 const MAX_WRITE_OPERATIONS = 400;
 
@@ -102,6 +103,10 @@ export const inventoryService = {
       throw new Error("Nie znaleziono aktywnego wzoru Podróżówki.");
     }
     const design = designSnapshot.data();
+    // A new warehouse unit must carry the reviewed format explicitly.  Falling
+    // back here would make a newly created production batch look like legacy
+    // inventory and would prevent a clean deterministic production release.
+    const printFormatId = resolveRegisteredPodPrintFormat(design.print_format_id).print_format_id;
     const productCode = typeof design.product_code === "string" && design.product_code
       ? design.product_code
       : `PDZ-${input.cardDesignId.slice(0, 8).toUpperCase()}`;
@@ -154,6 +159,7 @@ export const inventoryService = {
       location_id: locationId,
       production_status: "ordered",
       production_order_id: stockOrderId,
+      print_format_id: printFormatId,
       created_at: now.toISOString(),
       updated_at: now.toISOString(),
       schema_version: 1,
@@ -201,6 +207,8 @@ export const inventoryService = {
           current_location_id: null,
           public_claim_code: unit.claimCode,
           public_claim_token_hash: unit.tokenHash,
+          print_format_id: printFormatId,
+          print_format_source: "inventory_unit",
           qr_generated_at: now.toISOString(),
           created_at: now.toISOString(),
           updated_at: now.toISOString(),
