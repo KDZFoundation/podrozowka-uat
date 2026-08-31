@@ -9,7 +9,6 @@ import {
 import { gcpPodProductionBatchStore } from "../../services/pod-production-batch-store.js";
 import { gcpPodPrintManifestStore } from "../../services/pod-print-manifest-store.js";
 import { gcpPodPrintAssetSetStore } from "../../services/pod-print-asset-set-store.js";
-import { derivePodPrintAssetSetId } from "../../../src/lib/podPrintAssetSet.js";
 import {
   loadPodProductionBatchPlan,
   verifyPodProductionBatchSources,
@@ -117,19 +116,34 @@ export default createPodProductionBatchHandler({
   batchStore: gcpPodProductionBatchStore,
   now: () => new Date().toISOString(),
   listCandidates: async () => {
-    const manifestHeaders = (await listDocuments("pod_print_manifests", 500))
-      .filter((document) => document.data.state === "frozen")
+    // A production batch is eligible only after the single-job canonical PDF
+    // was archived. Start with that immutable artifact rather than a broad
+    // scan of transient manifest or asset-set headers.
+    const artifacts = (await listDocuments("pod_print_artifacts", 500))
+      .filter((document) => {
+        const data = document.data as Record<string, unknown>;
+        return data.status === "ready"
+          && typeof data.manifest_document_id === "string"
+          && typeof data.manifest_sha256 === "string"
+          && typeof data.asset_set_id === "string"
+          && typeof data.asset_set_sha256 === "string";
+      })
       .sort((left, right) => left.id.localeCompare(right.id));
     const candidates: Array<{ print_manifest_id: string; asset_set_id: string; item_count: number }> = [];
-    for (const manifestHeader of manifestHeaders) {
-      const manifestId = manifestHeader.id;
+    const seenManifestIds = new Set<string>();
+    for (const artifact of artifacts) {
+      const artifactData = artifact.data as Record<string, unknown>;
+      const manifestId = String(artifactData.manifest_document_id);
+      const assetSetId = String(artifactData.asset_set_id);
+      if (seenManifestIds.has(manifestId)) continue;
       const manifest = await readFrozenPodPrintManifest(gcpPodPrintManifestStore, manifestId).catch(() => null);
       if (!manifest) continue;
-      const assetSetId = await derivePodPrintAssetSetId(manifest.header.manifest_sha256);
       const assetSet = await gcpPodPrintAssetSetStore.readHeader(assetSetId).catch(() => null);
       if (!assetSet || assetSet.data.state !== "frozen"
         || assetSet.data.manifest_id !== manifest.header.id
-        || assetSet.data.manifest_sha256 !== manifest.header.manifest_sha256) continue;
+        || assetSet.data.manifest_sha256 !== manifest.header.manifest_sha256
+        || artifactData.manifest_sha256 !== manifest.header.manifest_sha256
+        || artifactData.asset_set_sha256 !== assetSet.data.asset_set_sha256) continue;
       let claimed = false;
       for (const item of manifest.manifest.format_groups.flatMap((group) => group.items)) {
         if (await gcpPodProductionBatchStore.readMembership(await derivePodProductionBatchMembershipId(item.print_job_item_id))) {
@@ -137,7 +151,10 @@ export default createPodProductionBatchHandler({
           break;
         }
       }
-      if (!claimed) candidates.push({ print_manifest_id: manifestId, asset_set_id: assetSetId, item_count: manifest.header.postcard_count });
+      if (!claimed) {
+        candidates.push({ print_manifest_id: manifestId, asset_set_id: assetSetId, item_count: manifest.header.postcard_count });
+        seenManifestIds.add(manifestId);
+      }
     }
     return candidates;
   },
