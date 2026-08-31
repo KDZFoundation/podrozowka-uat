@@ -16,7 +16,7 @@ import {
   type PodRenderProfileAssetHashes,
 } from "../../src/lib/podRenderProfile.js";
 import { selectPodPrintFontAssets, type PodFontRegistryEntry } from "../../src/lib/podPrintFonts.js";
-import { fetchPodImageAsset, validatePodAssetUrl, validatePodImageBytes } from "./pod-asset-fetch.js";
+import { fetchPodImageAsset, resolvePodAssetUrl, validatePodAssetUrl, validatePodImageBytes } from "./pod-asset-fetch.js";
 
 type StaticAssetDefinition = {
   key: string;
@@ -203,12 +203,13 @@ export const collectPodPrintAssetCandidates = async (
   for (const item of items) {
     const input = item.render_input;
     if (!input.image_front_url) throw new PodPrintAssetSetError("pod_asset_front_photo_missing");
-    const image = await fetchCached(input.image_front_url);
+    const imageUrl = resolvePodAssetUrl(input.image_front_url);
+    const image = await fetchCached(imageUrl);
     const qrPayloadSha256 = await sha256Bytes(new TextEncoder().encode(input.qr_url));
     candidates.push({
       asset_role: "postcard_front_photo",
       source_kind: "external_url",
-      source_url: input.image_front_url,
+      source_url: imageUrl,
       source_version: input.image_version,
       content_type: image.contentType,
       bytes: image.bytes,
@@ -217,11 +218,12 @@ export const collectPodPrintAssetCandidates = async (
     });
     const flag = flagSource(input.country_iso2, input.country_flag_url);
     if (!flag) throw new PodPrintAssetSetError("pod_asset_country_flag_missing");
-    const flagImage = await fetchCached(flag.sourceUrl);
+    const flagUrl = resolvePodAssetUrl(flag.sourceUrl);
+    const flagImage = await fetchCached(flagUrl);
     candidates.push({
       asset_role: "country_flag",
       source_kind: flag.sourceKind,
-      source_url: flag.sourceUrl,
+      source_url: flagUrl,
       source_version: null,
       content_type: flagImage.contentType,
       bytes: flagImage.bytes,
