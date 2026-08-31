@@ -14,6 +14,25 @@ const allowedHosts = (environmentName: string) => new Set(
     .filter(Boolean),
 );
 
+/**
+ * Card designs stored by Firebase Hosting may use a root-relative image URL.
+ * Resolve only that form against the configured public frontend origin; a
+ * protocol-relative URL must never be allowed to change the trusted host.
+ */
+export const resolvePodAssetUrl = (value: string) => {
+  if (!value.startsWith("/")) return value;
+  let frontendOrigin: URL;
+  try {
+    frontendOrigin = new URL(process.env.FRONTEND_ORIGIN || "https://podrozowka.web.app");
+  } catch {
+    throw new PodPrintAssetSetError("pod_asset_frontend_origin_invalid");
+  }
+  if (frontendOrigin.protocol !== "https:") throw new PodPrintAssetSetError("pod_asset_frontend_origin_invalid");
+  const resolved = new URL(value, frontendOrigin);
+  if (resolved.origin !== frontendOrigin.origin) throw new PodPrintAssetSetError("pod_asset_relative_url_forbidden");
+  return resolved.toString();
+};
+
 const privateIpv4 = (address: string) => {
   const octets = address.split(".").map(Number);
   return octets[0] === 10

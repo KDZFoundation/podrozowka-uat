@@ -1,14 +1,17 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchPodImageAsset, validatePodAssetUrl } from "./pod-asset-fetch";
+import { fetchPodImageAsset, resolvePodAssetUrl, validatePodAssetUrl } from "./pod-asset-fetch";
 
 const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
 const originalAllowedHosts = process.env.POD_PRINT_ASSET_ALLOWED_HOSTS;
+const originalFrontendOrigin = process.env.FRONTEND_ORIGIN;
 
 describe("POD asset SSRF protection", () => {
   afterEach(() => {
     if (originalAllowedHosts === undefined) delete process.env.POD_PRINT_ASSET_ALLOWED_HOSTS;
     else process.env.POD_PRINT_ASSET_ALLOWED_HOSTS = originalAllowedHosts;
+    if (originalFrontendOrigin === undefined) delete process.env.FRONTEND_ORIGIN;
+    else process.env.FRONTEND_ORIGIN = originalFrontendOrigin;
     vi.useRealTimers();
   });
 
@@ -60,5 +63,11 @@ describe("POD asset SSRF protection", () => {
     const fetchMock = vi.fn(async () => new Response(Uint8Array.from(png).buffer, { headers: { "Content-Type": "image/png" } }));
     const result = await fetchPodImageAsset("https://93.184.216.34/image.png", fetchMock as typeof fetch);
     expect(Array.from(result.bytes)).toEqual(Array.from(png));
+  });
+
+  it("resolves a Hosting-relative design image without allowing an origin change", () => {
+    process.env.FRONTEND_ORIGIN = "https://podrozowka.web.app";
+    expect(resolvePodAssetUrl("/card-designs/grecja/front.webp")).toBe("https://podrozowka.web.app/card-designs/grecja/front.webp");
+    expect(() => resolvePodAssetUrl("//attacker.example/front.webp")).toThrow("pod_asset_relative_url_forbidden");
   });
 });

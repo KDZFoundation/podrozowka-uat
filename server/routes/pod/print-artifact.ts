@@ -22,6 +22,7 @@ import {
 import { gcpPodPrintAssetSetStore } from "../../services/pod-print-asset-set-store.js";
 import { readCompletePodPrintAssetSet } from "./print-assets.js";
 import { selectPodPrintFontAssets } from "../../../src/lib/podPrintFonts.js";
+import { resolvePodAssetUrl } from "../../services/pod-asset-fetch.js";
 
 const MAX_PDF_BYTES = 80 * 1024 * 1024;
 
@@ -62,16 +63,18 @@ const assertHttpUrl = (value: string, code: string) => {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new PodPrintArtifactError(code);
 };
 
+const assertRenderAssetUrl = (value: string, code: string) => assertHttpUrl(resolvePodAssetUrl(value), code);
+
 const validateFrozenRenderAssets = (manifest: Awaited<ReturnType<typeof readFrozenPodPrintManifest>>) => {
   if (!manifest) return;
   for (const item of manifest.manifest.format_groups.flatMap((group) => group.items)) {
     const input = item.render_input;
-    assertHttpUrl(input.qr_url, "pod_artifact_qr_url_invalid");
+    assertRenderAssetUrl(input.qr_url, "pod_artifact_qr_url_invalid");
     if (input.image_front_url) {
-      assertHttpUrl(input.image_front_url, "pod_artifact_asset_url_invalid");
+      assertRenderAssetUrl(input.image_front_url, "pod_artifact_asset_url_invalid");
       if (!input.image_version?.trim()) throw new PodPrintArtifactError("pod_artifact_asset_version_missing");
     }
-    if (input.country_flag_url) assertHttpUrl(input.country_flag_url, "pod_artifact_asset_url_invalid");
+    if (input.country_flag_url) assertRenderAssetUrl(input.country_flag_url, "pod_artifact_asset_url_invalid");
   }
 };
 
