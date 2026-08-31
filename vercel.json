@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "api/pod/[...path].js": {
+      "includeFiles": "src/assets/postcard-templates/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/((?!api/).*)",
