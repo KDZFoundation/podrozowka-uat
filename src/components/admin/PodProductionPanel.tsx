@@ -10,6 +10,7 @@ import {
   createPodProductionProof,
   createPodProductionRelease,
   listPodProductionCandidates,
+  loadFrozenPodProductionBatch,
   transitionPodProductionRelease,
   type PodProductionCandidate,
 } from "@/lib/podProductionOperations";
@@ -24,6 +25,7 @@ export const PodProductionPanel = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
   const [batch, setBatch] = useState<Awaited<ReturnType<typeof createPodProductionAndArtifacts>>["batch"] | null>(null);
+  const [resumeBatchId, setResumeBatchId] = useState("");
   const [proofs, setProofs] = useState<Array<{ id: string; format: string; approvalId?: string }>>([]);
   const [proofComment, setProofComment] = useState("");
   const [physicalConfirmation, setPhysicalConfirmation] = useState(false);
@@ -51,6 +53,20 @@ export const PodProductionPanel = () => {
       setReadiness(null);
       toast({ title: "Batch i kanoniczne artefakty są gotowe", description: `${result.batch.header.item_count} pozycji / ${result.artifacts.length} grup.` });
     } catch (error) { toast({ title: "Batch POD został zablokowany", description: message(error), variant: "destructive" }); }
+    finally { setBusy(null); }
+  };
+
+  const resumeBatch = async () => {
+    if (!resumeBatchId.trim()) return;
+    setBusy("resume");
+    try {
+      const restored = await loadFrozenPodProductionBatch(resumeBatchId);
+      setBatch(restored);
+      setProofs([]);
+      setRelease(null);
+      setReadiness(null);
+      toast({ title: "Wznowiono zamrożony batch", description: `${restored.header.item_count} pozycji / ${restored.manifest.groups.length} grup.` });
+    } catch (error) { toast({ title: "Nie można wznowić batcha", description: message(error), variant: "destructive" }); }
     finally { setBusy(null); }
   };
 
@@ -159,6 +175,11 @@ export const PodProductionPanel = () => {
           <Button onClick={() => void createBatch()} disabled={Boolean(busy) || selected.size === 0} className="w-full">
             {busy === "batch" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileCheck2 className="mr-2 h-4 w-4" />} Zamroź batch i przygotuj artefakty
           </Button>
+
+          <div className="flex gap-2">
+            <Input value={resumeBatchId} onChange={(event) => setResumeBatchId(event.target.value)} placeholder="ID zamrożonego batcha POD" aria-label="ID zamrożonego batcha POD" />
+            <Button variant="outline" onClick={() => void resumeBatch()} disabled={Boolean(busy) || !resumeBatchId.trim()}>Wznów batch</Button>
+          </div>
 
           {batch && <div className="rounded-xl border border-emerald-700/20 bg-emerald-500/[0.06] p-4 text-sm"><strong className="font-mono">{batch.header.id}</strong><p className="mt-1 text-muted-foreground">{batch.header.item_count} pozycji · SHA-256 {batch.header.batch_sha256.slice(0, 16)}…</p></div>}
         </div>
