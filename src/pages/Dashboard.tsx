@@ -13,6 +13,7 @@ import CulturalMissions from "@/components/dashboard/CulturalMissions";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 import TravelerJournal from "@/components/dashboard/TravelerJournal";
 import { Button } from "@/components/ui/button";
+import { publicPageUrl } from "@/lib/publicAppUrl";
 
 interface Profile {
   id: string;
@@ -100,11 +101,11 @@ const Dashboard = () => {
       <Helmet>
         <title>Mój panel — Podróżówka</title>
         <meta name="description" content="Twój panel Podróżówki: zamówienia, zarejestrowane pocztówki, statystyki podróży i ranga w społeczności." />
-        <link rel="canonical" href="https://podrozowka.lovable.app/dashboard" />
+        <link rel="canonical" href={publicPageUrl("/dashboard")} />
         <meta name="robots" content="noindex, follow" />
         <meta property="og:title" content="Mój panel — Podróżówka" />
         <meta property="og:description" content="Zarządzaj swoimi Podróżówkami w jednym miejscu." />
-        <meta property="og:url" content="https://podrozowka.lovable.app/dashboard" />
+        <meta property="og:url" content={publicPageUrl("/dashboard")} />
       </Helmet>
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 shadow-sm backdrop-blur-md">
         <div className="container mx-auto px-4">

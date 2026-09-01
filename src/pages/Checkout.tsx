@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { publicPageUrl } from "@/lib/publicAppUrl";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useAuth } from "@/hooks/useAuth";
 import { useCart } from "@/contexts/CartContext";
@@ -275,7 +276,7 @@ const Checkout = () => {
       <Helmet>
         <title>Zamówienie – Podróżówka</title>
         <meta name="description" content="Wybierz paczkomat InPost i sfinalizuj zamówienie w Podróżówce." />
-        <link rel="canonical" href="https://podrozowka.lovable.app/checkout" />
+        <link rel="canonical" href={publicPageUrl("/checkout")} />
       </Helmet>
       <Header />
       <main id="main-content" className="container mx-auto flex-1 px-4 pb-10 pt-24 md:pb-14 md:pt-28">

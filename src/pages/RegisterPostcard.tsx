@@ -11,6 +11,7 @@ import RegisterPostcardAlreadyRegistered from "@/components/register/RegisterPos
 import { trackEvent } from "@/lib/analytics";
 import { getRegistrationCopy } from "@/lib/registrationI18n";
 import { backendApiUrl } from "@/lib/backendApi";
+import { publicPageUrl } from "@/lib/publicAppUrl";
 
 export interface PostcardInfo {
   business_status: string | null;
@@ -152,11 +153,11 @@ const RegisterPostcard = () => {
         <html lang={copy.locale} />
         <title>{copy.pageTitle} — Podróżówka</title>
         <meta name="description" content={copy.pageDescription} />
-        <link rel="canonical" href="https://podrozowka.lovable.app/r" />
+        <link rel="canonical" href={publicPageUrl("/r")} />
         <meta name="robots" content="noindex, follow" />
         <meta property="og:title" content={copy.pageTitle} />
         <meta property="og:description" content={copy.pageDescription} />
-        <meta property="og:url" content="https://podrozowka.lovable.app/r" />
+        <meta property="og:url" content={publicPageUrl("/r")} />
       </Helmet>
       <RegisterPostcardForm postcard={postcard} languageCode={selectedLanguageCode || postcard.design.language_code} onLanguageChange={setSelectedLanguageCode} onSubmit={handleSubmit} />
     </>
