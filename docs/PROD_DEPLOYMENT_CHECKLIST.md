@@ -2,6 +2,25 @@
 
 Poniższa lista kontrolna służy jako przewodnik podczas wdrażania nowej wersji aplikacji na środowisko produkcyjne (PROD). Zapewnia spójność i minimalizuje ryzyko awarii.
 
+## 1. Bloker przed uruchomieniem produkcji — izolacja PROD
+
+Ten etap wykonujemy po akceptacji UAT (w tym fizycznej próbie impozycji SRA3), a przed uruchomieniem sprzedaży na `podrozowka.pl`.
+
+- [ ] Utworzyć i skonfigurować odrębne środowisko Firebase/Firestore oraz Cloud Storage dla PROD; nie wskazywać bazy UAT.
+- [ ] Utworzyć chroniony workflow `deploy-prod.yml`, uruchamiany wyłącznie z gałęzi lub tagu produkcyjnego i wymagający ręcznej akceptacji.
+- [ ] Wybrać jeden backend API dla PROD (Vercel albo Cloud Run) i ustawić go konsekwentnie w deployu, rewrites oraz `VITE_BACKEND_API_URL`.
+- [ ] Skonfigurować produkcyjne sekrety: HotPay, InPost, `FRONTEND_ORIGIN`, `PUBLIC_APP_URL`, dostęp backendu do Firestore i GCS oraz — jeśli używany — Resend.
+- [ ] Zweryfikować komplet danych katalogowych i mediów w Firestore/Storage PROD.
+- [ ] Wykonać eksport archiwalny Supabase, odłączyć historyczne ścieżki Supabase/P24 i potwierdzić, że aktywne widoki ich nie używają.
+- [ ] Wykonać jedno kontrolowane zamówienie PROD: HotPay → webhook → POD → PDF → InPost → rejestracja QR.
+- [ ] Skonfigurować DNS/SSL, Firebase Auth Authorized Domains, backup Firestore/Storage, monitoring oraz procedurę rollbacku.
+
+## Na później — asystent operatorski Codex
+
+- [ ] Rozważyć wewnętrznego asystenta operatorskiego opartego o AI SDK Codex Harness — wyłącznie do zadań pomocniczych/read-only (np. analiza logów, raporty testów i diagnostyka batchów).
+- [ ] Nie używać agenta AI do deterministycznego planowania impozycji, płatności, HotPay, InPost, zapisu do Firestore ani automatycznego wydania do drukarni.
+- [ ] Przed ewentualnym wdrożeniem osobno ocenić Vercel Sandbox, koszty, poświadczenia OpenAI/AI Gateway i model potwierdzeń operatora; integracja jest eksperymentalna.
+
 ## 2. Pre-deploy checks:
 - [ ] `uat` zaakceptowane przez zespół
 - [ ] Wszystkie testy przechodzą na `uat`

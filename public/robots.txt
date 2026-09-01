@@ -17,4 +17,4 @@ Disallow: /dashboard
 Disallow: /settings
 Disallow: /r/
 
-Sitemap: https://podrozowka.lovable.app/sitemap.xml
+Sitemap: https://podrozowka.pl/sitemap.xml

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { auth } from "@/integrations/firebase/config";
+import { publicPageUrl } from "@/lib/publicAppUrl";
 import {
   createUserWithEmailAndPassword,
   getRedirectResult,
@@ -318,7 +319,7 @@ const Auth = ({ mode = "login" }: AuthProps) => {
     ? "Zaloguj się — Podróżówka" 
     : "Załóż konto — Podróżówka";
 
-  const canonical = `https://podrozowka.lovable.app${isForgot ? "/odzyskiwanie-hasla" : isLogin ? "/logowanie" : "/rejestracja"}`;
+  const canonical = publicPageUrl(isForgot ? "/odzyskiwanie-hasla" : isLogin ? "/logowanie" : "/rejestracja");
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">

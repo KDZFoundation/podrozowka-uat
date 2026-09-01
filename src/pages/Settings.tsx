@@ -7,6 +7,7 @@ import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Camera, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
+import { publicPageUrl } from "@/lib/publicAppUrl";
 
 import { useAuth } from "@/hooks/useAuth";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
@@ -164,11 +165,11 @@ const Settings = () => {
       <Helmet>
         <title>Ustawienia profilu — Podróżówka</title>
         <meta name="description" content="Zarządzaj swoim profilem Podróżówki: imię, nazwisko, nazwa wyświetlana i zdjęcie profilowe." />
-        <link rel="canonical" href="https://podrozowka.lovable.app/settings" />
+        <link rel="canonical" href={publicPageUrl("/settings")} />
         <meta name="robots" content="noindex, follow" />
         <meta property="og:title" content="Ustawienia profilu — Podróżówka" />
         <meta property="og:description" content="Zarządzaj swoim profilem w Podróżówce." />
-        <meta property="og:url" content="https://podrozowka.lovable.app/settings" />
+        <meta property="og:url" content={publicPageUrl("/settings")} />
       </Helmet>
       <header className="bg-card border-b border-border sticky top-0 z-50">
         <div className="container mx-auto px-4">
