@@ -84,6 +84,19 @@ describe("POD asset SSRF protection", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it("accepts both configured application origins when they differ", async () => {
+    process.env.PUBLIC_APP_URL = "https://podrozowka.web.app";
+    process.env.FRONTEND_ORIGIN = "https://podrozowka-uat-one.vercel.app";
+    process.env.POD_PRINT_ASSET_ALLOWED_HOSTS = "flagcdn.com";
+    const fetchMock = vi.fn(async () => new Response(Uint8Array.from(png).buffer, { headers: { "Content-Type": "image/png" } }));
+
+    await expect(fetchPodImageAsset("https://podrozowka.web.app/card-designs/maroko/front.webp", fetchMock as typeof fetch))
+      .resolves.toMatchObject({ finalUrl: "https://podrozowka.web.app/card-designs/maroko/front.webp" });
+    await expect(fetchPodImageAsset("https://podrozowka-uat-one.vercel.app/card-designs/maroko/front.webp", fetchMock as typeof fetch))
+      .resolves.toMatchObject({ finalUrl: "https://podrozowka-uat-one.vercel.app/card-designs/maroko/front.webp" });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("does not trust an unrelated host when the public app host is enabled", async () => {
     process.env.FRONTEND_ORIGIN = "https://podrozowka.web.app";
     process.env.POD_PRINT_ASSET_ALLOWED_HOSTS = "flagcdn.com";
