@@ -11,18 +11,11 @@ import publicCommunityHandler from "./server/routes/public/community";
 import publicDistributionHandler from "./server/routes/public/distribution";
 import orlenWidgetConfigHandler from "./server/routes/orlen/widget-config";
 import { requireAdmin } from "./server/auth/require-admin";
-import podPrintManifestHandler from "./server/routes/pod/print-manifest";
-import podPrintArtifactHandler from "./server/routes/pod/print-artifact";
-import podPrintAssetsHandler from "./server/routes/pod/print-assets";
-import podProductionBatchHandler from "./server/routes/pod/production-batch";
-import podProductionBatchArtifactHandler from "./server/routes/pod/production-batch-artifact";
-import podProductionProofHandler from "./server/routes/pod/production-proof";
-import podProductionReadinessHandler from "./server/routes/pod/production-readiness";
-import podProductionReleaseHandler from "./server/routes/pod/production-release";
 
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
+  const uatBackendBaseUrl = (process.env.PAYMENT_BACKEND_API_URL || "https://podrozowka-uat-one.vercel.app").replace(/\/$/, "");
 
   app.use(cors());
   app.use(express.raw({ type: "application/pdf", limit: "80mb" }));
@@ -56,18 +49,46 @@ async function startServer() {
     }
   };
 
+  // Local UI uses the UAT Firestore and Firebase Auth account. POD endpoints
+  // must therefore run in the UAT backend, where Workload Identity can read
+  // the administrator role and write immutable print artifacts.
+  const forwardUatApiHandler = async (req: express.Request, res: express.Response) => {
+    try {
+      const response = await fetch(`${uatBackendBaseUrl}${req.originalUrl}`, {
+        method: req.method,
+        headers: {
+          "Content-Type": req.headers["content-type"] || "application/json",
+          ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
+        },
+        body: ["POST", "PUT", "PATCH"].includes(req.method) ? JSON.stringify(req.body || {}) : undefined,
+      });
+      const body = Buffer.from(await response.arrayBuffer());
+      res.status(response.status);
+      // Node fetch transparently decompresses Vercel responses. Forwarding the
+      // original compression and length headers would make the browser try to
+      // decompress the already-decoded response a second time.
+      response.headers.forEach((value, key) => {
+        if (!["content-encoding", "content-length", "transfer-encoding"].includes(key.toLowerCase())) res.setHeader(key, value);
+      });
+      res.send(body);
+    } catch (error) {
+      console.error("[local UAT API proxy error]:", error);
+      res.status(502).json({ error: "uat_backend_unavailable" });
+    }
+  };
+
   app.all("/api/public/stats", forwardApiHandler(publicStatsHandler));
   app.all("/api/public/community", forwardApiHandler(publicCommunityHandler));
   app.all("/api/public/distribution", forwardApiHandler(publicDistributionHandler));
   app.all("/api/orlen/widget-config", forwardApiHandler(orlenWidgetConfigHandler));
-  app.all("/api/pod/print-manifest", forwardApiHandler(podPrintManifestHandler));
-  app.all("/api/pod/print-artifact", forwardApiHandler(podPrintArtifactHandler));
-  app.all("/api/pod/print-assets", forwardApiHandler(podPrintAssetsHandler));
-  app.all("/api/pod/production-batch", forwardApiHandler(podProductionBatchHandler));
-  app.all("/api/pod/production-batch-artifact", forwardApiHandler(podProductionBatchArtifactHandler));
-  app.all("/api/pod/production-proof", forwardApiHandler(podProductionProofHandler));
-  app.all("/api/pod/production-readiness", forwardApiHandler(podProductionReadinessHandler));
-  app.all("/api/pod/production-release", forwardApiHandler(podProductionReleaseHandler));
+  app.all("/api/pod/print-manifest", forwardUatApiHandler);
+  app.all("/api/pod/print-artifact", forwardUatApiHandler);
+  app.all("/api/pod/print-assets", forwardUatApiHandler);
+  app.all("/api/pod/production-batch", forwardUatApiHandler);
+  app.all("/api/pod/production-batch-artifact", forwardUatApiHandler);
+  app.all("/api/pod/production-proof", forwardUatApiHandler);
+  app.all("/api/pod/production-readiness", forwardUatApiHandler);
+  app.all("/api/pod/production-release", forwardUatApiHandler);
 
   const requireLocalAdmin = async (req: express.Request, res: express.Response) => {
     const denied = await requireAdmin(new Request(`http://localhost:${PORT}${req.originalUrl}`, {
@@ -121,9 +142,8 @@ async function startServer() {
   // backend. The previous local endpoint initialized HotPay without storing an
   // order in Firestore, so the return page could not find ORD-… afterwards.
   app.post("/api/payments/create-hotpay", async (req, res) => {
-    const backendBaseUrl = (process.env.PAYMENT_BACKEND_API_URL || "https://podrozowka-uat-one.vercel.app").replace(/\/$/, "");
     try {
-      const response = await fetch(`${backendBaseUrl}/api/payments/create-hotpay`, {
+      const response = await fetch(`${uatBackendBaseUrl}/api/payments/create-hotpay`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(req.body || {}),

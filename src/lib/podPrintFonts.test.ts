@@ -61,6 +61,7 @@ describe("deterministic POD font selection", () => {
 
   it.each([
     ["ar", "مرحبا", "arabic"],
+    ["ar", "مَرْحَبًا", "arabic"],
     ["hy", "Բարեւ", "armenian"],
     ["he", "שלום", "hebrew"],
     ["km", "សួស្តី", "khmer"],

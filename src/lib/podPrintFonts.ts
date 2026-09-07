@@ -77,6 +77,17 @@ const cjkCollectionForItem = (item: PodPrintFontContext): PodFontCollection | nu
 };
 
 const collectionForCharacter = (character: string, cjk: PodFontCollection | null): PodFontCollection => {
+  // Arabic vowel marks (for example U+064B FATHATAN) have the Unicode
+  // Script=Inherited property. They must travel with the Arabic base glyphs
+  // instead of falling through to the Latin/body collection.
+  const codePoint = character.codePointAt(0)!;
+  if (
+    (codePoint >= 0x0600 && codePoint <= 0x06ff)
+    || (codePoint >= 0x0750 && codePoint <= 0x077f)
+    || (codePoint >= 0x0870 && codePoint <= 0x08ff)
+    || (codePoint >= 0xfb50 && codePoint <= 0xfdff)
+    || (codePoint >= 0xfe70 && codePoint <= 0xfefc)
+  ) return "arabic";
   if (/\p{Script=Arabic}/u.test(character)) return "arabic";
   if (/\p{Script=Armenian}/u.test(character)) return "armenian";
   if (/\p{Script=Hebrew}/u.test(character)) return "hebrew";
