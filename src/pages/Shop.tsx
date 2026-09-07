@@ -201,7 +201,7 @@ const Shop = () => {
           <p>
             <span className="font-semibold">Drukujemy po opłaceniu zamówienia</span>
             <span className="text-muted-foreground"> — minimalne zamówienie: </span>
-            <span className="font-semibold">10 Podróżówek.</span>
+            <span className="font-semibold">8 Podróżówek.</span>
           </p>
         </div>
         <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">

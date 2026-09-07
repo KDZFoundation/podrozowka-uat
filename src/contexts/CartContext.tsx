@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, ReactNode } from "react";
 import { trackEvent } from "@/lib/analytics";
+import { MIN_ORDER_QUANTITY } from "@/lib/orderRules";
 
 export interface CartProductSnapshot {
   title: string;
@@ -123,7 +124,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     trackEvent("cart_item_added", { quantity: qty });
     setItems((prev) => {
       const currentTotal = prev.reduce((sum, item) => sum + item.quantity, 0);
-      if (currentTotal < 10 && currentTotal + qty >= 10) {
+      if (currentTotal < MIN_ORDER_QUANTITY && currentTotal + qty >= MIN_ORDER_QUANTITY) {
         trackEvent("cart_reached_minimum", { total: currentTotal + qty });
       }
       // Compatibility for carts/tests created before a primary-language

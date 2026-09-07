@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import CartLanguagePicker from "@/components/cart/CartLanguagePicker";
 import { useEffect } from "react";
 import OrderSteps from "@/components/checkout/OrderSteps";
+import { MIN_ORDER_QUANTITY } from "@/lib/orderRules";
 
 const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
@@ -38,8 +39,8 @@ const Cart = () => {
   const isResolvingItems = savedCartItems.length > 0 && items.length === 0 && !isError;
   const empty = savedCartItems.length === 0 && !isLoading;
   const totalCount = items.reduce((s, i) => s + (i.unavailable ? 0 : i.quantity), 0);
-  const isBelowMin = totalCount < 10;
-  const minOrderProgress = Math.min(100, (totalCount / 10) * 100);
+  const isBelowMin = totalCount < MIN_ORDER_QUANTITY;
+  const minOrderProgress = Math.min(100, (totalCount / MIN_ORDER_QUANTITY) * 100);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -58,9 +59,9 @@ const Cart = () => {
           <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-900 dark:text-amber-200 flex items-start gap-3 mb-6">
             <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-sm">Minimalne zamówienie to 10 podróżówek</p>
+              <p className="font-semibold text-sm">Minimalne zamówienie to {MIN_ORDER_QUANTITY} podróżówek</p>
               <p className="text-xs mt-0.5">
-                Masz w koszyku <strong>{totalCount} szt.</strong> Dodaj jeszcze <strong>{10 - totalCount} szt.</strong>, aby złożyć zamówienie.
+                Masz w koszyku <strong>{totalCount} szt.</strong> Dodaj jeszcze <strong>{MIN_ORDER_QUANTITY - totalCount} szt.</strong>, aby złożyć zamówienie.
               </p>
             </div>
           </div>
@@ -201,7 +202,7 @@ const Cart = () => {
                   <div className="mb-2 flex items-center justify-between gap-3 text-sm">
                     <span className="font-medium">Minimum zamówienia</span>
                     <span className={`font-semibold ${isBelowMin ? "text-amber-600 dark:text-amber-400" : "text-primary"}`}>
-                      {totalCount} / 10 szt.
+                      {totalCount} / {MIN_ORDER_QUANTITY} szt.
                     </span>
                   </div>
                   <div
@@ -209,8 +210,8 @@ const Cart = () => {
                     role="progressbar"
                     aria-label="Postęp do minimalnego zamówienia"
                     aria-valuemin={0}
-                    aria-valuemax={10}
-                    aria-valuenow={Math.min(totalCount, 10)}
+                    aria-valuemax={MIN_ORDER_QUANTITY}
+                    aria-valuenow={Math.min(totalCount, MIN_ORDER_QUANTITY)}
                   >
                     <div
                       className={`h-full rounded-full transition-[width] duration-300 ${isBelowMin ? "bg-amber-500" : "bg-primary"}`}
@@ -219,7 +220,7 @@ const Cart = () => {
                   </div>
                   <p className="mt-2 text-xs text-muted-foreground">
                     {isBelowMin
-                      ? `Dobierz jeszcze ${10 - totalCount} szt., aby przejść do płatności.`
+                      ? `Dobierz jeszcze ${MIN_ORDER_QUANTITY - totalCount} szt., aby przejść do płatności.`
                       : "Minimum osiągnięte — możesz wybrać dostawę i płatność."}
                   </p>
                 </div>

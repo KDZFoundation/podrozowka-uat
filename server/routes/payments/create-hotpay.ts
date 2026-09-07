@@ -3,6 +3,7 @@ import { fromFirestoreFields, queryDocuments, readDocument, updateDocument, writ
 import { json, preflight } from "../../../api/_lib/http.js";
 import { releaseExpiredReservations, reserveDesignAvailability, updateReservationStatus } from "../../../api/_lib/design-reservation.js";
 import { resolveRegisteredPodPrintFormat } from "../../../src/lib/podPrintFormats.js";
+import { MIN_ORDER_QUANTITY } from "../../../src/lib/orderRules.js";
 
 type CheckoutItem = { card_design_id?: string; quantity?: number; primary_language_code?: string; secondary_language_code?: string };
 
@@ -34,7 +35,7 @@ export default {
       const idempotencyKey = suppliedIdempotencyKey || crypto.randomUUID();
       const items = safeItems(body.items);
       const totalQuantity = items.reduce((sum, item) => sum + Math.max(0, Math.floor(Number(item.quantity) || 0)), 0);
-      if (totalQuantity < 10) return json({ error: "minimum_order_quantity_10" }, 400);
+      if (totalQuantity < MIN_ORDER_QUANTITY) return json({ error: `minimum_order_quantity_${MIN_ORDER_QUANTITY}` }, 400);
       await releaseExpiredReservations();
 
       const orderItems = await Promise.all(items.map(async (item) => {
