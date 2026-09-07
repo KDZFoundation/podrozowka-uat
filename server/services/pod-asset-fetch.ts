@@ -22,20 +22,32 @@ const configuredHosts = (environmentName: string) => (
  * being rejected merely because the same host was not duplicated in two env
  * variables.
  */
-const trustedFrontendAssetHost = () => {
-  const value = process.env.FRONTEND_ORIGIN || process.env.PUBLIC_APP_URL || "https://podrozowka.web.app";
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
-    return url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  } catch {
-    return null;
+const trustedFrontendAssetHosts = () => {
+  const values = [
+    process.env.PUBLIC_APP_URL,
+    process.env.FRONTEND_ORIGIN,
+    // The Firebase Hosting domain is the safe compatibility default when a
+    // deployment has not configured either public origin explicitly.
+    !process.env.PUBLIC_APP_URL && !process.env.FRONTEND_ORIGIN ? "https://podrozowka.web.app" : undefined,
+  ];
+  const hosts = new Set<string>();
+  for (const value of values) {
+    if (!value) continue;
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "https:" || url.username || url.password || url.port) continue;
+      hosts.add(url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, ""));
+    } catch {
+      // An invalid optional origin is not a trusted host. Its configuration
+      // error is handled by the caller that needs to resolve a relative URL.
+    }
   }
+  return hosts;
 };
 
 const allowedHosts = (environmentName: string) => new Set([
   ...configuredHosts(environmentName),
-  ...(environmentName === "POD_PRINT_ASSET_ALLOWED_HOSTS" ? [trustedFrontendAssetHost()] : []),
+  ...(environmentName === "POD_PRINT_ASSET_ALLOWED_HOSTS" ? trustedFrontendAssetHosts() : []),
 ].filter((value): value is string => Boolean(value)));
 
 /**
@@ -47,7 +59,7 @@ export const resolvePodAssetUrl = (value: string) => {
   if (!value.startsWith("/")) return value;
   let frontendOrigin: URL;
   try {
-    frontendOrigin = new URL(process.env.FRONTEND_ORIGIN || process.env.PUBLIC_APP_URL || "https://podrozowka.web.app");
+    frontendOrigin = new URL(process.env.PUBLIC_APP_URL || process.env.FRONTEND_ORIGIN || "https://podrozowka.web.app");
   } catch {
     throw new PodPrintAssetSetError("pod_asset_frontend_origin_invalid");
   }
