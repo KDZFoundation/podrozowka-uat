@@ -98,7 +98,13 @@ export const validatePodAssetUrl = async (value: string, allowlistEnvironment = 
     throw new PodPrintAssetSetError("pod_asset_url_forbidden");
   }
   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  if (!allowedHosts(allowlistEnvironment).has(hostname)) throw new PodPrintAssetSetError("pod_asset_url_host_forbidden");
+  if (!allowedHosts(allowlistEnvironment).has(hostname)) {
+    // Hostnames and the allowlist name are safe operational metadata. Logging
+    // them makes an unexpected asset source diagnosable without exposing its
+    // path, query parameters, credentials, or any document data.
+    console.warn("pod_print_asset_host_forbidden", { hostname, allowlistEnvironment });
+    throw new PodPrintAssetSetError("pod_asset_url_host_forbidden");
+  }
   if (hostname === "localhost" || hostname === "metadata.google.internal") {
     throw new PodPrintAssetSetError("pod_asset_url_private_address");
   }
