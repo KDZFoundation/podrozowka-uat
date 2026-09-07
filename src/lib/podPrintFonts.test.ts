@@ -75,7 +75,7 @@ describe("deterministic POD font selection", () => {
   });
 
   it.each([
-    ["ja", "ありがとう", "japanese"],
+    ["ja", "スーパー・ありがとう", "japanese"],
     ["ko", "안녕하세요", "korean"],
     ["yue", "多謝", "cantonese"],
     ["zh-hant", "多謝", "traditional-chinese"],

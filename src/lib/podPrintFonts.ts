@@ -88,6 +88,13 @@ const collectionForCharacter = (character: string, cjk: PodFontCollection | null
     || (codePoint >= 0xfb50 && codePoint <= 0xfdff)
     || (codePoint >= 0xfe70 && codePoint <= 0xfefc)
   ) return "arabic";
+  // U+30FB (middle dot) and U+30FC (prolonged sound mark) are common-script
+  // characters. In a CJK text they must use the language-selected font subset;
+  // otherwise they would incorrectly fall through to the Latin/body font.
+  if (codePoint === 0x30fb || codePoint === 0x30fc) {
+    if (!cjk) throw new Error(`pod_font_cjk_language_required:U+${codePoint.toString(16).toUpperCase()}`);
+    return cjk;
+  }
   if (/\p{Script=Arabic}/u.test(character)) return "arabic";
   if (/\p{Script=Armenian}/u.test(character)) return "armenian";
   if (/\p{Script=Hebrew}/u.test(character)) return "hebrew";
