@@ -77,37 +77,34 @@ const cjkCollectionForItem = (item: PodPrintFontContext): PodFontCollection | nu
 };
 
 const collectionForCharacter = (character: string, cjk: PodFontCollection | null): PodFontCollection => {
-  // Arabic vowel marks (for example U+064B FATHATAN) have the Unicode
-  // Script=Inherited property. They must travel with the Arabic base glyphs
-  // instead of falling through to the Latin/body collection.
   const codePoint = character.codePointAt(0)!;
-  if (
-    (codePoint >= 0x0600 && codePoint <= 0x06ff)
-    || (codePoint >= 0x0750 && codePoint <= 0x077f)
-    || (codePoint >= 0x0870 && codePoint <= 0x08ff)
-    || (codePoint >= 0xfb50 && codePoint <= 0xfdff)
-    || (codePoint >= 0xfe70 && codePoint <= 0xfefc)
-  ) return "arabic";
-  // U+30FB (middle dot) and U+30FC (prolonged sound mark) are common-script
-  // characters. In a CJK text they must use the language-selected font subset;
-  // otherwise they would incorrectly fall through to the Latin/body font.
-  if (codePoint === 0x30fb || codePoint === 0x30fc) {
-    if (!cjk) throw new Error(`pod_font_cjk_language_required:U+${codePoint.toString(16).toUpperCase()}`);
-    return cjk;
-  }
-  if (/\p{Script=Arabic}/u.test(character)) return "arabic";
-  if (/\p{Script=Armenian}/u.test(character)) return "armenian";
-  if (/\p{Script=Hebrew}/u.test(character)) return "hebrew";
-  if (/\p{Script=Khmer}/u.test(character)) return "khmer";
-  if (/\p{Script=Lao}/u.test(character)) return "lao";
-  if (/\p{Script=Ethiopic}/u.test(character)) return "ethiopic";
-  if (/\p{Script=Thai}/u.test(character)) return "thai";
-  if (/\p{Script=Georgian}/u.test(character)) return "georgian";
-  if (/\p{Script=Tifinagh}/u.test(character)) return "tifinagh";
+  // Script_Extensions keeps inherited combining marks with their writing
+  // system (for example Arabic U+064B) instead of misclassifying them as body.
+  if (/\p{Script_Extensions=Arabic}/u.test(character)) return "arabic";
+  if (/\p{Script_Extensions=Armenian}/u.test(character)) return "armenian";
+  if (/\p{Script_Extensions=Hebrew}/u.test(character)) return "hebrew";
+  if (/\p{Script_Extensions=Khmer}/u.test(character)) return "khmer";
+  if (/\p{Script_Extensions=Lao}/u.test(character)) return "lao";
+  if (/\p{Script_Extensions=Ethiopic}/u.test(character)) return "ethiopic";
+  if (/\p{Script_Extensions=Thai}/u.test(character)) return "thai";
+  if (/\p{Script_Extensions=Georgian}/u.test(character)) return "georgian";
+  if (/\p{Script_Extensions=Tifinagh}/u.test(character)) return "tifinagh";
+
+  // CJK punctuation often has Script=Common. Route it through the language
+  // selected for this manifest item so Japanese, Chinese and Korean share no
+  // accidental dependency on the Latin/body font.
+  const isCjkPunctuation = (
+    (codePoint >= 0x3000 && codePoint <= 0x303f)
+    || (codePoint >= 0xfe10 && codePoint <= 0xfe1f)
+    || (codePoint >= 0xfe30 && codePoint <= 0xfe6f)
+    || (codePoint >= 0xff00 && codePoint <= 0xffef)
+  );
+  const hasCjkScriptExtension = /\p{Script_Extensions=Hiragana}|\p{Script_Extensions=Katakana}|\p{Script_Extensions=Han}|\p{Script_Extensions=Hangul}/u.test(character);
+  if (cjk && (isCjkPunctuation || hasCjkScriptExtension)) return cjk;
   if (/\p{Script=Hiragana}|\p{Script=Katakana}/u.test(character)) return "japanese";
   if (/\p{Script=Hangul}/u.test(character)) return "korean";
   if (/\p{Script=Han}/u.test(character)) {
-    if (!cjk) throw new Error(`pod_font_cjk_language_required:U+${character.codePointAt(0)!.toString(16).toUpperCase()}`);
+    if (!cjk) throw new Error(`pod_font_cjk_language_required:U+${codePoint.toString(16).toUpperCase()}`);
     return cjk;
   }
   return "body";
