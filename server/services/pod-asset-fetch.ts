@@ -7,12 +7,36 @@ const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const FETCH_TIMEOUT_MS = 15_000;
 const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 
-const allowedHosts = (environmentName: string) => new Set(
+const configuredHosts = (environmentName: string) => (
   (process.env[environmentName] || "")
     .split(",")
     .map((value) => value.trim().toLowerCase())
-    .filter(Boolean),
+    .filter(Boolean)
 );
+
+/**
+ * A root-relative design image is resolved against the public application
+ * origin below. That origin is an explicit deployment setting, rather than a
+ * user-supplied URL, so it must be trusted alongside the explicit asset-host
+ * allowlist. Keeping this derivation here prevents a valid Hosting asset from
+ * being rejected merely because the same host was not duplicated in two env
+ * variables.
+ */
+const trustedFrontendAssetHost = () => {
+  const value = process.env.FRONTEND_ORIGIN || process.env.PUBLIC_APP_URL || "https://podrozowka.web.app";
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password || url.port) return null;
+    return url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+  } catch {
+    return null;
+  }
+};
+
+const allowedHosts = (environmentName: string) => new Set([
+  ...configuredHosts(environmentName),
+  ...(environmentName === "POD_PRINT_ASSET_ALLOWED_HOSTS" ? [trustedFrontendAssetHost()] : []),
+].filter((value): value is string => Boolean(value)));
 
 /**
  * Card designs stored by Firebase Hosting may use a root-relative image URL.
@@ -23,7 +47,7 @@ export const resolvePodAssetUrl = (value: string) => {
   if (!value.startsWith("/")) return value;
   let frontendOrigin: URL;
   try {
-    frontendOrigin = new URL(process.env.FRONTEND_ORIGIN || "https://podrozowka.web.app");
+    frontendOrigin = new URL(process.env.FRONTEND_ORIGIN || process.env.PUBLIC_APP_URL || "https://podrozowka.web.app");
   } catch {
     throw new PodPrintAssetSetError("pod_asset_frontend_origin_invalid");
   }
