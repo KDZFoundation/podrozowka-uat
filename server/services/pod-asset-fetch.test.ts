@@ -5,6 +5,7 @@ import { fetchPodImageAsset, resolvePodAssetUrl, validatePodAssetUrl } from "./p
 const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
 const originalAllowedHosts = process.env.POD_PRINT_ASSET_ALLOWED_HOSTS;
 const originalFrontendOrigin = process.env.FRONTEND_ORIGIN;
+const originalPublicAppUrl = process.env.PUBLIC_APP_URL;
 
 describe("POD asset SSRF protection", () => {
   afterEach(() => {
@@ -12,6 +13,8 @@ describe("POD asset SSRF protection", () => {
     else process.env.POD_PRINT_ASSET_ALLOWED_HOSTS = originalAllowedHosts;
     if (originalFrontendOrigin === undefined) delete process.env.FRONTEND_ORIGIN;
     else process.env.FRONTEND_ORIGIN = originalFrontendOrigin;
+    if (originalPublicAppUrl === undefined) delete process.env.PUBLIC_APP_URL;
+    else process.env.PUBLIC_APP_URL = originalPublicAppUrl;
     vi.useRealTimers();
   });
 
@@ -69,5 +72,22 @@ describe("POD asset SSRF protection", () => {
     process.env.FRONTEND_ORIGIN = "https://podrozowka.web.app";
     expect(resolvePodAssetUrl("/card-designs/grecja/front.webp")).toBe("https://podrozowka.web.app/card-designs/grecja/front.webp");
     expect(() => resolvePodAssetUrl("//attacker.example/front.webp")).toThrow("pod_asset_relative_url_forbidden");
+  });
+
+  it("accepts the configured public app host in addition to the explicit asset allowlist", async () => {
+    process.env.FRONTEND_ORIGIN = "https://podrozowka.web.app";
+    process.env.POD_PRINT_ASSET_ALLOWED_HOSTS = "flagcdn.com";
+    const fetchMock = vi.fn(async () => new Response(Uint8Array.from(png).buffer, { headers: { "Content-Type": "image/png" } }));
+
+    await expect(fetchPodImageAsset(resolvePodAssetUrl("/card-designs/maroko/front.webp"), fetchMock as typeof fetch))
+      .resolves.toMatchObject({ finalUrl: "https://podrozowka.web.app/card-designs/maroko/front.webp" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("does not trust an unrelated host when the public app host is enabled", async () => {
+    process.env.FRONTEND_ORIGIN = "https://podrozowka.web.app";
+    process.env.POD_PRINT_ASSET_ALLOWED_HOSTS = "flagcdn.com";
+    await expect(validatePodAssetUrl("https://attacker.example/front.webp"))
+      .rejects.toMatchObject({ code: "pod_asset_url_host_forbidden" });
   });
 });
