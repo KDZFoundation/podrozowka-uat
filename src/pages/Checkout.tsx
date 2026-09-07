@@ -37,6 +37,7 @@ import PocztexPointForm from "@/components/checkout/PocztexPointForm";
 import OrderSteps from "@/components/checkout/OrderSteps";
 import { isValidNip, normalizeNip } from "@/lib/nip";
 import { backendApiUrl } from "@/lib/backendApi";
+import { MIN_ORDER_QUANTITY } from "@/lib/orderRules";
 
 const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
@@ -102,7 +103,7 @@ const Checkout = () => {
     (item) => !item.unavailable && (optionsByLineId.get(item.id)?.length ?? 0) > 0 && !item.primary_language,
   );
   const totalItemCount = items.reduce((s, i) => s + (i.unavailable ? 0 : i.quantity), 0);
-  const isBelowMin = totalItemCount < 10;
+  const isBelowMin = totalItemCount < MIN_ORDER_QUANTITY;
 
   const shippingCostGrosze = getShippingCostGrosze(paymentMethod);
   const totalGrosze = subtotalGrosze + shippingCostGrosze;
@@ -135,7 +136,7 @@ const Checkout = () => {
 
   const handleProceed = async () => {
     if (!shippingValid || isBelowMin) {
-      if (isBelowMin) toast.error("Minimalne zamówienie to 10 podróżówek.");
+      if (isBelowMin) toast.error(`Minimalne zamówienie to ${MIN_ORDER_QUANTITY} podróżówek.`);
       return;
     }
     if (hasMissingLanguageSelection) {
@@ -300,9 +301,9 @@ const Checkout = () => {
           <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-900 dark:text-amber-200 flex items-start gap-3 mb-6">
             <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-sm">Minimalne zamówienie to 10 podróżówek</p>
+              <p className="font-semibold text-sm">Minimalne zamówienie to {MIN_ORDER_QUANTITY} podróżówek</p>
               <p className="text-xs mt-0.5">
-                W Twoim koszyku znajduje się obecnie <strong>{totalItemCount} szt.</strong> Wróć do koszyka i dodaj jeszcze <strong>{10 - totalItemCount} szt.</strong>
+                W Twoim koszyku znajduje się obecnie <strong>{totalItemCount} szt.</strong> Wróć do koszyka i dodaj jeszcze <strong>{MIN_ORDER_QUANTITY - totalItemCount} szt.</strong>
               </p>
             </div>
           </div>

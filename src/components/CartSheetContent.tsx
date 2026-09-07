@@ -6,6 +6,7 @@ import { useCart } from "@/contexts/CartContext";
 import { useCartItems } from "@/hooks/useCartItems";
 import { useCartLanguageOptions } from "@/hooks/useCartLanguageOptions";
 import CartLanguagePicker from "@/components/cart/CartLanguagePicker";
+import { MIN_ORDER_QUANTITY } from "@/lib/orderRules";
 
 const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
@@ -19,7 +20,7 @@ const CartSheetContent = () => {
   const empty = savedCartItems.length === 0 && !isLoading;
 
   const totalCount = items.reduce((s, i) => s + (i.unavailable ? 0 : i.quantity), 0);
-  const isBelowMin = totalCount < 10;
+  const isBelowMin = totalCount < MIN_ORDER_QUANTITY;
 
   return (
     <>
@@ -140,7 +141,7 @@ const CartSheetContent = () => {
           <div className="w-full space-y-3">
             {isBelowMin && (
               <div className="p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-800 dark:text-amber-200">
-                ⚠️ Minimalne zamówienie: <strong>10 szt.</strong> (masz {totalCount} szt.)
+                ⚠️ Minimalne zamówienie: <strong>{MIN_ORDER_QUANTITY} szt.</strong> (masz {totalCount} szt.)
               </div>
             )}
             <div className="flex items-center justify-between">

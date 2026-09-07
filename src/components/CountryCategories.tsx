@@ -139,7 +139,7 @@ const CountryCategories = () => {
           >
             Przejdź do sklepu
           </Link>
-          <p className="mt-3 text-sm text-muted-foreground">Łącz różne wzory w jednym zamówieniu — minimum 10 sztuk.</p>
+          <p className="mt-3 text-sm text-muted-foreground">Łącz różne wzory w jednym zamówieniu — minimum 8 sztuk.</p>
         </div>
       </div>
     </section>

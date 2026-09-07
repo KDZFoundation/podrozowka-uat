@@ -156,7 +156,7 @@ const Dashboard = () => {
                   <Store className="h-5 w-5" />
                 </div>
                 <h2 className="font-display text-xl font-semibold">Wybierz nowe Podróżówki</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Łącz wzory dowolnie. Minimum 10 sztuk dotyczy całego zamówienia.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Łącz wzory dowolnie. Minimum 8 sztuk dotyczy całego zamówienia.</p>
                 <Button className="mt-4" onClick={() => navigate("/sklep")}>Przejdź do sklepu</Button>
               </div>
             </section>

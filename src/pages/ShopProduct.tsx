@@ -285,7 +285,7 @@ const ShopProduct = () => {
 
             <div className="mb-6">
               <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-800 dark:text-amber-200">
-                📌 <strong>Uwaga:</strong> możesz łączyć różne wzory. Minimalne zamówienie to <strong>10 podróżówek</strong> w całym koszyku.
+                📌 <strong>Uwaga:</strong> możesz łączyć różne wzory. Minimalne zamówienie to <strong>8 podróżówek</strong> w całym koszyku.
               </div>
             </div>
 

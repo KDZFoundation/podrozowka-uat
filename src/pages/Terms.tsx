@@ -53,7 +53,7 @@ const Terms = () => (
     <h2>5. Zamówienia</h2>
     <ol>
       <li>Klient wybiera wzory, liczbę sztuk, wariant językowy (jeżeli jest dostępny), dostawę i płatność.</li>
-      <li>Minimalna liczba Podróżówek w jednym zamówieniu wynosi <strong>10 sztuk</strong>. Poszczególne wzory mogą być kupowane w dowolnych ilościach.</li>
+      <li>Minimalna liczba Podróżówek w jednym zamówieniu wynosi <strong>8 sztuk</strong>. Poszczególne wzory mogą być kupowane w dowolnych ilościach.</li>
       <li>Przed płatnością Klient widzi podsumowanie produktów, liczby sztuk, ceny, dostawy i danych do realizacji.</li>
       <li>Umowa zostaje zawarta po przyjęciu zamówienia przez Sprzedawcę, potwierdzonym elektronicznie. Potwierdzenie jest wysyłane na adres e-mail przypisany do konta.</li>
     </ol>

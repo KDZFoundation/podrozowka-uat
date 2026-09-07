@@ -1,6 +1,7 @@
 // This file is automatically configured for multiple environments.
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
+import { MIN_ORDER_QUANTITY } from '@/lib/orderRules';
 
 // Hardcoded configurations for Dev, UAT and Prod
 const CONFIGS = {
@@ -292,8 +293,8 @@ async function handleFallbackInvoke(functionName: string, options?: InvokeOption
     const { items, pickup_point, shipping_address, shipping_cost_grosze, payment_method, invoice } = body;
 
     const totalQty = Array.isArray(items) ? items.reduce((sum: number, it: { quantity?: number }) => sum + (Number(it?.quantity) || 0), 0) : 0;
-    if (totalQty < 10) {
-      return { data: { error: "Minimalne zamówienie to 10 podróżówek" }, error: null };
+    if (totalQty < MIN_ORDER_QUANTITY) {
+      return { data: { error: `Minimalne zamówienie to ${MIN_ORDER_QUANTITY} podróżówek` }, error: null };
     }
 
     const { data: orderJson, error: rpcError } = await supabase.rpc("create_order", {

@@ -15,6 +15,7 @@ import { Loader2, Search, ArrowLeft, PackageCheck, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { PodProductionPanel } from "@/components/admin/PodProductionPanel";
+import { PodOrderPrintButton } from "@/components/admin/PodOrderPrintButton";
 
 interface OrderRow {
   id: string;
@@ -107,7 +108,7 @@ const AdminOrders = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [paymentFilter, setPaymentFilter] = useState("all");
+  const [paymentFilter, setPaymentFilter] = useState("paid");
   const [methodFilter, setMethodFilter] = useState("all");
   const [page, setPage] = useState(0);
   const [selectedOrder, setSelectedOrder] = useState<OrderDetail | null>(null);
@@ -453,6 +454,13 @@ const AdminOrders = () => {
               </table>
             </div>
 
+            <div className="bg-card rounded-xl p-6 shadow-soft space-y-3">
+              <h4 className="font-display font-semibold">PDF do druku</h4>
+              <p className="text-sm text-muted-foreground">Pobierz impozycję SRA3 tego zamówienia z indywidualnymi kodami QR i przekaż plik drukarni. Ponowne pobranie korzysta z zapisanego pliku.</p>
+              <PodOrderPrintButton orderId={selectedOrder.id} orderNumber={selectedOrder.order_number} disabled={selectedOrder.payment_status !== "paid" || selectedOrder.status === "cancelled"} />
+              {selectedOrder.payment_status !== "paid" && <p className="text-sm text-muted-foreground">PDF będzie dostępny po opłaceniu zamówienia.</p>}
+            </div>
+
             {/* POD units are generated after payment; there is no stock reservation. */}
             <div className="bg-card rounded-xl p-6 shadow-soft space-y-4">
               <h4 className="font-display font-semibold">Sztuki POD z indywidualnymi kodami QR</h4>
@@ -511,7 +519,10 @@ const AdminOrders = () => {
         </div>
       </div>
 
-      <PodProductionPanel />
+      <details className="rounded-xl border border-border">
+        <summary className="cursor-pointer p-4 text-sm font-medium">Zaawansowana kontrola produkcji i próby drukarskie</summary>
+        <PodProductionPanel />
+      </details>
 
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[200px]">
