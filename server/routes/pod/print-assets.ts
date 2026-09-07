@@ -175,6 +175,10 @@ export const createPodPrintAssetsHandler = (dependencies: PodPrintAssetsRouteDep
       const code = error instanceof PodPrintAssetSetError
         ? error.code
         : error instanceof Error ? error.message : "pod_asset_set_request_failed";
+      // The client deliberately receives only a stable error code. Emit that
+      // same non-sensitive code server-side so production failures can be
+      // diagnosed without logging URLs, tokens, or document contents.
+      console.error("pod_print_asset_set_request_failed", { code });
       return json({ error: code }, errorStatus(code));
     }
   },
