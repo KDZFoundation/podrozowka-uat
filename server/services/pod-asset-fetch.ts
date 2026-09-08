@@ -14,6 +14,36 @@ const configuredHosts = (environmentName: string) => (
     .filter(Boolean)
 );
 
+const configuredProjectStorageBuckets = () => new Set([
+  process.env.POD_PRINT_SOURCE_STORAGE_BUCKETS,
+  process.env.VITE_FIREBASE_STORAGE_BUCKET,
+  // This value is deliberately a compatibility default for the committed UAT
+  // Firebase app configuration. Deployments may replace it through the env.
+  "podrozowka.firebasestorage.app",
+]
+  .flatMap((value) => (value || "").split(","))
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean));
+
+/**
+ * Firebase Storage URLs are allowed only when their bucket belongs to this
+ * project. This is stricter than allowlisting all of firebasestorage.googleapis.com:
+ * a compromised design record cannot make the print worker fetch another
+ * project's object merely because it uses the same Google hostname.
+ */
+const isTrustedProjectStorageUrl = (url: URL, hostname: string) => {
+  if (hostname !== "firebasestorage.googleapis.com") return false;
+  const match = url.pathname.match(/^\/v0\/b\/([^/]+)\/o\//);
+  if (!match) return false;
+  let bucket = "";
+  try {
+    bucket = decodeURIComponent(match[1]).toLowerCase();
+  } catch {
+    return false;
+  }
+  return configuredProjectStorageBuckets().has(bucket);
+};
+
 /**
  * A root-relative design image is resolved against the public application
  * origin below. That origin is an explicit deployment setting, rather than a
@@ -110,7 +140,7 @@ export const validatePodAssetUrl = async (value: string, allowlistEnvironment = 
     throw new PodPrintAssetSetError("pod_asset_url_forbidden");
   }
   const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-  if (!allowedHosts(allowlistEnvironment).has(hostname)) {
+  if (!allowedHosts(allowlistEnvironment).has(hostname) && !isTrustedProjectStorageUrl(url, hostname)) {
     // Hostnames and the allowlist name are safe operational metadata. Logging
     // them makes an unexpected asset source diagnosable without exposing its
     // path, query parameters, credentials, or any document data.
