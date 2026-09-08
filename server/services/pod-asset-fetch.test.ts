@@ -6,6 +6,7 @@ const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 0]);
 const originalAllowedHosts = process.env.POD_PRINT_ASSET_ALLOWED_HOSTS;
 const originalFrontendOrigin = process.env.FRONTEND_ORIGIN;
 const originalPublicAppUrl = process.env.PUBLIC_APP_URL;
+const originalProjectStorageBuckets = process.env.POD_PRINT_SOURCE_STORAGE_BUCKETS;
 
 describe("POD asset SSRF protection", () => {
   afterEach(() => {
@@ -15,6 +16,8 @@ describe("POD asset SSRF protection", () => {
     else process.env.FRONTEND_ORIGIN = originalFrontendOrigin;
     if (originalPublicAppUrl === undefined) delete process.env.PUBLIC_APP_URL;
     else process.env.PUBLIC_APP_URL = originalPublicAppUrl;
+    if (originalProjectStorageBuckets === undefined) delete process.env.POD_PRINT_SOURCE_STORAGE_BUCKETS;
+    else process.env.POD_PRINT_SOURCE_STORAGE_BUCKETS = originalProjectStorageBuckets;
     vi.useRealTimers();
   });
 
@@ -95,6 +98,17 @@ describe("POD asset SSRF protection", () => {
     await expect(fetchPodImageAsset("https://podrozowka-uat-one.vercel.app/card-designs/maroko/front.webp", fetchMock as typeof fetch))
       .resolves.toMatchObject({ finalUrl: "https://podrozowka-uat-one.vercel.app/card-designs/maroko/front.webp" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts Firebase Storage only for the configured project bucket", async () => {
+    process.env.POD_PRINT_ASSET_ALLOWED_HOSTS = "flagcdn.com";
+    process.env.POD_PRINT_SOURCE_STORAGE_BUCKETS = "podrozowka.firebasestorage.app";
+    const fetchMock = vi.fn(async () => new Response(Uint8Array.from(png).buffer, { headers: { "Content-Type": "image/png" } }));
+
+    await expect(fetchPodImageAsset("https://firebasestorage.googleapis.com/v0/b/podrozowka.firebasestorage.app/o/card-designs%2Fmaroko.png?alt=media", fetchMock as typeof fetch))
+      .resolves.toMatchObject({ finalUrl: "https://firebasestorage.googleapis.com/v0/b/podrozowka.firebasestorage.app/o/card-designs%2Fmaroko.png?alt=media" });
+    await expect(validatePodAssetUrl("https://firebasestorage.googleapis.com/v0/b/unrelated-project.appspot.com/o/private.png"))
+      .rejects.toMatchObject({ code: "pod_asset_url_host_forbidden" });
   });
 
   it("does not trust an unrelated host when the public app host is enabled", async () => {

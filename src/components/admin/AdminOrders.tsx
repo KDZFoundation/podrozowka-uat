@@ -14,7 +14,6 @@ import {
 import { Loader2, Search, ArrowLeft, PackageCheck, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { PodProductionPanel } from "@/components/admin/PodProductionPanel";
 import { PodOrderPrintButton } from "@/components/admin/PodOrderPrintButton";
 
 interface OrderRow {
@@ -518,11 +517,6 @@ const AdminOrders = () => {
           <p className="mt-1 text-sm text-muted-foreground">Otwórz opłacone zamówienie, przygotuj plik SRA3 z kodami QR, a następnie przekaż je do drukarni.</p>
         </div>
       </div>
-
-      <details className="rounded-xl border border-border">
-        <summary className="cursor-pointer p-4 text-sm font-medium">Zaawansowana kontrola produkcji i próby drukarskie</summary>
-        <PodProductionPanel />
-      </details>
 
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[200px]">
