@@ -26,8 +26,12 @@ const post = async <T,>(token: string, body: Record<string, unknown>) => {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const result = await response.json().catch(() => null) as T & { error?: string } | null;
-  if (!response.ok || !result) throw new Error(result?.error || "pod_asset_set_request_failed");
+  const result = await response.json().catch(() => null) as T & { error?: string; diagnostic?: { hostname?: string } } | null;
+  if (!response.ok || !result) {
+    const code = result?.error || "pod_asset_set_request_failed";
+    const hostname = result?.diagnostic?.hostname;
+    throw new Error(hostname ? `${code}:${hostname}` : code);
+  }
   return result;
 };
 

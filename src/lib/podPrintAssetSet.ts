@@ -13,7 +13,10 @@ export type PodPrintAssetRole =
 export type PodPrintAssetSourceKind = "external_url" | "derived_flag_url" | "local_template" | "pinned_font_url" | "generated_qr";
 
 export class PodPrintAssetSetError extends Error {
-  constructor(public readonly code: string) {
+  constructor(
+    public readonly code: string,
+    public readonly diagnostics?: { hostname?: string },
+  ) {
     super(code);
     this.name = "PodPrintAssetSetError";
   }

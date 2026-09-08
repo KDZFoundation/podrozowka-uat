@@ -145,7 +145,7 @@ export const validatePodAssetUrl = async (value: string, allowlistEnvironment = 
     // them makes an unexpected asset source diagnosable without exposing its
     // path, query parameters, credentials, or any document data.
     console.warn("pod_print_asset_host_forbidden", { hostname, allowlistEnvironment });
-    throw new PodPrintAssetSetError("pod_asset_url_host_forbidden");
+    throw new PodPrintAssetSetError("pod_asset_url_host_forbidden", { hostname });
   }
   if (hostname === "localhost" || hostname === "metadata.google.internal") {
     throw new PodPrintAssetSetError("pod_asset_url_private_address");
