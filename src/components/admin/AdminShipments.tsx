@@ -32,6 +32,9 @@ interface ShipmentRow {
   inpost_status?: string | null;
   inpost_offer_id?: string | null;
   size?: string | null;
+  shipping_method?: string | null;
+  orlen_tracking_number?: string | null;
+  orlen_label_object?: string | null;
 }
 
 const STATUS_LABELS: Record<string, { label: string; className: string }> = {
@@ -66,6 +69,7 @@ const AdminShipments = () => {
   const [isGeneratingInpost, setIsGeneratingInpost] = useState(false);
   const [isBuyingInpost, setIsBuyingInpost] = useState(false);
   const [isDownloadingLabel, setIsDownloadingLabel] = useState(false);
+  const [isGeneratingOrlen, setIsGeneratingOrlen] = useState(false);
 
   const fetchShipments = useCallback(async () => {
     setIsLoading(true);
@@ -94,6 +98,9 @@ const AdminShipments = () => {
           inpost_status: typeof data.inpost_status === "string" ? data.inpost_status : null,
           inpost_offer_id: typeof data.inpost_offer_id === "string" ? data.inpost_offer_id : null,
           size: typeof data.size === "string" ? data.size : null,
+          shipping_method: typeof data.shipping_method === "string" ? data.shipping_method : order?.shipping_method || null,
+          orlen_tracking_number: typeof data.orlen_tracking_number === "string" ? data.orlen_tracking_number : null,
+          orlen_label_object: typeof data.orlen_label_object === "string" ? data.orlen_label_object : null,
         };
       }).filter((shipment) => statusFilter === "all" || shipment.status === statusFilter)
         .sort((left, right) => right.created_at.localeCompare(left.created_at));
@@ -244,6 +251,51 @@ const AdminShipments = () => {
     }
   };
 
+  const createOrlenShipment = async () => {
+    if (!selectedShipment) return;
+    setIsGeneratingOrlen(true);
+    try {
+      const response = await fetch(backendApiUrl("/api/orlen/create-shipment"), {
+        method: "POST",
+        headers: await adminApiHeaders(true),
+        body: JSON.stringify({ shipment_id: selectedShipment.id, size: selectedParcelSize }),
+      });
+      const result = await response.json().catch(() => null) as { success?: boolean; error?: string; tracking_number?: string; label_available?: boolean } | null;
+      if (!response.ok || !result?.success) throw new Error(result?.error || "orlen_paczka_shipment_failed");
+      const tracking = result.tracking_number || selectedShipment.orlen_tracking_number || "";
+      setSelectedShipment({ ...selectedShipment, carrier: "ORLEN Paczka", tracking_number: tracking, orlen_tracking_number: tracking, orlen_label_object: result.label_available ? "stored" : null });
+      toast({ title: result.label_available ? "Przesyłka ORLEN Paczka utworzona — etykieta gotowa" : "Przesyłka ORLEN Paczka już istnieje" });
+      fetchShipments();
+    } catch (error) {
+      toast({ title: "Nie udało się utworzyć przesyłki ORLEN", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setIsGeneratingOrlen(false);
+    }
+  };
+
+  const downloadOrlenLabel = async () => {
+    if (!selectedShipment) return;
+    setIsDownloadingLabel(true);
+    try {
+      const response = await fetch(backendApiUrl(`/api/orlen/label/${encodeURIComponent(selectedShipment.id)}`), { headers: await adminApiHeaders() });
+      if (!response.ok) {
+        const result = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(result?.error || "orlen_paczka_label_download_failed");
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `orlen-paczka-${selectedShipment.orlen_tracking_number || selectedShipment.id}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "Pobrano etykietę ORLEN Paczka" });
+    } catch (error) {
+      toast({ title: "Nie udało się pobrać etykiety", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setIsDownloadingLabel(false);
+    }
+  };
+
   const updateStatus = async (shipmentId: string, status: string) => {
     try {
       const patch: Record<string, unknown> = { status };
@@ -338,7 +390,25 @@ const AdminShipments = () => {
             </div>
           </div>
 
+          {selectedShipment.shipping_method === "orlen_paczka" ? (
           <div className="border-t border-border pt-4 mt-2">
+            <h4 className="font-semibold text-sm mb-3 text-foreground flex items-center gap-2">
+              <Truck className="w-4 h-4 text-primary" /> ORLEN Paczka
+            </h4>
+            <p className="text-sm text-muted-foreground mb-3">Utworzenie przesyłki awizuje ją w ORLEN Paczce i zapisuje zwróconą etykietę PDF. Kolejne pobrania nie tworzą nowej przesyłki.</p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={createOrlenShipment} disabled={isGeneratingOrlen || Boolean(selectedShipment.orlen_tracking_number)} className="gap-2">
+                {isGeneratingOrlen ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
+                {selectedShipment.orlen_tracking_number ? "Przesyłka utworzona" : "Utwórz przesyłkę ORLEN"}
+              </Button>
+              {selectedShipment.orlen_label_object && <Button variant="outline" onClick={downloadOrlenLabel} disabled={isDownloadingLabel} className="gap-2">
+                {isDownloadingLabel ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                Pobierz etykietę PDF
+              </Button>}
+            </div>
+            {selectedShipment.orlen_tracking_number && <p className="text-xs text-muted-foreground mt-3">Numer ORLEN Paczka: <span className="font-mono text-foreground">{selectedShipment.orlen_tracking_number}</span></p>}
+          </div>
+          ) : <div className="border-t border-border pt-4 mt-2">
             <h4 className="font-semibold text-sm mb-3 text-foreground flex items-center gap-2">
               <Truck className="w-4 h-4 text-primary" /> Generowanie przesyłki InPost ShipX (Sandbox)
             </h4>
@@ -388,6 +458,7 @@ const AdminShipments = () => {
               </div>
             )}
           </div>
+          }
         </div>
       </div>
     );

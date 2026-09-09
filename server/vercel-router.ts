@@ -7,6 +7,8 @@ import inpostGeowidgetConfig from "./routes/inpost/geowidget-config";
 import inpostSettings from "./routes/inpost/settings";
 import inpostWebhook from "./routes/inpost/webhook";
 import inpostShipmentLabel from "./routes/inpost/label/shipment-label";
+import createOrlenShipment from "./routes/orlen/create-shipment";
+import orlenShipmentLabel from "./routes/orlen/label/shipment-label";
 import orlenWidgetConfig from "./routes/orlen/widget-config";
 import createHotpayPayment from "./routes/payments/create-hotpay";
 import hotpayWebhook from "./routes/payments/hotpay-webhook";
@@ -44,6 +46,7 @@ const routes: Record<string, ApiHandler> = {
   "inpost/geowidget-config": inpostGeowidgetConfig,
   "inpost/settings": inpostSettings,
   "inpost/webhook": inpostWebhook,
+  "orlen/create-shipment": createOrlenShipment,
   "orlen/widget-config": orlenWidgetConfig,
   "payments/create-hotpay": createHotpayPayment,
   "payments/hotpay-webhook": hotpayWebhook,
@@ -120,7 +123,7 @@ export default async function handler(nodeRequest: {
   });
 
   const path = routePath(request);
-  const apiHandler = path.startsWith("inpost/label/") ? inpostShipmentLabel : routes[path];
+  const apiHandler = path.startsWith("inpost/label/") ? inpostShipmentLabel : path.startsWith("orlen/label/") ? orlenShipmentLabel : routes[path];
   if (!apiHandler) {
     const target = nodeResponse.status(404);
     target.setHeader("Content-Type", "application/json");

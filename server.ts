@@ -59,6 +59,7 @@ async function startServer() {
         headers: {
           "Content-Type": req.headers["content-type"] || "application/json",
           ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
+          ...(req.headers.origin ? { Origin: req.headers.origin } : {}),
         },
         body: ["POST", "PUT", "PATCH"].includes(req.method) ? JSON.stringify(req.body || {}) : undefined,
       });

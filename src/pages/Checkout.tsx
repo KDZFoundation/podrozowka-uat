@@ -118,7 +118,11 @@ const Checkout = () => {
     pickupPoint.city.trim() &&
     (shippingMethod !== "pocztex_point" || pickupPoint.code?.trim()),
   );
-  const shippingValid = pickupProvider ? pickupPointValid : isCourierAddressValid(courierAddress);
+  const orlenRecipientValid = shippingMethod !== "orlen_paczka" || (
+    courierAddress.name.trim().length > 0 &&
+    /^[+0-9]{9,15}$/.test(courierAddress.phone.replace(/[^0-9+]/g, ""))
+  );
+  const shippingValid = pickupProvider ? pickupPointValid && orlenRecipientValid : isCourierAddressValid(courierAddress);
   const canProceed =
     shippingValid &&
     !hasUnavailable &&
@@ -165,7 +169,7 @@ const Checkout = () => {
               }
             : null,
         shipping_address:
-          !isPickupShippingMethod(shippingMethod)
+          !isPickupShippingMethod(shippingMethod) || shippingMethod === "orlen_paczka"
             ? {
                 name: courierAddress.name.trim(),
                 street: courierAddress.street.trim(),
@@ -354,6 +358,19 @@ const Checkout = () => {
                 )
               ) : (
                 <CourierAddressForm value={courierAddress} onChange={setCourierAddress} />
+              )}
+              {shippingMethod === "orlen_paczka" && (
+                <div className="grid gap-4 border-t border-border pt-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="orlen-recipient-name">Imię i nazwisko odbiorcy *</Label>
+                    <Input id="orlen-recipient-name" value={courierAddress.name} onChange={(event) => setCourierAddress((current) => ({ ...current, name: event.target.value }))} autoComplete="name" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="orlen-recipient-phone">Telefon odbiorcy *</Label>
+                    <Input id="orlen-recipient-phone" value={courierAddress.phone} onChange={(event) => setCourierAddress((current) => ({ ...current, phone: event.target.value }))} inputMode="tel" autoComplete="tel" placeholder="np. 500 000 000" />
+                  </div>
+                  <p className="text-xs text-muted-foreground md:col-span-2">ORLEN Paczka wymaga danych kontaktowych odbiorcy do nadania przesyłki. E-mail pobieramy z konta, na którym składane jest zamówienie.</p>
+                </div>
               )}
             </div>
 
