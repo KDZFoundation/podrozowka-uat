@@ -108,12 +108,19 @@ export const createOrlenPaczkaLabel = async (parcel: OrlenPaczkaParcel): Promise
     tag("ReturnDestinationCode", ""), tag("ReturnEMail", ""), tag("ReturnFirstName", ""), tag("ReturnLastName", ""), tag("ReturnCompanyName", ""), tag("ReturnStreetName", ""), tag("ReturnBuildingNumber", ""), tag("ReturnFlatNumber", ""), tag("ReturnCity", ""), tag("ReturnPostCode", ""), tag("ReturnPhoneNumber", ""), tag("ReturnPack", ""), tag("TransferDescription", ""), tag("PrintAdress", "1"), tag("ReturnAvailable", ""), tag("ReturnQuantity", ""), tag("PrintType", "1"),
   ].join("");
   const soap = `<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GenerateLabelBusinessPack xmlns="${namespace}">${requestBody}</GenerateLabelBusinessPack></soap:Body></soap:Envelope>`;
-  const response = await fetch(endpoint(), {
-    method: "POST",
-    headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: `"${namespace}/GenerateLabelBusinessPack"` },
-    body: soap,
-    signal: AbortSignal.timeout(20_000),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  let response: Response;
+  try {
+    response = await fetch(endpoint(), {
+      method: "POST",
+      headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: `"${namespace}/GenerateLabelBusinessPack"` },
+      body: soap,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   const payload = await response.text();
   if (!response.ok) throw new Error(`orlen_paczka_http_${response.status}`);
   responseError(payload);
