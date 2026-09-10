@@ -3,14 +3,21 @@ import { describe, expect, it, vi } from "vitest";
 import ShippingMethodPicker from "@/components/checkout/ShippingMethodPicker";
 
 describe("ShippingMethodPicker", () => {
-  it("always presents the five explicit delivery methods", () => {
-    render(<ShippingMethodPicker value="inpost_locker" onChange={vi.fn()} />);
+  it("groups delivery methods under their carriers", () => {
+    const onChange = vi.fn();
+    const { rerender } = render(<ShippingMethodPicker value="inpost_locker" onChange={onChange} />);
 
-    expect(screen.getByLabelText(/InPost Paczkomat 24\/7/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^InPost/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^ORLEN Paczka/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Pocztex/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Paczkomat InPost/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/InPost Kurier/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/ORLEN Paczka/i)).toBeInTheDocument();
+
+    rerender(<ShippingMethodPicker value="orlen_paczka" onChange={onChange} />);
+    expect(screen.getByLabelText(/Punkt ORLEN Paczka/i)).toBeInTheDocument();
+
+    rerender(<ShippingMethodPicker value="pocztex_point" onChange={onChange} />);
     expect(screen.getByLabelText(/Pocztex Kurier/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/Pocztex Punkt/i)).toBeInTheDocument();
-    expect(screen.getAllByRole("radio")).toHaveLength(5);
   });
 });
