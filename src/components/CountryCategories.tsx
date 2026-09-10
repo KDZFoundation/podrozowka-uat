@@ -12,8 +12,6 @@ interface CountryCategory {
   sold: number;
 }
 
-const DEFAULT_FEATURED_COUNTRIES = ["DE", "IT", "ES", "GB", "FR", "UA", "TH", "IN", "TR", "US", "CZ", "HR", "GR", "HU", "CN", "NO"];
-
 const CountryCategories = () => {
   const [categories, setCategories] = useState<CountryCategory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -42,10 +40,9 @@ const CountryCategories = () => {
             thankYouByCountry.set(template.country_id, template.front_thank_you_text);
           }
         });
-        const featured = new Set(DEFAULT_FEATURED_COUNTRIES);
         setCategories(
           fireCountries
-            .filter((country) => featured.has(country.iso2 || "") || (designCounts.get(country.id) || 0) > 0)
+            .filter((country) => country.is_active !== false && (designCounts.get(country.id) || 0) > 0)
             .map((country) => ({
               id: country.id,
               iso2: country.iso2 || country.id,

@@ -8,35 +8,40 @@ import { backendApiUrl } from "@/lib/backendApi";
 import { runtimeConfigService } from "@/integrations/firebase/services/runtimeConfigService";
 
 type SecretStatus = { name: string; set: boolean; length: number; preview: string };
-type GatewayStatus = { secrets: SecretStatus[]; all_secrets_set: boolean };
+type GatewayStatus = { secrets?: SecretStatus[]; all_secrets_set?: boolean };
 type StatusResponse = {
   hotpay: GatewayStatus;
 };
 
-const SecretList = ({ title, status }: { title: string; status: GatewayStatus }) => (
-  <div className="bg-card rounded-xl p-6 shadow-soft border border-border">
-    <div className="mb-4 flex items-center justify-between gap-4">
-      <h3 className="font-display text-lg font-semibold text-foreground">{title}</h3>
-      <span className={`text-xs font-semibold px-2 py-1 rounded flex items-center gap-1 ${status.all_secrets_set ? "bg-accent/10 text-accent" : "bg-destructive/10 text-destructive"}`}>
-        {status.all_secrets_set ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-        {status.all_secrets_set ? "Komplet" : "Brakuje wartości"}
-      </span>
-    </div>
-    <div className="space-y-2">
-      {status.secrets.map((secret) => (
-        <div key={secret.name} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-background border border-border">
-          <div className="flex items-center gap-3 min-w-0">
-            {secret.set ? <CheckCircle2 className="w-4 h-4 text-accent shrink-0" /> : <XCircle className="w-4 h-4 text-destructive shrink-0" />}
-            <span className="font-mono text-sm text-foreground truncate">{secret.name}</span>
+const SecretList = ({ title, status }: { title: string; status: GatewayStatus }) => {
+  const secrets = Array.isArray(status.secrets) ? status.secrets : [];
+  const allSecretsSet = status.all_secrets_set === true;
+
+  return (
+    <div className="bg-card rounded-xl p-6 shadow-soft border border-border">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <h3 className="font-display text-lg font-semibold text-foreground">{title}</h3>
+        <span className={`text-xs font-semibold px-2 py-1 rounded flex items-center gap-1 ${allSecretsSet ? "bg-accent/10 text-accent" : "bg-destructive/10 text-destructive"}`}>
+          {allSecretsSet ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+          {allSecretsSet ? "Komplet" : "Brakuje wartości"}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {secrets.map((secret) => (
+          <div key={secret.name} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-background border border-border">
+            <div className="flex items-center gap-3 min-w-0">
+              {secret.set ? <CheckCircle2 className="w-4 h-4 text-accent shrink-0" /> : <XCircle className="w-4 h-4 text-destructive shrink-0" />}
+              <span className="font-mono text-sm text-foreground truncate">{secret.name}</span>
+            </div>
+            <span className="text-xs text-muted-foreground font-mono shrink-0">
+              {secret.set ? <>{secret.preview || "•••"} <span className="opacity-70">({secret.length} zn.)</span></> : <span className="text-destructive">nie ustawiono</span>}
+            </span>
           </div>
-          <span className="text-xs text-muted-foreground font-mono shrink-0">
-            {secret.set ? <>{secret.preview || "•••"} <span className="opacity-70">({secret.length} zn.)</span></> : <span className="text-destructive">nie ustawiono</span>}
-          </span>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const AdminPaymentSettings = () => {
   const [data, setData] = useState<StatusResponse | null>(null);

@@ -38,6 +38,7 @@ import OrderSteps from "@/components/checkout/OrderSteps";
 import { isValidNip, normalizeNip } from "@/lib/nip";
 import { backendApiUrl } from "@/lib/backendApi";
 import { MIN_ORDER_QUANTITY } from "@/lib/orderRules";
+import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
 const formatPln = (grosze: number) =>
   (grosze / 100).toLocaleString("pl-PL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " zł";
@@ -48,6 +49,7 @@ const Checkout = () => {
   const { pickupPoint, setPickupPoint, clearPickupPoint } = useCheckout();
   const { items, subtotalGrosze, isLoading } = useCartItems();
   const { optionsByLineId, isLoading: areLanguageOptionsLoading } = useCartLanguageOptions(items);
+  const { flags: featureFlags, isLoading: areFeatureFlagsLoading } = useFeatureFlags();
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const handleSelectPickupPoint = useCallback(
@@ -70,6 +72,12 @@ const Checkout = () => {
   const [companyAddress, setCompanyAddress] = useState("");
   const [invoiceTouched, setInvoiceTouched] = useState({ name: false, nip: false, addr: false });
 
+  const enabledShippingMethods = useMemo<ShippingMethod[]>(() => [
+    ...(featureFlags.inpost_shipping_enabled ? ["inpost_locker", "inpost_courier"] as ShippingMethod[] : []),
+    ...(featureFlags.orlen_paczka_enabled ? ["orlen_paczka"] as ShippingMethod[] : []),
+    ...(featureFlags.pocztex_shipping_enabled ? ["pocztex_point", "pocztex_courier"] as ShippingMethod[] : []),
+  ], [featureFlags.inpost_shipping_enabled, featureFlags.orlen_paczka_enabled, featureFlags.pocztex_shipping_enabled]);
+
   const invoiceErrors = useMemo(() => {
     const e: { name?: string; nip?: string; addr?: string } = {};
     if (invoiceRequested) {
@@ -87,6 +95,14 @@ const Checkout = () => {
   useEffect(() => {
     document.title = "Zamówienie – Podróżówka";
   }, []);
+
+  useEffect(() => {
+    if (areFeatureFlagsLoading || enabledShippingMethods.length === 0 || enabledShippingMethods.includes(shippingMethod)) return;
+    const nextMethod = enabledShippingMethods[0];
+    if (pickupPoint?.provider !== pickupProviderForMethod(nextMethod)) clearPickupPoint();
+    setShippingMethod(nextMethod);
+    setDialogOpen(false);
+  }, [areFeatureFlagsLoading, clearPickupPoint, enabledShippingMethods, pickupPoint?.provider, shippingMethod]);
 
   if (authLoading) {
     return (
@@ -128,6 +144,8 @@ const Checkout = () => {
     !hasUnavailable &&
     !isLoading &&
     !areLanguageOptionsLoading &&
+    !areFeatureFlagsLoading &&
+    enabledShippingMethods.length > 0 &&
     !hasMissingLanguageSelection &&
     invoiceValid &&
     !isBelowMin;
@@ -136,6 +154,54 @@ const Checkout = () => {
     if (pickupPoint?.provider !== pickupProviderForMethod(method)) clearPickupPoint();
     setShippingMethod(method);
     setDialogOpen(false);
+  };
+
+  const renderShippingOptionDetails = (method: ShippingMethod) => {
+    if (method === "pocztex_point") {
+      return <PocztexPointForm value={pickupPoint} onChange={setPickupPoint} />;
+    }
+
+    if (method === "inpost_locker" || method === "orlen_paczka") {
+      const isOrlen = method === "orlen_paczka";
+      const matchingPoint = pickupPoint?.provider === pickupProviderForMethod(method) ? pickupPoint : null;
+
+      return (
+        <div className="space-y-4">
+          {matchingPoint ? (
+            <div className="flex items-start gap-3 rounded-xl border border-border bg-background p-4">
+              <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-foreground">{matchingPoint.name}</p>
+                {matchingPoint.address && <p className="text-sm text-muted-foreground">{matchingPoint.address}</p>}
+                {matchingPoint.city && <p className="text-sm text-muted-foreground">{matchingPoint.city}</p>}
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>Zmień punkt</Button>
+            </div>
+          ) : (
+            <Button className="w-full sm:w-auto" onClick={() => setDialogOpen(true)}>
+              <MapPin className="mr-2 h-4 w-4" />
+              {isOrlen ? "Wybierz punkt ORLEN Paczka" : "Wybierz Paczkomat InPost"}
+            </Button>
+          )}
+
+          {isOrlen && (
+            <div className="grid gap-4 border-t border-border pt-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="orlen-recipient-name">Imię i nazwisko odbiorcy *</Label>
+                <Input id="orlen-recipient-name" value={courierAddress.name} onChange={(event) => setCourierAddress((current) => ({ ...current, name: event.target.value }))} autoComplete="name" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="orlen-recipient-phone">Telefon odbiorcy *</Label>
+                <Input id="orlen-recipient-phone" value={courierAddress.phone} onChange={(event) => setCourierAddress((current) => ({ ...current, phone: event.target.value }))} inputMode="tel" autoComplete="tel" placeholder="np. 500 000 000" />
+              </div>
+              <p className="text-xs text-muted-foreground md:col-span-2">ORLEN Paczka wymaga wyłącznie danych kontaktowych odbiorcy. E-mail pobieramy z konta.</p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return <CourierAddressForm value={courierAddress} onChange={setCourierAddress} />;
   };
 
   const handleProceed = async () => {
@@ -329,47 +395,20 @@ const Checkout = () => {
                 </div>
               </div>
 
-              <ShippingMethodPicker value={shippingMethod} onChange={handleShippingMethodChange} />
-
-              {shippingMethod === "pocztex_point" ? (
-                <PocztexPointForm value={pickupPoint} onChange={setPickupPoint} />
-              ) : shippingMethod === "inpost_locker" || shippingMethod === "orlen_paczka" ? (
-                pickupPoint ? (
-                  <div className="border border-border rounded-xl p-4 flex items-start gap-3">
-                    <MapPin className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-foreground">{pickupPoint.name}</p>
-                      {pickupPoint.address && (
-                        <p className="text-sm text-muted-foreground">{pickupPoint.address}</p>
-                      )}
-                      {pickupPoint.city && (
-                        <p className="text-sm text-muted-foreground">{pickupPoint.city}</p>
-                      )}
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => setDialogOpen(true)}>
-                      Zmień punkt
-                    </Button>
-                  </div>
-                ) : (
-                  <Button className="w-full sm:w-auto" onClick={() => setDialogOpen(true)}>
-                    <MapPin className="w-4 h-4 mr-2" />
-                    {shippingMethod === "orlen_paczka" ? "Wybierz punkt ORLEN Paczka" : "Wybierz Paczkomat InPost"}
-                  </Button>
-                )
+              {areFeatureFlagsLoading ? (
+                <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Ładowanie dostępnych metod dostawy…
+                </div>
+              ) : enabledShippingMethods.length > 0 ? (
+                <ShippingMethodPicker
+                  value={shippingMethod}
+                  onChange={handleShippingMethodChange}
+                  enabledMethods={enabledShippingMethods}
+                  renderOptionDetails={renderShippingOptionDetails}
+                />
               ) : (
-                <CourierAddressForm value={courierAddress} onChange={setCourierAddress} />
-              )}
-              {shippingMethod === "orlen_paczka" && (
-                <div className="grid gap-4 border-t border-border pt-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="orlen-recipient-name">Imię i nazwisko odbiorcy *</Label>
-                    <Input id="orlen-recipient-name" value={courierAddress.name} onChange={(event) => setCourierAddress((current) => ({ ...current, name: event.target.value }))} autoComplete="name" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="orlen-recipient-phone">Telefon odbiorcy *</Label>
-                    <Input id="orlen-recipient-phone" value={courierAddress.phone} onChange={(event) => setCourierAddress((current) => ({ ...current, phone: event.target.value }))} inputMode="tel" autoComplete="tel" placeholder="np. 500 000 000" />
-                  </div>
-                  <p className="text-xs text-muted-foreground md:col-span-2">ORLEN Paczka wymaga danych kontaktowych odbiorcy do nadania przesyłki. E-mail pobieramy z konta, na którym składane jest zamówienie.</p>
+                <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+                  Żadna metoda dostawy nie jest obecnie dostępna. Skontaktuj się z obsługą sklepu.
                 </div>
               )}
             </div>

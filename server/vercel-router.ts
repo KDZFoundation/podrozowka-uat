@@ -15,6 +15,7 @@ import hotpayWebhook from "./routes/payments/hotpay-webhook";
 import paymentStatus from "./routes/payments/status";
 import publicCommunity from "./routes/public/community";
 import publicDistribution from "./routes/public/distribution";
+import publicRanking from "./routes/public/ranking";
 import publicStats from "./routes/public/stats";
 import podPrintManifest from "./routes/pod/print-manifest";
 import podPrintArtifact from "./routes/pod/print-artifact";
@@ -53,6 +54,7 @@ const routes: Record<string, ApiHandler> = {
   "payments/status": paymentStatus,
   "public/community": publicCommunity,
   "public/distribution": publicDistribution,
+  "public/ranking": publicRanking,
   "public/stats": publicStats,
   "pod/print-manifest": podPrintManifest,
   "pod/print-artifact": podPrintArtifact,
