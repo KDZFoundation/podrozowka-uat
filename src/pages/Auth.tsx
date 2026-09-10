@@ -13,6 +13,7 @@ import {
   createUserWithEmailAndPassword,
   getRedirectResult,
   GoogleAuthProvider,
+  OAuthProvider,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
@@ -74,11 +75,12 @@ const Auth = ({ mode = "login" }: AuthProps) => {
     const checkRedirect = async () => {
       try {
         const result = await getRedirectResult(auth);
-        if (!isSubscribed || !result?.user?.email) return;
+        if (!isSubscribed || !result?.user) return;
 
-        const email = result.user.email;
+        const email = result.user.email || "Podróżniku";
+        const providerName = result.providerId === "apple.com" ? "Apple" : "Google";
         toast({
-          title: "Zalogowano przez Google!",
+          title: `Zalogowano przez ${providerName}!`,
           description: `Witaj, ${result.user.displayName || email}!`,
         });
         await doRedirect(result.user.uid);
@@ -98,23 +100,6 @@ const Auth = ({ mode = "login" }: AuthProps) => {
       doRedirect(user.id);
     }
   }, [user, isForgot, doRedirect]);
-
-  const handleQuickStudioLogin = async (targetEmail: string, role: 'admin' | 'traveler' = 'traveler') => {
-    setIsLoading(true);
-    try {
-      // Placeholder retained for the Apple button. Apple sign-in itself is not
-      // configured yet, so it must never create an artificial local session.
-      throw new Error(`Logowanie ${targetEmail} nie jest jeszcze skonfigurowane.`);
-    } catch (e) {
-      toast({
-        title: "Błąd logowania",
-        description: String(e),
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleGoogleLogin = async () => {
     setIsOAuthLoading("google");
@@ -187,6 +172,46 @@ const Auth = ({ mode = "login" }: AuthProps) => {
           variant: "destructive",
         });
       }
+    } finally {
+      setIsOAuthLoading(null);
+    }
+  };
+
+  const handleAppleLogin = async () => {
+    setIsOAuthLoading("apple");
+    try {
+      const provider = new OAuthProvider("apple.com");
+      provider.addScope("email");
+      provider.addScope("name");
+
+      try {
+        const result = await signInWithPopup(auth, provider);
+        toast({
+          title: "Zalogowano przez Apple!",
+          description: `Witaj, ${result.user.displayName || result.user.email || "Podróżniku"}!`,
+        });
+        await doRedirect(result.user.uid);
+      } catch (popupErr: unknown) {
+        const error = popupErr as { code?: string };
+        if (error.code === "auth/popup-closed-by-user" || error.code === "auth/cancelled-popup-request") {
+          toast({ title: "Anulowano logowanie Apple", description: "Okno logowania zostało zamknięte." });
+          return;
+        }
+        if (error.code === "auth/popup-blocked") {
+          await signInWithRedirect(auth, provider);
+          return;
+        }
+        throw popupErr;
+      }
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
+      console.error("Apple sign-in error:", error);
+      const description = error.code === "auth/operation-not-allowed"
+        ? "Logowanie Apple nie jest jeszcze włączone w konfiguracji UAT."
+        : error.code === "auth/unauthorized-domain"
+          ? "Ta domena nie została jeszcze dodana do autoryzowanych domen Firebase."
+          : "Nie udało się zalogować przez Apple. Spróbuj ponownie lub użyj e-maila i hasła.";
+      toast({ title: "Błąd logowania Apple", description, variant: "destructive" });
     } finally {
       setIsOAuthLoading(null);
     }
@@ -533,14 +558,7 @@ const Auth = ({ mode = "login" }: AuthProps) => {
                       variant="outline"
                       className="w-full"
                       disabled={isLoading || !!isOAuthLoading}
-                      onClick={async () => {
-                        setIsOAuthLoading("apple");
-                        try {
-                          await handleQuickStudioLogin("user.apple@podrozowka.pl", "traveler");
-                        } finally {
-                          setIsOAuthLoading(null);
-                        }
-                      }}
+                      onClick={handleAppleLogin}
                     >
                       {isOAuthLoading === "apple" ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : (
                         <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>
