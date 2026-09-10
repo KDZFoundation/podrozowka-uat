@@ -59,6 +59,7 @@ async function startServer() {
         headers: {
           "Content-Type": req.headers["content-type"] || "application/json",
           ...(req.headers.authorization ? { Authorization: req.headers.authorization } : {}),
+          ...(req.headers.origin ? { Origin: req.headers.origin } : {}),
         },
         body: ["POST", "PUT", "PATCH"].includes(req.method) ? JSON.stringify(req.body || {}) : undefined,
       });
@@ -77,9 +78,13 @@ async function startServer() {
     }
   };
 
-  app.all("/api/public/stats", forwardApiHandler(publicStatsHandler));
-  app.all("/api/public/community", forwardApiHandler(publicCommunityHandler));
-  app.all("/api/public/distribution", forwardApiHandler(publicDistributionHandler));
+  // Public community data is produced by the UAT service account. Local
+  // Application Default Credentials may expire, which previously made the
+  // public page show empty statistics despite valid UAT data.
+  app.all("/api/public/stats", forwardUatApiHandler);
+  app.all("/api/public/community", forwardUatApiHandler);
+  app.all("/api/public/distribution", forwardUatApiHandler);
+  app.all("/api/public/ranking", forwardUatApiHandler);
   app.all("/api/orlen/widget-config", forwardApiHandler(orlenWidgetConfigHandler));
   app.all("/api/pod/print-manifest", forwardUatApiHandler);
   app.all("/api/pod/print-artifact", forwardUatApiHandler);
@@ -89,6 +94,15 @@ async function startServer() {
   app.all("/api/pod/production-proof", forwardUatApiHandler);
   app.all("/api/pod/production-readiness", forwardUatApiHandler);
   app.all("/api/pod/production-release", forwardUatApiHandler);
+
+  // Carrier credentials are deliberately held only by UAT/Vercel.  Forward
+  // local admin requests there as well, otherwise the local panel would look
+  // for a second, empty copy of the ShipX secrets on the developer machine.
+  app.all("/api/inpost/geowidget-config", forwardUatApiHandler);
+  app.all("/api/inpost/settings", forwardUatApiHandler);
+  app.all("/api/inpost/create-shipment", forwardUatApiHandler);
+  app.all("/api/inpost/buy-shipment", forwardUatApiHandler);
+  app.all("/api/inpost/label/:shipmentId", forwardUatApiHandler);
 
   const requireLocalAdmin = async (req: express.Request, res: express.Response) => {
     const denied = await requireAdmin(new Request(`http://localhost:${PORT}${req.originalUrl}`, {
@@ -121,22 +135,11 @@ async function startServer() {
   });
 
 
-  // Payment configuration status
-  app.get("/api/payments/status", (_req, res) => {
-    const hotpaySecret = process.env.HOTPAY_SECRET;
-    const hotpayPassword = process.env.HOTPAY_NOTIFICATION_PASSWORD;
-    const isConfigured = Boolean(hotpaySecret && hotpayPassword);
-
-    res.json({
-      gateway: "hotpay",
-      hotpay: {
-        configured: isConfigured,
-        secret_set: Boolean(hotpaySecret),
-        notification_password_set: Boolean(hotpayPassword),
-        secret_preview: hotpaySecret ? `${hotpaySecret.slice(0, 3)}••••` : null,
-      },
-    });
-  });
+  // Keep the local panel on the same, versioned configuration contract as
+  // UAT.  Local environment files deliberately do not contain payment
+  // credentials, so returning a separate legacy shape here broke the admin
+  // Integrations view after a local restart.
+  app.get("/api/payments/status", forwardUatApiHandler);
 
   // The browser is local, but orders and payment credentials live in the UAT
   // backend. The previous local endpoint initialized HotPay without storing an

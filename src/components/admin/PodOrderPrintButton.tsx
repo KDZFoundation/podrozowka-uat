@@ -22,10 +22,12 @@ export const PodOrderPrintButton = ({ orderId, orderNumber, disabled = false }: 
       if (jobs.length > 1) throw new Error("Zamówienie ma więcej niż jedno gotowe zadanie POD. Przed drukiem trzeba wskazać właściwe zadanie.");
       const { generatePodPrintPdf } = await import("@/lib/generatePodPrintPdf");
       const result = await generatePodPrintPdf(jobs[0].id, orderNumber);
+      console.info("pod_order_pdf_download_ready", { fileName: result.fileName, itemCount: result.itemCount });
       // Keep the URL alive long enough for the browser to start its download.
       window.setTimeout(() => URL.revokeObjectURL(result.downloadUrl), 60_000);
       toast({ title: "Pobrano PDF dla drukarni", description: `${result.itemCount} kartek · ${result.sheetCount} arkuszy SRA3. Plik możesz przekazać drukarni.` });
     } catch (error) {
+      console.error("pod_order_pdf_download_failed", error);
       toast({ title: "Nie udało się pobrać PDF", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
     } finally {
       setBusy(false);

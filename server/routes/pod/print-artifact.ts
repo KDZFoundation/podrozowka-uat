@@ -197,7 +197,19 @@ export const createPodPrintArtifactHandler = (dependencies: PodPrintArtifactRout
           if (existing) return json({ artifact_id: prepared.id, existing: true, upload_url: null });
           const configuredOrigin = process.env.FRONTEND_ORIGIN || "https://podrozowka.web.app";
           const requestOrigin = request.headers.get("origin") || configuredOrigin;
-          if (requestOrigin !== configuredOrigin) throw new PodPrintArtifactError("pod_artifact_origin_invalid");
+          const allowedOrigins = new Set([
+            configuredOrigin,
+            ...(process.env.POD_PRINT_ALLOWED_ORIGINS || "").split(",").map((value) => value.trim()).filter(Boolean),
+          ]);
+          if (!allowedOrigins.has(requestOrigin)) throw new PodPrintArtifactError("pod_artifact_origin_invalid");
+          // A completed upload may have lost its browser response before
+          // finalization. Verify and register those exact bytes before retrying.
+          try {
+            await finalizePodPrintArtifactUpload(dependencies.storage, dependencies.artifactStore, uploadInput);
+            return json({ artifact_id: prepared.id, existing: true, upload_url: null });
+          } catch (error) {
+            if (!(error instanceof PodPrintArtifactError) || error.code !== "pod_artifact_missing_object") throw error;
+          }
           try {
             const uploadUrl = await dependencies.initiateUpload(
               prepared.object,
