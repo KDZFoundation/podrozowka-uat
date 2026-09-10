@@ -125,6 +125,13 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
     }
 
+    // Requests are written only by the trusted server so that no user can
+    // schedule, cancel or complete somebody else's deletion.
+    match /account_deletion_requests/{userId} {
+      allow read: if ownsUser(userId) || isAdmin();
+      allow create, update, delete: if false;
+    }
+
     // POD manifests are immutable server artifacts. Administrators may inspect
     // them, but even an admin client cannot create, update, or delete them.
     match /pod_print_manifests/{manifestId} {

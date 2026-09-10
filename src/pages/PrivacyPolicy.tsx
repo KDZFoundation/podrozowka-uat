@@ -5,7 +5,7 @@ const PrivacyPolicy = () => (
     title="Polityka prywatności"
     description="Informacje o przetwarzaniu danych osobowych w serwisie i sklepie Podróżówka."
     path="/polityka-prywatnosci"
-    updatedAt="11 sierpnia 2026 r."
+    updatedAt="10 września 2026 r."
   >
     <p>
       Polityka wyjaśnia, jakie dane przetwarzamy w związku z serwisem i Sklepem
@@ -40,7 +40,7 @@ const PrivacyPolicy = () => (
     <h2>4. Odbiorcy danych</h2>
     <p>Dane otrzymują wyłącznie podmioty potrzebne do realizacji wskazanych celów, w szczególności:</p>
     <ul>
-      <li>Supabase – baza danych, autoryzacja i pliki;</li>
+      <li>Firebase / Google Cloud – baza danych, autoryzacja i pliki;</li>
       <li>Vercel – hosting aplikacji;</li>
       <li>Google – jeżeli Klient wybierze logowanie Google;</li>
       <li>HotPay albo Przelewy24 – przy płatności online, zależnie od bramki pokazanej w checkout;</li>
@@ -54,7 +54,7 @@ const PrivacyPolicy = () => (
 
     <h2>5. Okres przechowywania</h2>
     <ul>
-      <li>dane konta – przez czas jego prowadzenia, a następnie przez okres potrzebny do rozliczeń i obrony roszczeń;</li>
+      <li>dane konta – przez czas jego prowadzenia; po złożeniu wniosku o usunięcie konto pozostaje aktywne przez 30 dni, aby Użytkownik mógł anulować wniosek, a następnie dane profilu są anonimizowane, a konto w usłudze uwierzytelniania usuwane;</li>
       <li>dane zamówień i dokumentów sprzedaży – przez okres wymagany przepisami;</li>
       <li>dane reklamacji i korespondencji – do zakończenia sprawy i upływu przedawnienia roszczeń;</li>
       <li>dane oparte na zgodzie – do jej cofnięcia, chyba że istnieje inna podstawa prawna.</li>
@@ -63,8 +63,10 @@ const PrivacyPolicy = () => (
     <h2>6. Prawa osoby, której dane dotyczą</h2>
     <p>
       Przysługuje Ci prawo dostępu do danych, ich sprostowania, usunięcia, ograniczenia
-      przetwarzania, przeniesienia, sprzeciwu oraz cofnięcia zgody. Wniosek wyślij na
-      {' '}<a href="mailto:kontakt@podrozowka.pl">kontakt@podrozowka.pl</a>. Możesz także złożyć
+      przetwarzania, przeniesienia, sprzeciwu oraz cofnięcia zgody. Wniosek o usunięcie
+      konta można złożyć w Ustawieniach konta; pozostałe wnioski wyślij na
+      {' '}<a href="mailto:kontakt@podrozowka.pl">kontakt@podrozowka.pl</a>. Dane zamówień i dokumentów
+      sprzedaży mogą pozostać w zakresie i przez czas wymagany prawem, mimo usunięcia konta. Możesz także złożyć
       skargę do Prezesa Urzędu Ochrony Danych Osobowych.
     </p>
 

@@ -4,6 +4,12 @@
       "includeFiles": "src/assets/postcard-templates/**"
     }
   },
+  "crons": [
+    {
+      "path": "/api/account-deletion/process",
+      "schedule": "0 3 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/((?!api/).*)",
