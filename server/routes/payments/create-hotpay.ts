@@ -4,6 +4,7 @@ import { json, preflight } from "../../../api/_lib/http.js";
 import { releaseExpiredReservations, reserveDesignAvailability, updateReservationStatus } from "../../../api/_lib/design-reservation.js";
 import { resolveRegisteredPodPrintFormat } from "../../../src/lib/podPrintFormats.js";
 import { MIN_ORDER_QUANTITY } from "../../../src/lib/orderRules.js";
+import { CheckoutPolicyError, checkoutDelivery, checkoutIdentity, checkoutSchema } from "../../services/checkout-policy.js";
 
 type CheckoutItem = { card_design_id?: string; quantity?: number; primary_language_code?: string; secondary_language_code?: string };
 
@@ -27,7 +28,14 @@ export default {
 
     let reservationId: string | null = null;
     try {
-      const body = await request.json() as Record<string, unknown>;
+      const { userId, customerEmail } = await checkoutIdentity(request);
+      const parsed = checkoutSchema.safeParse(await request.json().catch(() => null));
+      if (!parsed.success) return json({ error: "invalid_checkout_input" }, 400);
+      const body = parsed.data;
+      const { shippingCostGrosze, origin } = await checkoutDelivery(body);
+      if (body.payment_method === "online" && (!process.env.HOTPAY_SECRET || !process.env.HOTPAY_NOTIFICATION_PASSWORD)) {
+        return json({ error: "hotpay_not_configured" }, 503);
+      }
       const suppliedIdempotencyKey = normalizeIdempotencyKey(request.headers.get("Idempotency-Key") || body.idempotency_key);
       if ((request.headers.has("Idempotency-Key") || typeof body.idempotency_key === "string") && !suppliedIdempotencyKey) {
         return json({ error: "invalid_idempotency_key" }, 400);
@@ -49,7 +57,8 @@ export default {
         if (!countryId) throw new Error("card_design_missing_country");
         const quantity = Math.floor(Number(item.quantity) || 0);
         const priceGrosze = Number(data.price_grosze || 0);
-        if (quantity < 1 || priceGrosze < 1) throw new Error("invalid_order_item");
+        if (quantity < 1 || !Number.isSafeInteger(priceGrosze) || priceGrosze < 1
+          || !Number.isSafeInteger(priceGrosze * quantity)) throw new Error("invalid_order_item");
         const templates = await queryDocuments("card_language_templates", "country_id", { stringValue: countryId });
         const allowedLanguages = new Set(
           templates
@@ -82,11 +91,9 @@ export default {
         };
       }));
 
-      const shippingCostGrosze = Math.max(0, Math.floor(Number(body.shipping_cost_grosze) || 0));
       const itemsTotalGrosze = orderItems.reduce((sum, item) => sum + item.total_price_grosze, 0);
       const totalGrosze = itemsTotalGrosze + shippingCostGrosze;
-      const userId = typeof body.user_id === "string" ? body.user_id : "";
-      const customerEmail = typeof body.customer_email === "string" ? body.customer_email : "";
+      if (!Number.isSafeInteger(totalGrosze)) throw new Error("invalid_order_item");
       const orderId = suppliedIdempotencyKey
         ? deterministicOrderId(`${userId}:${customerEmail}:${idempotencyKey}`)
         : crypto.randomUUID();
@@ -105,7 +112,6 @@ export default {
       const reservation = await reserveDesignAvailability(orderId, orderItems.map((item) => ({ card_design_id: item.card_design_id, quantity: item.quantity })));
       reservationId = reservation?.id || null;
       const orderNumber = `ORD-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString("hex").toUpperCase()}`;
-      const origin = typeof body.origin_url === "string" ? body.origin_url : "https://podrozowka.web.app";
       const returnUrl = `${origin}/checkout/potwierdzenie?order=${encodeURIComponent(orderNumber)}&order_id=${encodeURIComponent(orderId)}`;
 
       try {
@@ -184,12 +190,14 @@ export default {
       await updateDocument(`orders/${orderId}`, { hotpay_redirect_url: result.URL, updated_at: new Date().toISOString() });
       return json({ ok: true, payment_gateway: "hotpay", order_id: orderId, order_number: orderNumber, redirect_url: result.URL });
     } catch (error) {
+      if (error instanceof CheckoutPolicyError) return json({ error: error.message }, error.status);
       // A gateway/network error must not leave finite stock blocked for 15 minutes.
       await updateReservationStatus(reservationId, "released").catch(() => undefined);
       const message = error instanceof Error ? error.message : "payment_initialization_failed";
       const invalidCheckoutInput = new Set([
         "missing_card_design_id",
         "card_design_missing_country",
+        "card_design_unavailable",
         "invalid_order_item",
         "missing_primary_language",
         "invalid_primary_language_for_country",

@@ -30,7 +30,7 @@ import CourierAddressForm from "@/components/checkout/CourierAddressForm";
 import PocztexPointForm from "@/components/checkout/PocztexPointForm";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import { collection, getDocs, query, where } from "firebase/firestore";
-import { db } from "@/integrations/firebase/config";
+import { auth, db } from "@/integrations/firebase/config";
 import { backendApiUrl } from "@/lib/backendApi";
 
 interface Order {
@@ -330,7 +330,7 @@ const MyOrders = ({ userId }: { userId: string }) => {
                 name: pickupPoint.name,
                 address: pickupPoint.address,
                 city: pickupPoint.city,
-                code: pickupPoint.code || null,
+                code: pickupPoint.code || pickupPoint.name,
               }
             : null,
         shipping_address:
@@ -347,9 +347,11 @@ const MyOrders = ({ userId }: { userId: string }) => {
         payment_method: paymentMethod,
         invoice: { requested: false },
       };
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error("customer_authentication_required");
       const response = await fetch(backendApiUrl("/api/payments/create-hotpay"), {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
           ...payload,
           user_id: userId,

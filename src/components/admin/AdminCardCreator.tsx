@@ -128,7 +128,7 @@ export const AdminCardCreator = ({
         firestoreService.getCountries(),
         firestoreService.getLanguageTemplates(),
         firestoreService.getCategories(),
-        firestoreService.getAuthors(),
+        firestoreService.getAdminAuthors(),
       ]);
       const templateCountryIds = new Set(fireTemplates.map((template) => template.country_id));
       setCountries(sortCountriesByName(uniqueCountriesByIso(

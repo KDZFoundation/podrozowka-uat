@@ -1,9 +1,9 @@
 import { listDocuments } from "../../../api/_lib/gcp-firestore.js";
 import { json, preflight } from "../../../api/_lib/http.js";
+import { isPaidOrder } from "../../services/paid-order.js";
 
 const asText = (value: unknown) => typeof value === "string" ? value : "";
 const isRegistered = (value: unknown) => ["registered", "active"].includes(asText(value).toLowerCase());
-const isPaid = (value: unknown) => ["paid", "completed"].includes(asText(value).toLowerCase());
 const positiveInteger = (value: unknown) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
@@ -43,7 +43,7 @@ export default {
       // Commercial figures deliberately come from paid order lines, not from
       // inventory units. Inventory includes stock, historical test records and
       // production copies, so it cannot represent customer purchases.
-      const paidOrders = orders.filter((order) => isPaid(order.data.payment_status) || isPaid(order.data.status));
+      const paidOrders = orders.filter((order) => isPaidOrder(order.data));
       const customers = new Set(paidOrders.map((order) => customerKey(order.data)).filter(Boolean));
       const purchased = paidOrders.reduce((total, order) => total + orderQuantity(order.data), 0);
       return json({

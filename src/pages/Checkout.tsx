@@ -37,6 +37,7 @@ import PocztexPointForm from "@/components/checkout/PocztexPointForm";
 import OrderSteps from "@/components/checkout/OrderSteps";
 import { isValidNip, normalizeNip } from "@/lib/nip";
 import { backendApiUrl } from "@/lib/backendApi";
+import { auth } from "@/integrations/firebase/config";
 import { MIN_ORDER_QUANTITY } from "@/lib/orderRules";
 import { useFeatureFlags } from "@/hooks/useFeatureFlags";
 
@@ -231,7 +232,7 @@ const Checkout = () => {
                 name: pickupPoint.name,
                 address: pickupPoint.address,
                 city: pickupPoint.city,
-                code: pickupPoint.code || null,
+                code: pickupPoint.code || pickupPoint.name,
               }
             : null,
         shipping_address:
@@ -257,6 +258,7 @@ const Checkout = () => {
       };
       // Call our backend API to initialize HotPay payment
       let responseData: {
+        ok?: boolean;
         error?: string;
         payment_method?: string;
         order_id?: string;
@@ -265,10 +267,13 @@ const Checkout = () => {
       } | null = null;
 
       try {
+        const idToken = await auth.currentUser?.getIdToken();
+        if (!idToken) throw new Error("customer_authentication_required");
         const apiRes = await fetch(backendApiUrl("/api/payments/create-hotpay"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
             "Idempotency-Key": paymentAttemptKey,
           },
           body: JSON.stringify({
@@ -286,7 +291,8 @@ const Checkout = () => {
           responseData = { error: "payment_service_unavailable" };
         }
       } catch (apiErr) {
-        console.warn("[HotPay API direct error, trying fallback]:", apiErr);
+        console.warn("[Checkout API error]:", apiErr);
+        responseData = { error: "payment_service_unavailable" };
       }
 
       const errCode = responseData?.error;
@@ -311,7 +317,7 @@ const Checkout = () => {
         return;
       }
 
-      if (responseData?.payment_method === "cod" || paymentMethod === "cod") {
+      if (responseData?.ok && responseData.payment_method === "cod" && responseData.order_id) {
         const orderNumber = responseData?.order_number || "";
         clearCart();
         toast.success("Zamówienie złożone", { description: "Zapłacisz przy odbiorze." });

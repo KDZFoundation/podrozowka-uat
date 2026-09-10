@@ -1,5 +1,6 @@
 import { listDocuments } from "../../../api/_lib/gcp-firestore.js";
 import { json, preflight } from "../../../api/_lib/http.js";
+import { isPaidOrder } from "../../services/paid-order.js";
 
 type Data = Record<string, unknown>;
 
@@ -8,7 +9,6 @@ const number = (value: unknown) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 };
-const paid = (order: Data) => ["paid", "completed"].includes(text(order.payment_status || order.status).toLowerCase());
 const registered = (unit: Data) => ["registered", "active"].includes(text(unit.business_status).toLowerCase());
 const orderQuantity = (order: Data) => {
   const items = Array.isArray(order.items) ? order.items : [];
@@ -30,7 +30,7 @@ export default {
       const purchasesByUser = new Map<string, number>();
       for (const order of orders) {
         const userId = text(order.data.user_id);
-        if (!userId || !paid(order.data)) continue;
+        if (!userId || !isPaidOrder(order.data)) continue;
         purchasesByUser.set(userId, (purchasesByUser.get(userId) || 0) + orderQuantity(order.data));
       }
       const countryByDesign = new Map(designs.map((design) => [design.id, text(design.data.country_id)]));
@@ -54,12 +54,8 @@ export default {
       const result = users
         .map((user) => {
           const points = Math.max(number(user.data.gamification_points), number(user.data.total_points));
-          const purchased = Math.max(
-            number(user.data.postcards_purchased),
-            number(user.data.postcards_sent_count),
-            purchasesByUser.get(user.id) || 0,
-          );
-          const registrations = Math.max(number(user.data.postcards_registered_count), registrationsByUser.get(user.id) || 0);
+          const purchased = purchasesByUser.get(user.id) || 0;
+          const registrations = registrationsByUser.get(user.id) || 0;
           return {
             user_id: user.id,
             display_name: text(user.data.display_name || user.data.full_name || user.data.first_name, "Podróżnik"),
