@@ -16,19 +16,25 @@ type AuthorProfile = {
 const Authors = () => {
   const [authors, setAuthors] = useState<AuthorProfile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     void (async () => {
-      const data = await firestoreService.getAuthors();
-      setAuthors(data.map((author) => ({
-        id: author.id,
-        display_name: author.name,
-        bio: author.bio || null,
-        avatar_url: author.avatar_url || null,
-        social_handle: author.instagram_url || null,
-        website_url: author.website_url || null,
-      })));
-      setLoading(false);
+      try {
+        const data = await firestoreService.getAuthors();
+        setAuthors(data.map((author) => ({
+          id: author.id,
+          display_name: author.name,
+          bio: author.bio || null,
+          avatar_url: author.avatar_url || null,
+          social_handle: author.instagram_url || null,
+          website_url: author.website_url || null,
+        })));
+      } catch {
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
@@ -36,6 +42,7 @@ const Authors = () => {
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
       <main id="main-content" className="flex-1 pt-20 md:pt-24">
+        {error && <p role="alert" className="container py-6">Nie udało się pobrać autorów. Spróbuj ponownie później.</p>}
         <section className="bg-secondary/45 py-14 md:py-20">
           <div className="container mx-auto px-4 text-center">
             <p className="text-sm font-semibold text-primary">Fotografie Polski</p>

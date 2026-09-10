@@ -32,7 +32,7 @@ export default function AdminAuthors() {
   const loadAuthors = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await firestoreService.getAuthors();
+      const data = await firestoreService.getAdminAuthors();
       setAuthors((data as unknown as Record<string, unknown>[]).map((row) => ({
           id: String(row.id ?? ""),
           display_name: String(row.display_name ?? row.name ?? ""),

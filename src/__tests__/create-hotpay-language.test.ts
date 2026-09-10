@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const firestore = vi.hoisted(() => ({
   fromFirestoreFields: vi.fn(),
@@ -15,23 +15,33 @@ const reservations = vi.hoisted(() => ({
 
 vi.mock("../../api/_lib/gcp-firestore.js", () => firestore);
 vi.mock("../../api/_lib/design-reservation.js", () => reservations);
+vi.mock("../../server/auth/require-admin.js", () => ({
+  verifyFirebaseIdToken: vi.fn(async () => ({ sub: "customer-1", email: "customer@example.test" })),
+}));
 
 import createHotpay from "../../server/routes/payments/create-hotpay";
 import { CURRENT_POSTCARD_PRINT_FORMAT } from "../lib/podImposition";
 
 const requestFor = (item: Record<string, unknown>, idempotencyKey?: string) => new Request("https://example.test/api/payments/create-hotpay", {
   method: "POST",
-  headers: { "Content-Type": "application/json", ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
+  headers: { "Content-Type": "application/json", Authorization: "Bearer valid", ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
   body: JSON.stringify({
     items: [{ card_design_id: "design-es", quantity: 10, ...item }],
     payment_method: "cod",
+    shipping_method: "inpost_locker",
+    pickup_point: { code: "ABC01", name: "Punkt", address: "Testowa 1", city: "Warszawa" },
   }),
 });
 
 describe("HotPay checkout language validation", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("SALES_ENABLED", "true");
+    vi.stubEnv("VITE_COMING_SOON", "false");
+    vi.stubEnv("CHECKOUT_RETURN_ORIGIN", "https://example.test");
     firestore.readDocument.mockImplementation(async (collection: string) => {
+      if (collection === "feature_flags") return { fields: { is_enabled: true } };
       if (collection === "card_designs") return { fields: {
         active: true,
         country_id: "country-es",
@@ -69,6 +79,7 @@ describe("HotPay checkout language validation", () => {
 
   it("rejects a server-side design with an unknown print format", async () => {
     firestore.readDocument.mockResolvedValue({ fields: {
+      is_enabled: true,
       active: true,
       country_id: "country-es",
       language_code: "es",
@@ -94,6 +105,7 @@ describe("HotPay checkout language validation", () => {
   it("returns an existing idempotent checkout without another reservation", async () => {
     const idempotencyKey = "checkout-attempt-0001";
     firestore.readDocument.mockImplementation(async (collection: string) => {
+      if (collection === "feature_flags") return { fields: { is_enabled: true } };
       if (collection === "card_designs") return { fields: {
         active: true,
         country_id: "country-es",

@@ -85,6 +85,7 @@ async function startServer() {
   app.all("/api/public/community", forwardUatApiHandler);
   app.all("/api/public/distribution", forwardUatApiHandler);
   app.all("/api/public/ranking", forwardUatApiHandler);
+  app.all("/api/public/authors", forwardUatApiHandler);
   app.all("/api/orlen/widget-config", forwardApiHandler(orlenWidgetConfigHandler));
   app.all("/api/pod/print-manifest", forwardUatApiHandler);
   app.all("/api/pod/print-artifact", forwardUatApiHandler);
@@ -148,7 +149,11 @@ async function startServer() {
     try {
       const response = await fetch(`${uatBackendBaseUrl}/api/payments/create-hotpay`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(req.get("authorization") ? { Authorization: req.get("authorization")! } : {}),
+          ...(req.get("idempotency-key") ? { "Idempotency-Key": req.get("idempotency-key")! } : {}),
+        },
         body: JSON.stringify(req.body || {}),
       });
       const body = await response.text();

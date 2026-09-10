@@ -59,7 +59,7 @@ const hasFirestoreAdminRole = async (uid: string) => {
   }
 };
 
-const verifyFirebaseIdToken = async (idToken: string): Promise<FirebaseTokenClaims | null> => {
+export const verifyFirebaseIdToken = async (idToken: string): Promise<FirebaseTokenClaims | null> => {
   const [encodedHeader, encodedClaims, encodedSignature, ...rest] = idToken.split(".");
   if (!encodedHeader || !encodedClaims || !encodedSignature || rest.length > 0) return null;
 

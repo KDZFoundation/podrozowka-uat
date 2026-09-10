@@ -28,6 +28,36 @@ describeIntegration("Firestore security rules (emulator)", () => {
   let admin: Awaited<ReturnType<typeof makeClient>>;
   let adminDb: ReturnType<typeof getAdminFirestore>;
 
+  it("denies forged client orders and recipient registrations, including admin order creation", async () => {
+    for (const client of [anonymousDb, owner.firestore, admin.firestore]) {
+      await expect(setDoc(doc(client, "orders", `forged-${Date.now()}`), {
+        user_id: owner.uid, guest_email: "guest@example.test", payment_status: "paid", total_amount_grosze: 1,
+      })).rejects.toMatchObject({ code: "permission-denied" });
+      await expect(setDoc(doc(client, "recipient_registrations", `forged-${Date.now()}`), {
+        traveler_user_id: owner.uid,
+      })).rejects.toMatchObject({ code: "permission-denied" });
+    }
+  });
+
+  it("keeps private author documents admin-only", async () => {
+    await adminDb.doc("authors/private-test").set({ name: "Author", email: "private@example.test" });
+    for (const client of [anonymousDb, owner.firestore]) {
+      await expect(getDoc(doc(client, "authors", "private-test"))).rejects.toMatchObject({ code: "permission-denied" });
+    }
+    expect((await getDoc(doc(admin.firestore, "authors", "private-test"))).exists()).toBe(true);
+  });
+
+  it("allows profile edits but denies points, role and identity tampering", async () => {
+    for (const collection of ["users", "profiles"]) {
+      await adminDb.doc(`${collection}/${owner.uid}`).set({ user_id: owner.uid, email: owner.auth.currentUser!.email, gamification_points: 10 });
+      await expect(setDoc(doc(owner.firestore, collection, owner.uid), { display_name: "Podróżnik" }, { merge: true })).resolves.toBeUndefined();
+      for (const patch of [{ gamification_points: 100000 }, { role: "admin" }, { current_tier: "top" },
+        { postcards_sent_count: 1000 }, { user_id: admin.uid }, { email: "fake@example.test" }]) {
+        await expect(setDoc(doc(owner.firestore, collection, owner.uid), patch, { merge: true })).rejects.toMatchObject({ code: "permission-denied" });
+      }
+    }
+  });
+
   beforeAll(async () => {
     // The Firebase CLI starts the two emulators before this suite runs.
     anonymousApp = initializeApp({ apiKey: "fake-api-key", authDomain: `${projectId}.test`, projectId }, `rules-anonymous-${Date.now()}`);

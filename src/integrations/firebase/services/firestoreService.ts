@@ -15,6 +15,7 @@ import {
 } from "firebase/firestore";
 import { db, isFirebaseConfigured } from "../config";
 import { normalizeCountryCode } from "@/lib/countryCatalog";
+import { backendApiUrl } from "@/lib/backendApi";
 import type {
   FirestoreCardDesign,
   FirestoreCountry,
@@ -161,6 +162,14 @@ export const firestoreService = {
   },
 
   async getAuthors(): Promise<FirestoreAuthor[]> {
+    const response = await fetch(backendApiUrl("/api/public/authors"));
+    if (!response.ok) throw new Error("authors_unavailable");
+    const data = await response.json() as { authors: FirestoreAuthor[] };
+    if (!Array.isArray(data.authors)) throw new Error("invalid_authors_response");
+    return data.authors;
+  },
+
+  async getAdminAuthors(): Promise<FirestoreAuthor[]> {
     if (!isFirebaseConfigured) return [];
     try {
       const snap = await getDocs(collection(db, "authors"));
@@ -427,7 +436,7 @@ export const firestoreService = {
       updated_at: new Date().toISOString(),
     };
 
-    await Promise.allSettled([
+    await Promise.all([
       setDoc(userRef, cleanData, { merge: true }),
       setDoc(profRef, cleanData, { merge: true }),
     ]);

@@ -18,10 +18,10 @@ const DEFAULT_FLAGS: FeatureFlags = {
   wall_of_connections: false,
   travelers_journal: false,
   cultural_missions: false,
-  cod_payment_enabled: true,
-  inpost_shipping_enabled: true,
-  orlen_paczka_enabled: true,
-  pocztex_shipping_enabled: true,
+  cod_payment_enabled: false,
+  inpost_shipping_enabled: false,
+  orlen_paczka_enabled: false,
+  pocztex_shipping_enabled: false,
 };
 
 interface FeatureFlagRow {
