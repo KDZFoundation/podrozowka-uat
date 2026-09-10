@@ -23,7 +23,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "node scripts/run-firestore-emulator-tests.mjs",
-    "migrate:runtime-config": "node scripts/migrate-runtime-config-to-firestore.mjs"
+    "migrate:runtime-config": "node scripts/migrate-runtime-config-to-firestore.mjs",
+    "validate:deployment-config": "node scripts/validate-deployment-config.mjs --target=uat"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -1,5 +1,6 @@
 import { getVercelOidcToken } from "@vercel/oidc";
 import { ExternalAccountClient, GoogleAuth } from "google-auth-library";
+import { resolveFirestoreRuntimeConfig } from "./runtime-config.js";
 
 type FirestoreValue =
   | { nullValue: null }
@@ -28,13 +29,14 @@ const config = () => {
     ? { projectNumber, serviceAccount, poolId, providerId }
     : null;
 
+  const firestore = resolveFirestoreRuntimeConfig();
   return {
     // Local development may use the developer's short-lived Application Default
     // Credentials. Production still requires all WIF values and therefore never
     // falls back to a browser/client credential.
-    projectId: process.env.GCP_PROJECT_ID || "podrozowka",
+    projectId: firestore.projectId,
     workloadIdentity,
-    databaseId: process.env.FIRESTORE_DATABASE_ID || "ai-studio-podrozowkauat-e1d9b39b-c759-477c-98ea-34396a1afd2f",
+    databaseId: firestore.databaseId,
   };
 };
 
