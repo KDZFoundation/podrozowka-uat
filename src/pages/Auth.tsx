@@ -10,10 +10,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { auth } from "@/integrations/firebase/config";
 import { publicPageUrl } from "@/lib/publicAppUrl";
 import {
-  AppleAuthProvider,
   createUserWithEmailAndPassword,
   getRedirectResult,
   GoogleAuthProvider,
+  OAuthProvider,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
@@ -180,7 +180,7 @@ const Auth = ({ mode = "login" }: AuthProps) => {
   const handleAppleLogin = async () => {
     setIsOAuthLoading("apple");
     try {
-      const provider = new AppleAuthProvider();
+      const provider = new OAuthProvider("apple.com");
       provider.addScope("email");
       provider.addScope("name");
 
