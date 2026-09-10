@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { json } from "../../api/_lib/http.js";
 import { fromFirestoreFields, readDocument } from "../../api/_lib/gcp-firestore.js";
+import { resolveFirebaseAuthProjectId } from "../../api/_lib/runtime-config.js";
 
 type FirebaseTokenClaims = {
   aud?: unknown;
@@ -17,7 +18,7 @@ type GoogleCertificateMap = Record<string, string>;
 const CERTIFICATES_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
 const certificateCache: { certificates: GoogleCertificateMap; expiresAt: number } = { certificates: {}, expiresAt: 0 };
 
-const firebaseProjectId = () => process.env.FIREBASE_AUTH_PROJECT_ID || process.env.GCP_PROJECT_ID || "podrozowka";
+const firebaseProjectId = () => resolveFirebaseAuthProjectId();
 
 const decodeBase64UrlJson = (value: string): Record<string, unknown> | null => {
   try {
