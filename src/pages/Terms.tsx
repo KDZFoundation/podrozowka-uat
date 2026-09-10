@@ -6,7 +6,7 @@ const Terms = () => (
     title="Regulamin sklepu i platformy"
     description="Zasady korzystania z platformy Podróżówka i składania zamówień w sklepie."
     path="/regulamin"
-    updatedAt="11 sierpnia 2026 r."
+    updatedAt="10 września 2026 r."
   >
     <p>
       Regulamin określa zasady korzystania z serwisu Podróżówka, prowadzenia konta,
@@ -40,6 +40,7 @@ const Terms = () => (
       <li>Klient podaje dane prawdziwe i aktualne oraz chroni dane dostępowe do konta.</li>
       <li>Zabronione jest korzystanie z platformy w sposób sprzeczny z prawem, zakłócający jej działanie lub naruszający prawa innych osób.</li>
       <li>Punkty, rangi, misje i wpływ kulturowy mają charakter informacyjny i motywacyjny; nie są pieniądzem ani świadczeniem pieniężnym.</li>
+      <li>Użytkownik może złożyć w Ustawieniach konta wniosek o jego usunięcie. Konto jest planowane do usunięcia po 30 dniach; do tego czasu wniosek można anulować.</li>
     </ol>
 
     <h2>4. Produkty, warianty językowe i kody QR</h2>

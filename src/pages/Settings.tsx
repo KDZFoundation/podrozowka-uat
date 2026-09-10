@@ -5,17 +5,29 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Camera, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Camera, Loader2, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { publicPageUrl } from "@/lib/publicAppUrl";
+import { backendApiUrl } from "@/lib/backendApi";
 
 import { useAuth } from "@/hooks/useAuth";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
-import { storage } from "@/integrations/firebase/config";
+import { auth, storage } from "@/integrations/firebase/config";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   Form,
   FormControl,
@@ -33,12 +45,30 @@ const profileSchema = z.object({
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
+type DeletionRequest = {
+  status: "scheduled" | "processing" | "cancelled" | "completed";
+  scheduled_for: string;
+};
+
 const Settings = () => {
   const { user, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+
+  const accountDeletionApi = async (init?: RequestInit) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error("Brak aktywnej sesji");
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch(backendApiUrl("/api/account-deletion"), {
+      ...init,
+      headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json", ...(init?.headers || {}) },
+    });
+    const data = await response.json().catch(() => null) as { error?: string; request?: DeletionRequest | null } | null;
+    if (!response.ok) throw new Error(data?.error || "account_deletion_request_failed");
+    return data;
+  };
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -53,6 +83,30 @@ const Settings = () => {
       return await firestoreService.getUserProfile(user.id);
     },
     enabled: !!user,
+  });
+
+  const { data: deletionRequest } = useQuery({
+    queryKey: ["account-deletion", user?.id],
+    queryFn: async () => (await accountDeletionApi()).request ?? null,
+    enabled: Boolean(user),
+  });
+
+  const requestDeletionMutation = useMutation({
+    mutationFn: () => accountDeletionApi({ method: "POST", body: JSON.stringify({ action: "request", confirmed: true }) }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["account-deletion", user?.id], data.request ?? null);
+      toast.success("Wniosek o usunięcie konta został zapisany.");
+    },
+    onError: () => toast.error("Nie udało się zapisać wniosku o usunięcie konta."),
+  });
+
+  const cancelDeletionMutation = useMutation({
+    mutationFn: () => accountDeletionApi({ method: "POST", body: JSON.stringify({ action: "cancel" }) }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["account-deletion", user?.id], data.request ?? null);
+      toast.success("Wniosek o usunięcie konta został anulowany.");
+    },
+    onError: () => toast.error("Nie udało się anulować wniosku."),
   });
 
   const form = useForm<ProfileFormValues>({
@@ -313,6 +367,65 @@ const Settings = () => {
             </Button>
           </form>
         </Form>
+
+        <section className="rounded-lg border border-destructive/30 bg-destructive/5 p-5 space-y-3">
+          <div>
+            <h2 className="font-semibold text-foreground">Usunięcie konta</h2>
+            {deletionRequest?.status === "scheduled" ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Wniosek jest aktywny. Konto i dane profilu zostaną usunięte oraz zanonimizowane
+                {" "}{new Date(deletionRequest.scheduled_for).toLocaleDateString("pl-PL")}. Możesz go anulować do tego dnia.
+              </p>
+            ) : deletionRequest?.status === "processing" ? (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Wniosek jest właśnie przetwarzany. Konto zostanie wylogowane po zakończeniu anonimizacji.
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-muted-foreground">
+                Usunięcie konta uruchamia 30-dniowy okres oczekiwania. Dane profilu zostaną zanonimizowane,
+                a dane zamówień zachowane wyłącznie w zakresie wymaganym prawem.
+              </p>
+            )}
+          </div>
+          {deletionRequest?.status === "scheduled" ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={cancelDeletionMutation.isPending}
+              onClick={() => cancelDeletionMutation.mutate()}
+            >
+              {cancelDeletionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Anuluj wniosek o usunięcie
+            </Button>
+          ) : deletionRequest?.status === "processing" ? null : (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button type="button" variant="destructive" disabled={requestDeletionMutation.isPending}>
+                  <Trash2 className="mr-2 h-4 w-4" /> Usuń konto
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Zaplanować usunięcie konta?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Masz 30 dni na anulowanie wniosku. Po tym czasie konto zostanie usunięte,
+                    a dane profilu zanonimizowane. Dane dokumentów sprzedaży mogą być zachowane,
+                    jeśli wymagają tego przepisy.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Wróć</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => requestDeletionMutation.mutate()}
+                  >
+                    Zaplanuj usunięcie
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </section>
       </main>
     </div>
   );

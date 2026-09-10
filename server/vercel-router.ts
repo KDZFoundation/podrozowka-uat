@@ -26,6 +26,8 @@ import podProductionBatchArtifact from "./routes/pod/production-batch-artifact";
 import podProductionProof from "./routes/pod/production-proof";
 import podProductionReadiness from "./routes/pod/production-readiness";
 import podProductionRelease from "./routes/pod/production-release";
+import accountDeletion from "./routes/account-deletion";
+import accountDeletionProcess from "./routes/account-deletion-process";
 
 type ApiHandler = { fetch: (request: Request) => Response | Promise<Response> };
 
@@ -66,6 +68,8 @@ const routes: Record<string, ApiHandler> = {
   "pod/production-proof": podProductionProof,
   "pod/production-readiness": podProductionReadiness,
   "pod/production-release": podProductionRelease,
+  "account-deletion": accountDeletion,
+  "account-deletion/process": accountDeletionProcess,
 };
 
 const routePath = (request: Request) => new URL(request.url).pathname.replace(/^\/api\/?/, "").replace(/\/+$/, "");
