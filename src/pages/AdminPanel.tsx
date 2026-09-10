@@ -24,6 +24,7 @@ import {
   CreditCard,
   Printer,
   Sparkles,
+  Users,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
@@ -44,6 +45,7 @@ import AdminFiscalFailures from "@/components/admin/AdminFiscalFailures";
 import AdminCategories from "@/components/admin/AdminCategories";
 import AdminIntegrations from "@/components/admin/AdminIntegrations";
 import AdminAuthors from "@/components/admin/AdminAuthors";
+import AdminUsers from "@/components/admin/AdminUsers";
 import { Blocks } from "lucide-react";
 
 type TabId =
@@ -63,7 +65,8 @@ type TabId =
   | "gamification"
   | "fiscal"
   | "integrations"
-  | "authors";
+  | "authors"
+  | "users";
 
 interface AdminStats {
   totalUnits: number;
@@ -140,6 +143,7 @@ const AdminPanel = () => {
     { id: "card-designs", label: "Kreator wzorów", icon: Image },
     { id: "products", label: "Produkty", icon: ShoppingBag },
     { id: "authors", label: "Autorzy", icon: UserCheck },
+    { id: "users", label: "Użytkownicy", icon: Users },
     { id: "orders", label: "Zamówienia (Drukarnia)", icon: ShoppingCart },
     { id: "shipments", label: "Wysyłki", icon: Truck },
     { id: "map", label: "Mapa Globalna", icon: MapIcon },
@@ -256,6 +260,7 @@ const AdminPanel = () => {
         {activeTab === "countries" && <AdminCountries />}
         {activeTab === "card-designs" && <AdminCardDesigns />}
         {activeTab === "authors" && <AdminAuthors />}
+        {activeTab === "users" && <AdminUsers />}
         {activeTab === "products" && <AdminProducts />}
         {activeTab === "categories" && <AdminCategories />}
         {activeTab === "inventory" && <AdminInventory />}
