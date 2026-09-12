@@ -131,7 +131,7 @@ export const AdminCardCreator = ({
     setIsUploading(true);
     try {
       const headers = await adminApiHeaders();
-      const response = await fetch(backendApiUrl("/api/admin/card-design-image"), {
+      const response = await fetch(backendApiUrl("/api/management/card-design-image"), {
         method: "POST",
         headers: { ...headers, "Content-Type": file.type },
         body: file,
