@@ -15,7 +15,7 @@ import { requireAdmin } from "./server/auth/require-admin";
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT || 3000);
-  const uatBackendBaseUrl = (process.env.PAYMENT_BACKEND_API_URL || "https://podrozowka-1wynrhvks-d-arka.vercel.app").replace(/\/$/, "");
+  const uatBackendBaseUrl = (process.env.PAYMENT_BACKEND_API_URL || "https://podrozowka-uat-one.vercel.app").replace(/\/$/, "");
 
   app.use(cors());
   app.use(express.raw({ type: "application/pdf", limit: "80mb" }));
