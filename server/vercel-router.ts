@@ -74,10 +74,10 @@ const routes: Record<string, ApiHandler> = {
   "account-deletion/process": accountDeletionProcess,
   "admin/users": adminUsers,
   "admin/card-design-image": adminCardDesignImage,
-  // Vercel reserves /api/admin/* for its dashboard infrastructure on some
-  // deployments. Keep the handler protected by requireAdmin, but expose the
-  // browser upload on a non-reserved public function path.
-  "management/card-design-image": adminCardDesignImage,
+  // Some nested /api prefixes are reserved by Vercel. Keep the handler
+  // protected by requireAdmin, but expose the browser upload on a stable,
+  // non-reserved top-level function path.
+  "card-design-image": adminCardDesignImage,
 };
 
 const routePath = (request: Request) => new URL(request.url).pathname.replace(/^\/api\/?/, "").replace(/\/+$/, "");
