@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search, UserRound, Users } from "lucide-react";
-import { collection, getDocs } from "firebase/firestore";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
-import { db } from "@/integrations/firebase/config";
+import { adminApiHeaders } from "@/lib/adminApiAuth";
+import { backendApiUrl } from "@/lib/backendApi";
 
 type UserRow = {
   id: string;
@@ -12,14 +12,6 @@ type UserRow = {
   createdAt: string | null;
   deletionStatus: "scheduled" | "processing" | "cancelled" | "completed" | null;
   scheduledFor: string | null;
-};
-
-const asDate = (value: unknown): string | null => {
-  if (typeof value === "string") return value;
-  if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") {
-    return value.toDate().toISOString();
-  }
-  return null;
 };
 
 const displayDate = (value: string | null) => value
@@ -45,32 +37,10 @@ export default function AdminUsers() {
     setLoading(true);
     setError(null);
     try {
-      const [usersSnapshot, deletionsSnapshot] = await Promise.all([
-        getDocs(collection(db, "users")),
-        getDocs(collection(db, "account_deletion_requests")),
-      ]);
-      const deletions = new Map(deletionsSnapshot.docs.map((entry) => {
-        const data = entry.data();
-        return [entry.id, {
-          status: data.status as UserRow["deletionStatus"],
-          scheduledFor: asDate(data.scheduled_for),
-        }];
-      }));
-      setUsers(usersSnapshot.docs.map((entry) => {
-        const data = entry.data();
-        const deletion = deletions.get(entry.id);
-        const firstName = typeof data.first_name === "string" ? data.first_name : "";
-        const lastName = typeof data.last_name === "string" ? data.last_name : "";
-        const displayName = typeof data.display_name === "string" ? data.display_name : "";
-        return {
-          id: entry.id,
-          email: typeof data.email === "string" ? data.email : "",
-          name: [firstName, lastName].filter(Boolean).join(" ") || displayName || "Bez nazwy",
-          createdAt: asDate(data.created_at),
-          deletionStatus: deletion?.status ?? null,
-          scheduledFor: deletion?.scheduledFor ?? null,
-        };
-      }).sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || "")));
+      const response = await fetch(backendApiUrl("/api/admin/users"), { headers: await adminApiHeaders() });
+      const body = await response.json().catch(() => null) as { users?: UserRow[] } | null;
+      if (!response.ok || !body || !Array.isArray(body.users)) throw new Error("admin_users_list_failed");
+      setUsers(body.users);
     } catch (cause) {
       console.error("Admin users load error:", cause);
       setError("Nie udało się wczytać listy użytkowników.");
