@@ -26,6 +26,8 @@ import { useToast } from "@/hooks/use-toast";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import type { FirestoreCardDesign } from "@/integrations/firebase/types";
 import { sortCountriesByName, uniqueCountriesByIso } from "@/lib/countryCatalog";
+import { adminApiHeaders } from "@/lib/adminApiAuth";
+import { backendApiUrl } from "@/lib/backendApi";
 
 interface Country {
   id: string;
@@ -90,6 +92,7 @@ export const AdminCardCreator = ({
   const [authors, setAuthors] = useState<Author[]>([]);
   const [langTemplates, setLangTemplates] = useState<LanguageTemplate[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<"front" | "back">("front");
   const { toast } = useToast();
 
@@ -108,6 +111,41 @@ export const AdminCardCreator = ({
   const [photoAuthor, setPhotoAuthor] = useState(initialDesign?.photo_author || "");
   const [authorId, setAuthorId] = useState(initialDesign?.author_id || "none");
   const [imageUrl, setImageUrl] = useState(initialDesign?.image_front_url || "");
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    const supportedTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+    if (!supportedTypes.has(file.type)) {
+      toast({ title: "Nieobsługiwany format zdjęcia", description: "Wybierz plik JPG, PNG lub WEBP.", variant: "destructive" });
+      return;
+    }
+    const maxFileSize = 10 * 1024 * 1024;
+    if (file.size > maxFileSize) {
+      toast({ title: "Zdjęcie jest za duże", description: "Maksymalny rozmiar pliku to 10 MB.", variant: "destructive" });
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const headers = await adminApiHeaders();
+      const response = await fetch(backendApiUrl("/api/admin/card-design-image"), {
+        method: "POST",
+        headers: { ...headers, "Content-Type": file.type },
+        body: file,
+      });
+      const body = await response.json().catch(() => null) as { url?: string; error?: string } | null;
+      if (!response.ok || !body?.url) throw new Error(body?.error || `upload_failed_${response.status}`);
+      setImageUrl(body.url);
+      toast({ title: "Zdjęcie przesłane", description: "Adres został dodany do wzoru." });
+    } catch (error) {
+      toast({ title: "Nie udało się przesłać zdjęcia", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   // Crop Settings State
   const parsedCrop: CropSettings = initialDesign?.crop_settings
@@ -344,7 +382,7 @@ export const AdminCardCreator = ({
           <Button variant="outline" onClick={onCancel} disabled={isSaving}>
             <X className="w-4 h-4 mr-1" /> Anuluj
           </Button>
-          <Button onClick={handleSave} disabled={isSaving} className="gap-2">
+          <Button onClick={handleSave} disabled={isSaving || isUploading} className="gap-2">
             <Check className="w-4 h-4" /> {initialDesign?.id ? "Zapisz Zmiany" : "Utwórz Wzór"}
           </Button>
         </div>
@@ -457,16 +495,20 @@ export const AdminCardCreator = ({
 
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">
-                1. Obrazek na przód pocztówki (publiczny adres HTTPS)
+                1. Obrazek na przód pocztówki (plik lub publiczny adres HTTPS)
               </label>
-              <div className="mb-2">
+              <div className="flex flex-col sm:flex-row gap-2 mb-2">
                 <Input
                   placeholder="https://example.com/zdjecie.jpg"
                   value={imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
+                  className="flex-1"
                 />
+                <label className="inline-flex shrink-0 items-center justify-center rounded-md border border-input bg-background px-3 py-2 text-sm font-medium cursor-pointer hover:bg-accent hover:text-accent-foreground">
+                  {isUploading ? "Przesyłanie…" : "Wybierz plik"}
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleFileUpload} disabled={isUploading} className="sr-only" />
+                </label>
               </div>
-              <p className="text-[11px] text-muted-foreground">Pliki graficzne publikujemy jako statyczne zasoby Hosting lub podajemy z zaufanego publicznego źródła. Nie zapisujemy obrazów w bazie.</p>
             </div>
 
             <div>

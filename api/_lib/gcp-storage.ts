@@ -180,3 +180,25 @@ export const gcpDownloadBinaryObject = async (bucket: string, object: string, ge
   if (!response.ok) throw new Error(`gcs_binary_download_failed:${response.status}`);
   return new Uint8Array(await response.arrayBuffer());
 };
+
+/**
+ * Upload a catalog image and expose it through Firebase Storage's tokenized
+ * download endpoint. The object itself remains immutable; the token is stored
+ * as object metadata so the public URL never needs a service-account token.
+ */
+export const gcpCreateFirebaseStorageImage = async (
+  bucket: string,
+  object: string,
+  bytes: Uint8Array,
+  contentType: string,
+) => {
+  const token = crypto.randomUUID();
+  const stored = await gcpCreateOnlyBinaryObject(bucket, object, bytes, contentType, {
+    cacheControl: "public,max-age=31536000,immutable",
+    firebaseStorageDownloadTokens: token,
+  });
+  return {
+    ...stored,
+    url: `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(object)}?alt=media&token=${encodeURIComponent(token)}`,
+  };
+};
