@@ -101,6 +101,45 @@ export const initiateGcsCreateOnlyResumableUpload = async (
   return uploadUrl;
 };
 
+/** Starts a browser-to-Storage upload so image bytes never cross the Vercel
+ * function payload limit. The Firebase download token is committed as object
+ * metadata when the resumable session is created. */
+export const initiateGcsFirebaseStorageImageUpload = async (
+  bucket: string,
+  object: string,
+  sizeBytes: number,
+  contentType: string,
+  origin: string,
+) => {
+  const token = crypto.randomUUID();
+  const response = await authorizedFetch(
+    gcsCreateOnlyResumableUploadUrl(bucket, object),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": contentType,
+        "X-Upload-Content-Length": String(sizeBytes),
+        Origin: origin,
+      },
+      body: JSON.stringify({
+        name: object,
+        contentType,
+        cacheControl: "public,max-age=31536000,immutable",
+        metadata: { firebaseStorageDownloadTokens: token },
+      }),
+    },
+  );
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(`card_design_image_upload_init_failed:${response.status}:${JSON.stringify(body)}`);
+  const uploadUrl = response.headers.get("location");
+  if (!uploadUrl) throw new Error("card_design_image_upload_location_missing");
+  return {
+    uploadUrl,
+    url: `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(object)}?alt=media&token=${encodeURIComponent(token)}`,
+  };
+};
+
 export const gcpPodPrintArtifactStorage: PodPrintArtifactStorage = {
   createOnly: async (object, bytes, metadata) => {
     const bucket = bucketName();

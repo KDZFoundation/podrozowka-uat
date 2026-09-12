@@ -130,14 +130,20 @@ export const AdminCardCreator = ({
 
     setIsUploading(true);
     try {
-      const headers = await adminApiHeaders();
+      const headers = await adminApiHeaders(true);
       const response = await fetch(backendApiUrl("/api/card-design-image"), {
         method: "POST",
-        headers: { ...headers, "Content-Type": file.type },
+        headers,
+        body: JSON.stringify({ operation: "initiate", content_type: file.type, size_bytes: file.size }),
+      });
+      const body = await response.json().catch(() => null) as { upload_url?: string; url?: string; error?: string } | null;
+      if (!response.ok || !body?.upload_url || !body.url) throw new Error(body?.error || `upload_init_failed_${response.status}`);
+      const upload = await fetch(body.upload_url, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
         body: file,
       });
-      const body = await response.json().catch(() => null) as { url?: string; error?: string } | null;
-      if (!response.ok || !body?.url) throw new Error(body?.error || `upload_failed_${response.status}`);
+      if (!upload.ok) throw new Error(`upload_storage_failed_${upload.status}`);
       setImageUrl(body.url);
       toast({ title: "Zdjęcie przesłane", description: "Adres został dodany do wzoru." });
     } catch (error) {

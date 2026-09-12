@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { json, preflight } from "../../../api/_lib/http.js";
-import { gcpCreateFirebaseStorageImage } from "../../../api/_lib/gcp-storage.js";
+import { gcpCreateFirebaseStorageImage, initiateGcsFirebaseStorageImageUpload } from "../../../api/_lib/gcp-storage.js";
 import { resolveFirebaseAuthProjectId } from "../../../api/_lib/runtime-config.js";
 import { requireAdmin } from "../../auth/require-admin.js";
 
@@ -32,6 +32,29 @@ export default {
     if (forbidden) return forbidden;
 
     const contentType = (request.headers.get("content-type") || "").split(";", 1)[0].toLowerCase();
+    if (contentType === "application/json") {
+      const body = await request.json().catch(() => null) as { operation?: string; content_type?: string; size_bytes?: number } | null;
+      const imageType = body?.content_type?.toLowerCase() || "";
+      const extension = IMAGE_TYPES.get(imageType);
+      if (body?.operation !== "initiate") return json({ error: "card_design_image_operation_invalid" }, 400);
+      if (!extension) return json({ error: "card_design_image_type_not_supported" }, 415);
+      const sizeBytes = Number(body?.size_bytes || 0);
+      if (!Number.isInteger(sizeBytes) || sizeBytes <= 0 || sizeBytes > MAX_IMAGE_BYTES) {
+        return json({ error: "card_design_image_too_large" }, 413);
+      }
+      const configuredOrigin = process.env.FRONTEND_ORIGIN || "https://podrozowka.web.app";
+      const requestOrigin = request.headers.get("origin") || configuredOrigin;
+      if (requestOrigin !== configuredOrigin) return json({ error: "card_design_image_origin_invalid" }, 403);
+      try {
+        const object = `card-designs/${crypto.randomUUID()}.${extension}`;
+        const upload = await initiateGcsFirebaseStorageImageUpload(storageBucket(), object, sizeBytes, imageType, requestOrigin);
+        return json({ upload_url: upload.uploadUrl, url: upload.url, object });
+      } catch (error) {
+        console.error("[admin card design image] upload initiation failed", error);
+        return json({ error: "card_design_image_upload_init_failed" }, 502);
+      }
+    }
+
     const extension = IMAGE_TYPES.get(contentType);
     if (!extension) return json({ error: "card_design_image_type_not_supported" }, 415);
 
