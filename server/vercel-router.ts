@@ -28,6 +28,7 @@ import podProductionReadiness from "./routes/pod/production-readiness";
 import podProductionRelease from "./routes/pod/production-release";
 import accountDeletion from "./routes/account-deletion";
 import accountDeletionProcess from "./routes/account-deletion-process";
+import adminUsers from "./routes/admin/users";
 
 type ApiHandler = { fetch: (request: Request) => Response | Promise<Response> };
 
@@ -70,6 +71,7 @@ const routes: Record<string, ApiHandler> = {
   "pod/production-release": podProductionRelease,
   "account-deletion": accountDeletion,
   "account-deletion/process": accountDeletionProcess,
+  "admin/users": adminUsers,
 };
 
 const routePath = (request: Request) => new URL(request.url).pathname.replace(/^\/api\/?/, "").replace(/\/+$/, "");
