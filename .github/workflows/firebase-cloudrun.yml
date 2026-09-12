@@ -63,7 +63,7 @@ jobs:
 
       - name: Build UAT frontend
         run: |
-          VITE_APP_ENV=uat VITE_CATALOG_SOURCE=firestore VITE_ENABLE_TEST_DATA_CLEANUP=true VITE_BACKEND_API_URL=https://podrozowka-uat-one.vercel.app bun run build:uat
+          VITE_APP_ENV=uat VITE_CATALOG_SOURCE=firestore VITE_ENABLE_TEST_DATA_CLEANUP=true VITE_BACKEND_API_URL=https://podrozowka-1wynrhvks-d-arka.vercel.app bun run build:uat
 
   deploy:
     name: Deploy Firebase Hosting UAT
@@ -89,7 +89,7 @@ jobs:
       - name: Build Firebase Hosting bundle
         run: |
           bun install --frozen-lockfile
-          VITE_APP_ENV=uat VITE_CATALOG_SOURCE=firestore VITE_ENABLE_TEST_DATA_CLEANUP=true VITE_BACKEND_API_URL=https://podrozowka-uat-one.vercel.app bun run build:uat
+          VITE_APP_ENV=uat VITE_CATALOG_SOURCE=firestore VITE_ENABLE_TEST_DATA_CLEANUP=true VITE_BACKEND_API_URL=https://podrozowka-1wynrhvks-d-arka.vercel.app bun run build:uat
 
       - name: Setup Node.js for Firebase CLI
         uses: actions/setup-node@v4

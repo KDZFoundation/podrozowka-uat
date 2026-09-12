@@ -18,7 +18,7 @@ export default defineConfig(({ mode }) => {
       // the request same-origin avoids CORS failures during local testing and
       // prevents the UI from falling back to the retired Supabase functions.
       "/api": {
-        target: "https://podrozowka-uat-one.vercel.app",
+        target: "https://podrozowka-1wynrhvks-d-arka.vercel.app",
         changeOrigin: true,
         secure: true,
       },
