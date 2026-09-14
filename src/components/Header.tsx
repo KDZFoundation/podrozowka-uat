@@ -19,6 +19,7 @@ import { useQuery } from "@tanstack/react-query";
 import { firestoreService } from "@/integrations/firebase/services/firestoreService";
 import NotificationsBell from "@/components/NotificationsBell";
 import podrozowkaLogo from "@/assets/podrozowka-logo.png";
+import potLogo from "@/assets/pot-logo.png";
 
 const languages = [
   { code: "pl", name: "Polski" },
@@ -78,6 +79,16 @@ const Header = () => {
               />
             </span>
           </Link>
+
+          {pathname === "/" && (
+            <div className="hidden flex-1 justify-center px-4 lg:flex">
+              <img
+                src={potLogo}
+                alt="Polska Organizacja Turystyczna"
+                className="h-10 w-auto max-w-52 object-contain mix-blend-multiply"
+              />
+            </div>
+          )}
 
           {/* Desktop Navigation */}
           <nav className="hidden items-center gap-1 rounded-xl bg-muted/50 p-1 md:flex">
