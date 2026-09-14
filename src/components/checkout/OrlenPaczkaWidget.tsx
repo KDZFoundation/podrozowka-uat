@@ -11,6 +11,7 @@ export default function OrlenPaczkaWidget({ onSelect }: { onSelect: (point: Pick
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const tokenRef = useRef<string | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const fallbackClickRef = useRef<(() => void) | null>(null);
   const widgetId = useId().replace(/:/g, "");
   const targetId = `${widgetId}-target`;
   const labelId = `${widgetId}-label`;
@@ -35,6 +36,18 @@ export default function OrlenPaczkaWidget({ onSelect }: { onSelect: (point: Pick
       element.dataset.podrozowkaListener = "1";
       element.addEventListener("orlenSelectPoint", select);
     });
+    const attachFallbackOpen = () => {
+      const button = buttonRef.current;
+      if (!button || fallbackClickRef.current) return;
+      const openFallback = () => {
+        const modal = document.querySelector<HTMLElement>(".orlen-widget-modal");
+        if (!modal) return;
+        modal.classList.add("orlen-widget-modal--open");
+        document.body.classList.add("orlen-modal-open");
+      };
+      button.addEventListener("click", openFallback);
+      fallbackClickRef.current = openFallback;
+    };
     const observer = new MutationObserver(attachListeners);
     const ensureRuntimeInitialized = () => {
       window.setTimeout(() => {
@@ -56,16 +69,22 @@ export default function OrlenPaczkaWidget({ onSelect }: { onSelect: (point: Pick
         });
       }
       const current = document.querySelector<HTMLScriptElement>("script[data-orlen-paczka-widget]");
-      if (current) { setState("ready"); ensureRuntimeInitialized(); attachListeners(); observer.observe(document.body, { childList: true, subtree: true }); return; }
+      if (current) { setState("ready"); ensureRuntimeInitialized(); attachListeners(); attachFallbackOpen(); observer.observe(document.body, { childList: true, subtree: true }); return; }
       const script = document.createElement("script");
       script.async = true; script.dataset.orlenPaczkaWidget = "true";
       script.src = `${data.map_url.replace(/\/?$/, "/")}widget.js?token=${encodeURIComponent(data.token)}&v=1.0.0&t=${Math.floor(Date.now() / 1000)}`;
-      script.onload = () => { if (!disposed) { setState("ready"); ensureRuntimeInitialized(); attachListeners(); observer.observe(document.body, { childList: true, subtree: true }); } };
+      script.onload = () => { if (!disposed) { setState("ready"); ensureRuntimeInitialized(); attachListeners(); attachFallbackOpen(); observer.observe(document.body, { childList: true, subtree: true }); } };
       script.onerror = () => { if (!disposed) setState("error"); };
       document.head.appendChild(script);
     };
     void start();
-    return () => { disposed = true; observer.disconnect(); document.querySelectorAll(".orlen-widget-modal").forEach((node) => node.removeEventListener("orlenSelectPoint", select)); };
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      document.querySelectorAll(".orlen-widget-modal").forEach((node) => node.removeEventListener("orlenSelectPoint", select));
+      if (fallbackClickRef.current && buttonRef.current) buttonRef.current.removeEventListener("click", fallbackClickRef.current);
+      fallbackClickRef.current = null;
+    };
   }, [onSelect]);
 
   const widgetButtonClass = state === "ready"
