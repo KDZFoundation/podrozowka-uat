@@ -48,6 +48,13 @@ export default function OrlenPaczkaWidget({ onSelect }: { onSelect: (point: Pick
       const data = response.ok ? await response.json() as WidgetConfig : null;
       if (!data?.token || disposed) { if (!disposed) setState("error"); return; }
       tokenRef.current = data.token;
+      const browserNavigator = navigator as Navigator & { geolocation?: Geolocation };
+      if (!browserNavigator.geolocation) {
+        Object.defineProperty(browserNavigator, "geolocation", {
+          configurable: true,
+          value: { getCurrentPosition: () => undefined, watchPosition: () => 0, clearWatch: () => undefined },
+        });
+      }
       const current = document.querySelector<HTMLScriptElement>("script[data-orlen-paczka-widget]");
       if (current) { setState("ready"); ensureRuntimeInitialized(); attachListeners(); observer.observe(document.body, { childList: true, subtree: true }); return; }
       const script = document.createElement("script");
