@@ -85,7 +85,7 @@ const Header = () => {
               <img
                 src={potLogo}
                 alt="Polska Organizacja Turystyczna"
-                className="h-10 w-auto max-w-52 object-contain mix-blend-multiply"
+                className="h-14 w-auto max-w-60 object-contain"
               />
             </div>
           )}
