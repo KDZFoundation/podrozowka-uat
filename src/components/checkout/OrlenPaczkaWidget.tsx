@@ -46,7 +46,15 @@ export default function OrlenPaczkaWidget({ onSelect }: { onSelect: (point: Pick
     return () => { disposed = true; observer.disconnect(); document.querySelectorAll(".orlen-widget-modal").forEach((node) => node.removeEventListener("orlenSelectPoint", select)); };
   }, [onSelect]);
 
-  if (state === "loading") return <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Ładowanie mapy ORLEN Paczka…</div>;
-  if (state === "error") return <div className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-destructive/5 p-5 text-center"><AlertCircle className="h-6 w-6 text-destructive" /><p className="font-medium">Mapa ORLEN Paczka jest niedostępna.</p><p className="text-sm text-muted-foreground">Sprawdź w panelu administratora token Widgetu przypisany do tej domeny.</p></div>;
-  return <div className="rounded-xl border border-border bg-muted/20 p-5"><p className="mb-3 text-sm text-muted-foreground">Otwórz mapę i wybierz automat, stację ORLEN lub punkt partnerski.</p><button ref={buttonRef} type="button" className="orlen-widget orlen-widget-button inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" data-target={`#${targetId}`} data-label={`#${labelId}`} data-type="dropoff" data-modal="true" data-layout="tabs"><MapPin className="mr-2 h-4 w-4" />Wybierz punkt ORLEN Paczka</button><input id={targetId} type="hidden" aria-hidden="true" /><input id={labelId} type="hidden" aria-hidden="true" /></div>;
+  const widgetButtonClass = state === "ready"
+    ? "inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+    : "sr-only";
+  return <div className="rounded-xl border border-border bg-muted/20 p-5">
+    {state === "loading" && <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Ładowanie mapy ORLEN Paczka…</div>}
+    {state === "error" && <div className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-destructive/20 bg-destructive/5 p-5 text-center"><AlertCircle className="h-6 w-6 text-destructive" /><p className="font-medium">Mapa ORLEN Paczka jest niedostępna.</p><p className="text-sm text-muted-foreground">Sprawdź w panelu administratora token Widgetu przypisany do tej domeny.</p></div>}
+    {state === "ready" && <p className="mb-3 text-sm text-muted-foreground">Otwórz mapę i wybierz automat, stację ORLEN lub punkt partnerski.</p>}
+    <button ref={buttonRef} type="button" disabled={state !== "ready"} className={`orlen-widget orlen-widget-button ${widgetButtonClass}`} data-target={`#${targetId}`} data-label={`#${labelId}`} data-type="dropoff" data-modal="true" data-layout="tabs"><MapPin className="mr-2 h-4 w-4" />Wybierz punkt ORLEN Paczka</button>
+    <input id={targetId} type="hidden" aria-hidden="true" />
+    <input id={labelId} type="hidden" aria-hidden="true" />
+  </div>;
 }
