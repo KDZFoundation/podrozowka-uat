@@ -17,7 +17,7 @@ export default {
     }
     return json({
       token: process.env.ORLEN_WIDGET_TOKEN || process.env.INPOST_ORLEN_WIDGET_TOKEN || settings.widget_token || null,
-      map_url: process.env.ORLEN_WIDGET_MAP_URL || settings.map_url || "https://api.orlenpaczka.pl/",
+      map_url: process.env.ORLEN_WIDGET_MAP_URL || settings.map_url || "https://mapa.orlenpaczka.pl/",
     });
   },
 };
