@@ -36,17 +36,24 @@ export default function OrlenPaczkaWidget({ onSelect }: { onSelect: (point: Pick
       element.addEventListener("orlenSelectPoint", select);
     });
     const observer = new MutationObserver(attachListeners);
+    const ensureRuntimeInitialized = () => {
+      window.setTimeout(() => {
+        if (disposed) return;
+        const runtime = (window as Window & { op?: OrlenWidgetRuntime }).op;
+        if (runtime && !runtime.mapContainers?.length) runtime.init?.();
+      }, 0);
+    };
     const start = async () => {
       const response = await fetch(backendApiUrl("/api/orlen/widget-config"));
       const data = response.ok ? await response.json() as WidgetConfig : null;
       if (!data?.token || disposed) { if (!disposed) setState("error"); return; }
       tokenRef.current = data.token;
       const current = document.querySelector<HTMLScriptElement>("script[data-orlen-paczka-widget]");
-      if (current) { setState("ready"); attachListeners(); observer.observe(document.body, { childList: true, subtree: true }); return; }
+      if (current) { setState("ready"); ensureRuntimeInitialized(); attachListeners(); observer.observe(document.body, { childList: true, subtree: true }); return; }
       const script = document.createElement("script");
       script.async = true; script.dataset.orlenPaczkaWidget = "true";
       script.src = `${data.map_url.replace(/\/?$/, "/")}widget.js?token=${encodeURIComponent(data.token)}&v=1.0.0&t=${Math.floor(Date.now() / 1000)}`;
-      script.onload = () => { if (!disposed) { setState("ready"); attachListeners(); observer.observe(document.body, { childList: true, subtree: true }); } };
+      script.onload = () => { if (!disposed) { setState("ready"); ensureRuntimeInitialized(); attachListeners(); observer.observe(document.body, { childList: true, subtree: true }); } };
       script.onerror = () => { if (!disposed) setState("error"); };
       document.head.appendChild(script);
     };
